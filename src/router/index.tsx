@@ -21,6 +21,8 @@ import {
     DashboardOrdersPage,
     DashboardOrderPage,
     DashboardTaxonomiesPage,
+    DashboardCdrSyncPage,
+    DashboardPaymentsPage,
 } from '../pages';
 import { ClientLayout } from '../layouts/ClientLayout';
 import { DashboardLayout } from '../layouts/DashboardLayout';
@@ -142,6 +144,14 @@ export const router = createBrowserRouter([
             {
                 path: 'blog/editar/:postId',
                 element: <DashboardPostFormPage />,
+            },
+            {
+                path: 'cdr',
+                element: <DashboardCdrSyncPage />,
+            },
+            {
+                path: 'pagos',
+                element: <DashboardPaymentsPage />,
             },
         ],
     },

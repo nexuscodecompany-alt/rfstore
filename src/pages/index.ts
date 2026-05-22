@@ -23,3 +23,5 @@ export * from "./dashboard/DashboardOrderPage"
 export * from './dashboard/DashboardTaxonomiesPage';
 export { DashboardBlogPage } from './dashboard/DashboardBlogPage';
 export { DashboardPostFormPage } from './dashboard/DashboardPostFormPage';
+export * from './dashboard/DashboardCdrSyncPage';
+export * from './dashboard/DashboardPaymentsPage';

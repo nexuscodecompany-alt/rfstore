@@ -1,37 +1,49 @@
+import { HiArrowRight, HiOutlineEnvelope } from 'react-icons/hi2';
+
 export const Newsletter = () => {
 	return (
-		<div className='relative py-20 text-white bg-slate-400 shadow-xl'>
-			{/* IMAGEN DE FONDO */}
-			{/* <div
-				className='absolute inset-0 h-full bg-center bg-cover opacity-70'
-				style={{
-					backgroundImage: 'url(/img/background-newsletter.webp)',
-				}}
-			/> */}
+		<section className='relative section-dark py-20 mt-10'>
+			<div
+				aria-hidden
+				className='absolute inset-0 bg-grid-dark bg-grid-md [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_70%)]'
+			/>
+			<div
+				aria-hidden
+				className='absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[300px] bg-brand-700/25 blur-3xl rounded-full'
+			/>
 
-			{/* CONTENIDO DE NEWSLETTER */}
-			<div className='container relative z-10 grid p-5 md:p-0 place-items-center'>
-				<div className='w-full text-black bg-white p-12 space-y-5 md:w-[50%] lg:w-[40%]'>
-					<p className='text-xs font-semibold uppercase'>
-						Suscríbete a nuestro boletín y recibe promociones
-						exclusivas
+			<div className='relative z-10 container'>
+				<div className='max-w-2xl mx-auto text-center space-y-5'>
+					<div className='inline-grid place-items-center w-12 h-12 mx-auto rounded-xl bg-white/5 border border-white/10 backdrop-blur'>
+						<HiOutlineEnvelope className='text-brand-400' size={22} />
+					</div>
+					<h2 className='text-3xl md:text-4xl font-bold text-white tracking-tight'>
+						Suscribite y enterate primero
+					</h2>
+					<p className='text-white/60'>
+						Recibí promociones exclusivas, lanzamientos y stock fresco para tu empresa.
 					</p>
-					<p className='text-xs font-medium w-[80%] leading-5'>
-						Introduce tu correo para recibir ofertas
-					</p>
-					<form className='flex flex-col gap-5 xl:flex-row'>
+
+					<form className='flex items-center gap-2 p-1.5 pl-5 bg-white/5 border border-white/10 rounded-full max-w-md mx-auto focus-within:border-brand-500/50 focus-within:bg-white/[0.07] transition-all'>
 						<input
 							type='email'
-							className='w-full px-5 py-3 text-xs font-medium border rounded-full border-slate-200 focus:outline-none'
-							placeholder='Correo Electrónico'
+							placeholder='tu@empresa.com'
+							className='flex-1 bg-transparent text-sm text-white placeholder:text-white/40 focus:outline-none'
 						/>
-
-						<button className='py-3 text-xs font-semibold tracking-wider text-white uppercase bg-black rounded-full xl:px-5'>
+						<button
+							type='submit'
+							className='inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-gradient-to-br from-brand-600 to-brand-700 text-white text-sm font-semibold hover:shadow-glow-brand transition-all'
+						>
 							Suscribirme
+							<HiArrowRight />
 						</button>
 					</form>
+
+					<p className='text-xs text-white/40 pt-2'>
+						No spam. Cancelá cuando quieras.
+					</p>
 				</div>
 			</div>
-		</div>
+		</section>
 	);
 };

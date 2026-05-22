@@ -4,7 +4,9 @@ import {
     FaInstagram,
     FaLinkedin,
     FaFacebookF,
-    FaPenToSquare, // <-- 1. IMPORTA EL NUEVO ÍCONO
+    FaPenToSquare,
+    FaCloudArrowDown,
+    FaMoneyBillTransfer,
 } from 'react-icons/fa6';
 
 export const navbarLinks = [
@@ -70,12 +72,22 @@ export const dashboardLinks = [
         href: '/dashboard/taxonomias',
         icon: <FaBoxOpen size={25} />,
     },
-    // --- 2. AGREGA ESTE NUEVO OBJETO ---
     {
         id: 4,
         title: 'Gestionar Blog',
         href: '/dashboard/blog',
         icon: <FaPenToSquare size={25} />,
     },
-    // ------------------------------------
+    {
+        id: 5,
+        title: 'CDR Sync',
+        href: '/dashboard/cdr',
+        icon: <FaCloudArrowDown size={25} />,
+    },
+    {
+        id: 6,
+        title: 'Pagos',
+        href: '/dashboard/pagos',
+        icon: <FaMoneyBillTransfer size={25} />,
+    },
 ];

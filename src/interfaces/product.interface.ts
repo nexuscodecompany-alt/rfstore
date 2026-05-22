@@ -39,6 +39,10 @@ export interface Product {
 	category_id: string;
 	brand?: ProductBrand | null;
 	category?: ProductCategory | null;
+	source?: 'local' | 'cdr';
+	external_code?: string | null;
+	price_usd?: number | null;
+	markup_percent?: number | null;
 }
 
 export interface PreparedProducts {
@@ -57,6 +61,8 @@ export interface PreparedProducts {
 	variants: VariantProduct[];
 	brandName?: string;
 	categoryName?: string;
+	source?: 'local' | 'cdr';
+	external_code?: string | null;
 }
 
 export interface ProductInput {

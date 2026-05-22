@@ -3,8 +3,12 @@ import { dashboardLinks } from '../../constants/links';
 import { Logo } from '../shared/Logo';
 import { IoLogOutOutline } from 'react-icons/io5';
 import { signOut } from '../../actions';
+import { usePaymentsEnabled } from '../../hooks';
 
 export const Sidebar = () => {
+	const { enabled: paymentsEnabled } = usePaymentsEnabled();
+	const links = dashboardLinks.filter(l => paymentsEnabled || l.href !== '/dashboard/pagos');
+
 	const handleLogout = async () => {
 		await signOut();
 	};
@@ -14,7 +18,7 @@ export const Sidebar = () => {
 			<Logo isDashboard/>
 
 			<nav className='w-full space-y-5 flex-1'>
-				{dashboardLinks.map(link => (
+				{links.map(link => (
 					<NavLink
 						key={link.id}
 						to={link.href}

@@ -112,6 +112,8 @@ export const CellPhonePage = () => {
         storage: selectedVariant.storage,
         price: selectedVariant.price,
         quantity: count,
+        source: (product?.source as 'local' | 'cdr') || 'local',
+        externalCode: product?.external_code ?? null,
       });
       toast.success("Producto añadido al carrito", {
         position: "bottom-right",
@@ -131,6 +133,8 @@ export const CellPhonePage = () => {
         storage: selectedVariant.storage,
         price: selectedVariant.price,
         quantity: count,
+        source: (product?.source as 'local' | 'cdr') || 'local',
+        externalCode: product?.external_code ?? null,
       });
 
       navigate("/checkout");

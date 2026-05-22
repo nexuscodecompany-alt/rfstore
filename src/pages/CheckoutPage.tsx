@@ -1,29 +1,35 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { useCartStore } from '../store/cart.store';
 import { FormCheckout } from '../components/checkout/FormCheckout';
+import { CdrCheckoutForm } from '../components/checkout/CdrCheckoutForm';
 import { ItemsCheckout } from '../components/checkout/ItemsCheckout';
-import { useUser } from '../hooks';
+import { useUser, usePaymentsEnabled } from '../hooks';
 import { Loader } from '../components/shared/Loader';
 import { useEffect } from 'react';
 import { supabase } from '../supabase/client';
 
 export const CheckoutPage = () => {
 	const totalItems = useCartStore(state => state.totalItemsInCart);
+	const cartItems = useCartStore(state => state.items);
+	const { enabled: paymentsEnabled } = usePaymentsEnabled();
+	const allCdr = paymentsEnabled && cartItems.length > 0 && cartItems.every(i => i.source === 'cdr');
+	const anyCdr = paymentsEnabled && cartItems.some(i => i.source === 'cdr');
+	const mixed = anyCdr && !allCdr;
 
 	const { isLoading } = useUser();
 
 	const navigate = useNavigate();
 
 	useEffect(() => {
-	 	supabase.auth.onAuthStateChange(async (event, session) => {
-	 		if (event === 'SIGNED_OUT' || !session) {
-	 			navigate('/login');
-	 		}
-	 	});
-	 }, [navigate]);
+		supabase.auth.onAuthStateChange(async (event, session) => {
+			if (event === 'SIGNED_OUT' || !session) {
+				navigate('/login');
+			}
+		});
+	}, [navigate]);
 
 	if (isLoading) return <Loader />;
-	
+
 	return (
 		<div
 			style={{
@@ -31,16 +37,13 @@ export const CheckoutPage = () => {
 			}}
 		>
 			<header className='h-[100px] bg-white text-black flex items-center justify-center flex-col px-10 border-b border-slate-200'>
-				<Link
-    to='/'
-    className='self-center md:self-start' // Mantenemos las clases de alineación
->
-    <img
-        src="/img/img-docs/logoblancorf.jpg" // La ruta correcta a tu imagen
-        alt="Logo de RF Store"
-        className="h-14 w-auto" // Ajusta el tamaño aquí (ej. h-14 son 56px de alto)
-    />
-</Link>
+				<Link to='/' className='self-center md:self-start'>
+					<img
+						src='/img/img-docs/logoblancorf.jpg'
+						alt='Logo de RF Store'
+						className='h-14 w-auto'
+					/>
+				</Link>
 			</header>
 
 			<main className='relative flex w-full h-full'>
@@ -51,9 +54,7 @@ export const CheckoutPage = () => {
 							height: 'calc(100vh - 100px)',
 						}}
 					>
-						<p className='text-sm font-medium tracking-tight'>
-							Su carro esta vacío
-						</p>
+						<p className='text-sm font-medium tracking-tight'>Su carro esta vacío</p>
 						<Link
 							to='/tienda'
 							className='py-4 text-xs font-semibold tracking-widest text-white uppercase bg-black rounded-full px-7'
@@ -64,7 +65,15 @@ export const CheckoutPage = () => {
 				) : (
 					<>
 						<div className='w-full md:w-[50%] p-10'>
-							<FormCheckout />
+							{mixed && (
+								<div className='bg-yellow-50 border border-yellow-300 p-3 rounded mb-4 text-sm'>
+									Tu carrito mezcla productos con pago online (CDR) y productos
+									por consulta. Por ahora generamos cotización por WhatsApp para
+									todos. Para pagar online, dejá solo productos marcados como
+									"Comprar online".
+								</div>
+							)}
+							{allCdr ? <CdrCheckoutForm /> : <FormCheckout />}
 						</div>
 
 						<div
@@ -73,7 +82,6 @@ export const CheckoutPage = () => {
 								minHeight: 'calc(100vh - 100px)',
 							}}
 						>
-							{/* Elementos del carrito */}
 							<ItemsCheckout />
 						</div>
 					</>

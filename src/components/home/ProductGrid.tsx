@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { PreparedProducts } from '../../interfaces';
 import { CardProduct } from '../products/CardProduct';
+import { HiOutlineArrowDown, HiOutlineArrowUp } from 'react-icons/hi2';
 
 interface Props {
 	title: string;
@@ -9,75 +10,63 @@ interface Props {
 
 export const ProductGrid = ({ title, products }: Props) => {
 	const [searchTerm] = useState('');
-	const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc'); // Precio mayor a menor por defecto
+	const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-	// Filtrar productos por término de búsqueda
-	const filteredProducts = products.filter(product =>
-		product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-		product.slug.toLowerCase().includes(searchTerm.toLowerCase()) ||
-		(product.brandName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-		(product.categoryName || '').toLowerCase().includes(searchTerm.toLowerCase())
+	const filteredProducts = products.filter(
+		product =>
+			product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+			product.slug.toLowerCase().includes(searchTerm.toLowerCase()) ||
+			(product.brandName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+			(product.categoryName || '').toLowerCase().includes(searchTerm.toLowerCase())
 	);
 
-	// Ordenar productos por precio
 	const sortedProducts = [...filteredProducts].sort((a, b) => {
-		if (sortOrder === 'desc') {
-			return b.price - a.price; // Mayor a menor
-		} else {
-			return a.price - b.price; // Menor a mayor
-		}
+		return sortOrder === 'desc' ? b.price - a.price : a.price - b.price;
 	});
 
 	return (
-		<div className='my-32'>
-			<h2 className='mb-8 text-3xl font-semibold text-center md:text-4xl lg:text-5xl'>
-				{title}
-			</h2>
+		<section className='my-24'>
+			<div className='text-center mb-12 space-y-3'>
+				<p className='section-eyebrow'>Catálogo</p>
+				<h2 className='section-title'>{title}</h2>
+				<div className='mx-auto h-1 w-16 rounded-full bg-gradient-to-r from-brand-500 to-brand-700' />
+			</div>
 
-			
+			<div className='flex flex-col items-center justify-between gap-4 mb-8 sm:flex-row'>
+				<p className='text-sm text-ink-500'>
+					{searchTerm
+						? `${filteredProducts.length} resultado${filteredProducts.length !== 1 ? 's' : ''} para "${searchTerm}"`
+						: `Mostrando ${sortedProducts.length} producto${sortedProducts.length !== 1 ? 's' : ''}`}
+				</p>
 
-			{/* Contador de resultados y ordenamiento */}
-			<div className='flex flex-col items-center justify-between gap-4 mb-6 sm:flex-row'>
-				{searchTerm && (
-					<div className='text-center sm:text-left'>
-						<p className='text-lg text-gray-600'>
-							{filteredProducts.length} producto{filteredProducts.length !== 1 ? 's' : ''} encontrado{filteredProducts.length !== 1 ? 's' : ''} para "{searchTerm}"
-						</p>
-					</div>
-				)}
-				
-				{/* Ordenamiento por precio con flechas */}
-				<div className='flex items-center gap-2'>
+				{/* SEGMENTED CONTROL */}
+				<div className='inline-flex items-center gap-1 p-1 bg-ink-100 rounded-lg border border-ink-200/70'>
 					<button
 						onClick={() => setSortOrder('desc')}
-						className={`p-2 rounded-md transition-all duration-200 ${
-							sortOrder === 'desc' 
-								? 'bg-black text-white shadow-md' 
-								: 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+							sortOrder === 'desc'
+								? 'bg-white text-ink-900 shadow-soft'
+								: 'text-ink-500 hover:text-ink-900'
 						}`}
-						title='Precio mayor a menor'
 					>
-						<svg className='w-5 h-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-							<path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M19 14l-7 7m0 0l-7-7m7 7V3' />
-						</svg>
+						<HiOutlineArrowDown />
+						Mayor precio
 					</button>
 					<button
 						onClick={() => setSortOrder('asc')}
-						className={`p-2 rounded-md transition-all duration-200 ${
-							sortOrder === 'asc' 
-								? 'bg-black text-white shadow-md' 
-								: 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+							sortOrder === 'asc'
+								? 'bg-white text-ink-900 shadow-soft'
+								: 'text-ink-500 hover:text-ink-900'
 						}`}
-						title='Precio menor a mayor'
 					>
-						<svg className='w-5 h-5' fill='none' viewBox='0 0 24 24' stroke='currentColor'>
-							<path strokeLinecap='round' strokeLinejoin='round' strokeWidth={2} d='M5 10l7-7m0 0l7 7m-7-7v18' />
-						</svg>
+						<HiOutlineArrowUp />
+						Menor precio
 					</button>
 				</div>
 			</div>
 
-			<div className='grid grid-cols-1 gap-4 gap-y-8 sm:grid-cols-2 lg:grid-cols-4'>
+			<div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5'>
 				{sortedProducts.map(product => (
 					<CardProduct
 						key={product.id}
@@ -89,9 +78,11 @@ export const ProductGrid = ({ title, products }: Props) => {
 						variants={product.variants}
 						brandName={product.brandName}
 						categoryName={product.categoryName}
+						source={product.source}
+						externalCode={product.external_code}
 					/>
 				))}
 			</div>
-		</div>
+		</section>
 	);
 };

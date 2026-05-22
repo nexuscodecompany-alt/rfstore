@@ -49,6 +49,8 @@ export const prepareProducts = (products: Product[]) => {
 			variants: product.variants,
 			brandName: (product as any).brand?.name,
 			categoryName: (product as any).category?.name,
+			source: (product as any).source ?? 'local',
+			external_code: (product as any).external_code ?? null,
 		};
 	});
 };

@@ -34,3 +34,8 @@ export * from './orders/useOrderAdmin';
 /*            TAXONOMIES             */
 /* ********************************** */
 export * from './taxonomy/useTaxonomies';
+
+/* ********************************** */
+/*             SETTINGS               */
+/* ********************************** */
+export * from './settings/useFeatureFlag';

@@ -4,27 +4,132 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CLASES PERSONALIZADAS */
-.btn-paginated {
-	@apply border border-slate-700 rounded-md font-semibold text-xs py-1 px-3 hover:bg-slate-700 hover:text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:border-slate-800 disabled:text-slate-800 disabled:hover:bg-white disabled:hover:text-slate-700;
+@layer base {
+	html {
+		scroll-behavior: smooth;
+	}
+	body {
+		@apply text-ink-900 antialiased;
+		font-feature-settings: 'ss01', 'cv11';
+	}
+	::selection {
+		@apply bg-brand-600/20 text-brand-900;
+	}
 }
 
-.btn-primary {
-	@apply bg-black text-white py-2 px-3 text-sm font-medium rounded-md;
+@layer components {
+	/* BOTONES */
+	.btn-primary {
+		@apply inline-flex items-center justify-center gap-2 bg-gradient-to-br from-brand-600 to-brand-700 text-white py-2.5 px-5 text-sm font-semibold rounded-lg shadow-soft hover:shadow-glow-brand hover:-translate-y-0.5 active:translate-y-0 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-soft;
+	}
+
+	.btn-secondary-outline {
+		@apply inline-flex items-center justify-center gap-2 border border-ink-200 bg-white text-ink-700 py-2.5 px-5 text-sm font-semibold rounded-lg hover:border-brand-600 hover:text-brand-700 hover:bg-brand-50 transition-all duration-200;
+	}
+
+	.btn-ghost-dark {
+		@apply inline-flex items-center justify-center gap-2 border border-white/15 bg-white/5 text-white py-2.5 px-5 text-sm font-semibold rounded-lg hover:bg-white/10 hover:border-white/30 backdrop-blur transition-all duration-200;
+	}
+
+	.btn-paginated {
+		@apply border border-ink-300 rounded-md font-semibold text-xs py-1.5 px-3 hover:bg-brand-600 hover:text-white hover:border-brand-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:text-ink-700 disabled:hover:border-ink-300;
+	}
+
+	/* SUPERFICIES */
+	.glass-card {
+		@apply bg-white/80 backdrop-blur-md border border-ink-200/70 rounded-xl shadow-soft;
+	}
+
+	.glass-card-dark {
+		@apply bg-white/[0.04] backdrop-blur-md border border-white/10 rounded-xl shadow-inner-glow;
+	}
+
+	.section-dark {
+		@apply relative bg-ink-950 text-white overflow-hidden;
+	}
+
+	/* CHIPS / BADGES */
+	.chip {
+		@apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold;
+	}
+
+	.chip-brand {
+		@apply chip bg-brand-50 text-brand-700 border border-brand-100;
+	}
+
+	.chip-dark {
+		@apply chip bg-white/5 text-white/90 border border-white/10 backdrop-blur;
+	}
+
+	/* TÍTULOS */
+	.section-title {
+		@apply text-3xl font-bold tracking-tight text-ink-900 md:text-4xl lg:text-5xl;
+	}
+
+	.section-eyebrow {
+		@apply text-xs font-bold tracking-[0.18em] uppercase text-brand-700;
+	}
+
+	/* INPUTS */
+	.input-base {
+		@apply w-full px-4 py-2.5 text-sm bg-white border border-ink-200 rounded-lg text-ink-900 placeholder:text-ink-400 shadow-soft focus:outline-none focus:ring-2 focus:ring-brand-600/20 focus:border-brand-600 transition-all;
+	}
+
+	.input-dark {
+		@apply w-full px-4 py-2.5 text-sm bg-white/5 border border-white/10 rounded-lg text-white placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500 transition-all;
+	}
+
+	/* GRADIENTES DE TEXTO */
+	.text-gradient-brand {
+		@apply bg-gradient-to-br from-brand-600 to-brand-800 bg-clip-text text-transparent;
+	}
 }
 
-.btn-secondary-outline {
-	@apply border border-slate-400 text-slate-600 py-2 px-3 text-sm font-medium rounded-md;
+@layer utilities {
+	/* MARQUEE MASK */
+	.mask-fade-x {
+		mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+		-webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+	}
+
+	/* Romper container padre y ocupar ancho de viewport */
+	.bleed-full {
+		position: relative;
+		left: 50%;
+		right: 50%;
+		width: 100vw;
+		margin-left: -50vw;
+		margin-right: -50vw;
+	}
 }
 
 /* Para Chrome, Safari, Edge y Opera */
 input::-webkit-outer-spin-button,
-input::-webkit-inner-spin-button{
+input::-webkit-inner-spin-button {
 	-webkit-appearance: none;
 	margin: 0;
 }
 
-/* Para firefox */
-input[type=number]{
+input[type=number] {
 	-moz-appearance: textfield;
+}
+
+/* SCROLLBAR PULIDA */
+::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+::-webkit-scrollbar-track {
+	background: transparent;
+}
+::-webkit-scrollbar-thumb {
+	background: #cbd5e1;
+	border-radius: 999px;
+	border: 2px solid transparent;
+	background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+	background: #94a3b8;
+	background-clip: content-box;
+	border: 2px solid transparent;
 }

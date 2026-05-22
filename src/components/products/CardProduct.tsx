@@ -5,6 +5,7 @@ import { VariantProduct } from '../../interfaces';
 import { formatPrice } from '../../helpers';
 import { Tag } from '../shared/Tag';
 import { useCartStore } from '../../store/cart.store';
+import { usePaymentsEnabled } from '../../hooks';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -16,6 +17,8 @@ interface Props {
 	variants: VariantProduct[];
 	brandName?: string;
 	categoryName?: string;
+	source?: 'local' | 'cdr';
+	externalCode?: string | null;
 }
 
 export const CardProduct = ({
@@ -27,6 +30,8 @@ export const CardProduct = ({
 	variants,
 	brandName,
 	categoryName,
+	source,
+	externalCode,
 }: Props) => {
 	const [activeColor, setActiveColor] = useState<{
 		name: string;
@@ -34,9 +39,18 @@ export const CardProduct = ({
 	}>(colors[0]);
 
 	const addItem = useCartStore(state => state.addItem);
+	const { enabled: paymentsEnabled } = usePaymentsEnabled();
+
+	const selectedVariant = variants.find(
+		variant => variant.color === activeColor.color
+	);
+
+	const stock = selectedVariant?.stock || 0;
+	const isOutOfStock = stock === 0;
 
 	const handleAddClick = (e: React.MouseEvent<HTMLButtonElement>) => {
 		e.preventDefault();
+		e.stopPropagation();
 
 		if (selectedVariant && selectedVariant.stock > 0) {
 			addItem({
@@ -48,6 +62,8 @@ export const CardProduct = ({
 				storage: selectedVariant.storage,
 				price: selectedVariant.price,
 				quantity: 1,
+				source: source ?? 'local',
+				externalCode: externalCode ?? null,
 			});
 			toast.success('Producto añadido al carrito', {
 				position: 'bottom-right',
@@ -58,71 +74,93 @@ export const CardProduct = ({
 			});
 		}
 	};
-	// Identificar la variante seleccionada según el color activo
-	const selectedVariant = variants.find(
-		variant => variant.color === activeColor.color
-	);
-
-	const stock = selectedVariant?.stock || 0;
 
 	return (
-		<div className='flex flex-col gap-6 relative m-10'>
+		<div className='group relative flex flex-col bg-white border border-ink-200/70 rounded-xl overflow-hidden shadow-card hover:shadow-card-hover hover:-translate-y-1 hover:border-brand-200 transition-all duration-300'>
+			{/* BADGES */}
+			<div className='absolute top-3 left-3 z-10 flex flex-col gap-1.5'>
+				{isOutOfStock && <Tag contentTag='agotado' />}
+				{source === 'cdr' && paymentsEnabled && (
+					<span className='bg-emerald-600 text-white text-[10px] font-semibold px-2 py-1 rounded-full uppercase tracking-wide'>
+						Pago online
+					</span>
+				)}
+			</div>
+
+			{/* IMAGEN */}
 			<Link
 				to={`/producto/${slug}`}
-				className='flex relative group overflow-hidden '
+				className='relative block aspect-square bg-gradient-to-br from-ink-50 to-white overflow-hidden'
 			>
-				<div className='flex h-[350px] w-full items-center justify-center py-2 lg:h-[250px]'>
-					<img
-						src={img}
-						alt={name}
-						className='object-contain h-full w-full'
-					/>
-				</div>
+				<div
+					aria-hidden
+					className='absolute inset-0 bg-grid-light bg-grid-sm opacity-40'
+				/>
+				<img
+					src={img}
+					alt={name}
+					loading='lazy'
+					className='relative h-full w-full object-contain p-6 group-hover:scale-105 transition-transform duration-500 ease-out'
+				/>
 
-			<button
-className='bg-slate-700 text-white border border-slate-200 absolute w-full bottom-0 py-3 rounded-3xl flex items-center justify-center gap-1 text-sm font-medium hover:bg-stone-400 transition-all duration-300 translate-y-0'
-onClick={handleAddClick}
+				{/* QUICK ADD on hover */}
+				<button
+					onClick={handleAddClick}
+					disabled={isOutOfStock}
+					className='absolute bottom-3 right-3 grid place-items-center w-10 h-10 bg-ink-900 text-white rounded-full shadow-soft opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 hover:bg-brand-600 hover:scale-105 transition-all duration-300 disabled:bg-ink-300 disabled:cursor-not-allowed disabled:opacity-50'
+					aria-label='Añadir al carrito'
 				>
-					<FiPlus />
-					Añadir
+					<FiPlus size={18} />
 				</button>
 			</Link>
 
-			<div className='flex flex-col gap-1 items-center'>
-				<p className='text-[15px] font-medium'>{name}</p>
-				<p className='text-[12px] text-slate-600'>
-					{brandName || ''}
-					{brandName && categoryName ? ' · ' : ''}
-					{categoryName || ''}
-				</p>
-				<p className='text-[15px] font-medium'>
-					{formatPrice(price)} + IVA
-				</p>
+			{/* INFO */}
+			<div className='flex flex-col gap-2 p-4'>
+				{(brandName || categoryName) && (
+					<p className='text-[10px] font-semibold tracking-wider uppercase text-brand-700'>
+						{brandName || ''}
+						{brandName && categoryName ? ' · ' : ''}
+						{categoryName || ''}
+					</p>
+				)}
 
-				<div className='flex gap-3'>
-					{colors.map(color => (
-						<span
-							key={color.color}
-							className={`grid place-items-center w-5 h-5 rounded-full cursor-pointer ${
-								activeColor.color === color.color
-									? 'border border-black'
-									: ''
-							}`}
-							onClick={() => setActiveColor(color)}
-						>
-							<span
-								className='w-[14px] h-[14px] rounded-full'
-								style={{
-									backgroundColor: color.color,
-								}}
-							/>
-						</span>
-					))}
+				<Link to={`/producto/${slug}`}>
+					<h3 className='text-sm font-semibold text-ink-900 line-clamp-2 min-h-[2.5rem] hover:text-brand-700 transition-colors'>
+						{name}
+					</h3>
+				</Link>
+
+				<div className='flex items-baseline gap-1.5 pt-1'>
+					<p className='text-base font-bold text-ink-900'>
+						{formatPrice(price)}
+					</p>
+					<span className='text-[10px] text-ink-500 font-medium'>+ IVA</span>
 				</div>
-			</div>
 
-			<div className='absolute top-2 left-2'>
-				{stock === 0 && <Tag contentTag='agotado' />}
+				{colors.length > 0 && (
+					<div className='flex items-center gap-2 pt-2 mt-auto border-t border-ink-100'>
+						<span className='text-[10px] font-medium text-ink-500'>Color:</span>
+						<div className='flex gap-1.5'>
+							{colors.map(color => (
+								<button
+									key={color.color}
+									type='button'
+									aria-label={color.name}
+									onClick={e => {
+										e.preventDefault();
+										setActiveColor(color);
+									}}
+									className={`relative w-4 h-4 rounded-full transition-all ${
+										activeColor.color === color.color
+											? 'ring-2 ring-offset-1 ring-brand-600'
+											: 'ring-1 ring-ink-200 hover:ring-ink-400'
+									}`}
+									style={{ backgroundColor: color.color }}
+								/>
+							))}
+						</div>
+					</div>
+				)}
 			</div>
 		</div>
 	);

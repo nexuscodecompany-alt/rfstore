@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc *)",
+      "Bash(npm install *)",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npm run *)",
+      "Bash(python *)",
+      "PowerShell(Test-Path *)",
+      "mcp__claude_ai_Supabase__list_projects",
+      "mcp__claude_ai_Supabase__list_tables",
+      "mcp__claude_ai_Supabase__execute_sql",
+      "mcp__claude_ai_Supabase__apply_migration",
+      "mcp__claude_ai_Supabase__deploy_edge_function",
+      "mcp__claude_ai_Supabase__list_extensions",
+      "mcp__claude_ai_Supabase__generate_typescript_types",
+      "Bash(echo \"EXIT: $?\")",
+      "mcp__claude_ai_Supabase__get_publishable_keys",
+      "Bash(curl -s -X POST https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-sync-products -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw' -H 'Content-Type: application/json' -d '{\"full\": true}' --max-time 540)",
+      "mcp__claude_ai_Supabase__get_logs",
+      "Bash(curl -v -X POST https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-sync-products -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw' -H 'Content-Type: application/json' -d '{\"full\": true}' --max-time 540)",
+      "Bash(curl -s --ssl-no-revoke -X POST https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-sync-products -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw' -H 'Content-Type: application/json' -d '{\"full\": true}' --max-time 540)",
+      "Bash(curl -s --ssl-no-revoke -X POST https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-sync-products -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw' -H 'Content-Type: application/json' -d '{\"full\": true}' --max-time 580)",
+      "Bash(curl -s --ssl-no-revoke -X POST https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-sync-products -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw' -H 'Content-Type: application/json' -d '{\"full\": true}' --max-time 200)",
+      "Bash(curl *)",
+      "mcp__claude_ai_Supabase__get_edge_function"
+    ]
+  }
+}

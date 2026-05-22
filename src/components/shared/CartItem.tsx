@@ -11,6 +11,8 @@ export interface ICartItem {
 	price: number;
 	quantity: number;
 	image: string;
+	source?: 'local' | 'cdr';
+	externalCode?: string | null;
 }
 
 interface Props {

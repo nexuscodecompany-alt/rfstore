@@ -16,7 +16,7 @@ export const RootLayout = () => {
 	);
 
 	return (
-		<div className='h-screen flex flex-col font-montserrat'>
+		<div className='min-h-screen flex flex-col font-montserrat bg-white text-ink-900'>
 			<Navbar />
 
 			{pathname === '/' && <Banner />}
