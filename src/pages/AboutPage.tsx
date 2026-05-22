@@ -67,7 +67,7 @@ export const AboutPage = () => {
 						</span>
 					</h1>
 					<p className='max-w-2xl mx-auto text-white/70'>
-						Cotizá equipamiento para tu empresa, consultá disponibilidad o
+						Cotizá equipamiento informático, consultá disponibilidad o
 						pedinos asesoramiento técnico. Respondemos rápido.
 					</p>
 				</div>
@@ -94,7 +94,7 @@ export const AboutPage = () => {
 								<form onSubmit={handleSubmit} className='space-y-5'>
 									<div>
 										<label htmlFor='name' className='block text-xs font-semibold text-ink-700 mb-1.5'>
-											Nombre o empresa <span className='text-rose-500'>*</span>
+											Nombre completo <span className='text-rose-500'>*</span>
 										</label>
 										<div className='relative'>
 											<FaRegBuilding className='absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-400' />
@@ -122,7 +122,7 @@ export const AboutPage = () => {
 													name='email'
 													defaultValue={userEmail}
 													required
-													placeholder='vos@empresa.com'
+													placeholder='vos@correo.com'
 													className='input-base pl-10'
 												/>
 											</div>
@@ -253,7 +253,7 @@ export const AboutPage = () => {
 									<span className='grid place-items-center w-9 h-9 rounded-lg bg-brand-50 text-brand-700'>
 										<FaRegUser size={14} />
 									</span>
-									Ventas B2B y particulares
+									Ventas mayoristas y minoristas
 								</li>
 							</ul>
 						</div>

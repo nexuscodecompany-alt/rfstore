@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { getSession, getUserRole } from '../actions';
 import { Loader } from '../components/shared/Loader';
 import { supabase } from '../supabase/client';
+import { ScrollToTop } from '../components/shared/ScrollToTop';
 
 export const DashboardLayout = () => {
 	const navigate = useNavigate();
@@ -44,6 +45,7 @@ export const DashboardLayout = () => {
 
 	return (
 		<div className='flex bg-gray-100 min-h-screen font-montserrat'>
+			<ScrollToTop />
 			<Sidebar />
 
 			<main className='container m-5 mt-7 flex-1 text-slate-800 ml-[140px] lg:ml-[270px]'>

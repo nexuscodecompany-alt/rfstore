@@ -24,19 +24,19 @@ export const Banner = () => {
 			<div className='relative z-10 container py-24 lg:py-32 flex flex-col items-center text-center'>
 				<span className='chip-dark mb-6 animate-fade-in-up'>
 					<HiOutlineSparkles className='text-brand-400' />
-					Tecnología B2B para empresas en Uruguay
+					Tecnología para todos en Uruguay
 				</span>
 
 				<h1 className='text-4xl font-bold tracking-tight leading-[1.05] mb-5 lg:text-6xl xl:text-7xl max-w-4xl animate-fade-in-up [animation-delay:80ms]'>
 					Equipamiento informático{' '}
 					<span className='bg-gradient-to-br from-brand-300 via-brand-400 to-brand-600 bg-clip-text text-transparent'>
-						para tu empresa
+						al mejor precio
 					</span>
 				</h1>
 
 				<p className='text-base md:text-lg text-white/70 max-w-2xl mb-9 animate-fade-in-up [animation-delay:160ms]'>
 					Notebooks, impresoras, redes, periféricos y soluciones tecnológicas
-					con stock real, garantía y respaldo. Cotizamos a medida.
+					con stock real, garantía y respaldo.
 				</p>
 
 				<div className='flex flex-col sm:flex-row gap-3 animate-fade-in-up [animation-delay:240ms]'>
@@ -56,7 +56,7 @@ export const Banner = () => {
 				<div className='mt-14 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-6 max-w-3xl w-full animate-fade-in-up [animation-delay:320ms]'>
 					{[
 						{ k: '+10', l: 'Años en el rubro' },
-						{ k: '+500', l: 'Empresas atendidas' },
+						{ k: '+500', l: 'Clientes felices' },
 						{ k: '24/7', l: 'Soporte técnico' },
 						{ k: '100%', l: 'Productos garantidos' },
 					].map(item => (

@@ -41,7 +41,7 @@ export const Brands = () => {
 					</h2>
 					<p className='text-sm text-white/50 max-w-xl mx-auto'>
 						Distribuidores y partners autorizados de líderes globales en hardware,
-						redes y soluciones empresariales.
+						redes y tecnología para hogar y oficina.
 					</p>
 				</div>
 

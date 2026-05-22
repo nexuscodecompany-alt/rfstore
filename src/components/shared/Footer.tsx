@@ -26,8 +26,8 @@ export const Footer = () => {
 							/>
 						</Link>
 						<p className='text-sm text-white/60 leading-relaxed max-w-xs'>
-							Tecnología B2B con stock real, garantía oficial y soporte
-							especializado para empresas en Uruguay.
+							Tecnología con stock real, garantía oficial y soporte
+							especializado, en todo Uruguay.
 						</p>
 						<div className='flex gap-2 pt-2'>
 							{socialLinks.map(link => (
@@ -55,7 +55,7 @@ export const Footer = () => {
 						<form className='flex items-center gap-2 p-1.5 pl-4 bg-white/5 border border-white/10 rounded-full focus-within:border-brand-500/60 focus-within:bg-white/[0.07] transition-all'>
 							<input
 								type='email'
-								placeholder='tu@empresa.com'
+								placeholder='tu@correo.com'
 								className='flex-1 bg-transparent text-sm text-white placeholder:text-white/40 focus:outline-none'
 							/>
 							<button

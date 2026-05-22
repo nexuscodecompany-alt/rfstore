@@ -447,36 +447,42 @@ export type Database = {
           category_id: string | null
           created_at: string | null
           description: Json | null
+          external_code: string | null
           features: string[] | null
           id: string | null
           images: string[] | null
           name: string | null
           price: number | null
           slug: string | null
+          source: string | null
         }
         Insert: {
           brand_id?: string | null
           category_id?: string | null
           created_at?: string | null
           description?: Json | null
+          external_code?: string | null
           features?: string[] | null
           id?: string | null
           images?: string[] | null
           name?: string | null
           price?: never
           slug?: string | null
+          source?: string | null
         }
         Update: {
           brand_id?: string | null
           category_id?: string | null
           created_at?: string | null
           description?: Json | null
+          external_code?: string | null
           features?: string[] | null
           id?: string | null
           images?: string[] | null
           name?: string | null
           price?: never
           slug?: string | null
+          source?: string | null
         }
         Relationships: [
           {

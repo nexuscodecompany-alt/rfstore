@@ -3,6 +3,7 @@ import { useCartStore } from '../store/cart.store';
 import { FormCheckout } from '../components/checkout/FormCheckout';
 import { CdrCheckoutForm } from '../components/checkout/CdrCheckoutForm';
 import { ItemsCheckout } from '../components/checkout/ItemsCheckout';
+import { ScrollToTop } from '../components/shared/ScrollToTop';
 import { useUser, usePaymentsEnabled } from '../hooks';
 import { Loader } from '../components/shared/Loader';
 import { useEffect } from 'react';
@@ -36,6 +37,7 @@ export const CheckoutPage = () => {
 				minHeight: 'calc(100vh - 100px',
 			}}
 		>
+			<ScrollToTop />
 			<header className='h-[100px] bg-white text-black flex items-center justify-center flex-col px-10 border-b border-slate-200'>
 				<Link to='/' className='self-center md:self-start'>
 					<img

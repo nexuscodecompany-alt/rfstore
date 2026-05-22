@@ -6,6 +6,7 @@ import { Newsletter } from '../components/home/Newsletter';
 import { Sheet } from '../components/shared/Sheet';
 import { useGlobalStore } from '../store/global.store';
 import { NavbarMobile } from '../components/shared/NavbarMobile';
+import { ScrollToTop } from '../components/shared/ScrollToTop';
 
 export const RootLayout = () => {
 	const { pathname } = useLocation();
@@ -17,6 +18,7 @@ export const RootLayout = () => {
 
 	return (
 		<div className='min-h-screen flex flex-col font-montserrat bg-white text-ink-900'>
+			<ScrollToTop />
 			<Navbar />
 
 			{pathname === '/' && <Banner />}

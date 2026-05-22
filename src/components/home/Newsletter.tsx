@@ -21,13 +21,13 @@ export const Newsletter = () => {
 						Suscribite y enterate primero
 					</h2>
 					<p className='text-white/60'>
-						Recibí promociones exclusivas, lanzamientos y stock fresco para tu empresa.
+						Recibí promociones exclusivas, lanzamientos y stock fresco.
 					</p>
 
 					<form className='flex items-center gap-2 p-1.5 pl-5 bg-white/5 border border-white/10 rounded-full max-w-md mx-auto focus-within:border-brand-500/50 focus-within:bg-white/[0.07] transition-all'>
 						<input
 							type='email'
-							placeholder='tu@empresa.com'
+							placeholder='tu@correo.com'
 							className='flex-1 bg-transparent text-sm text-white placeholder:text-white/40 focus:outline-none'
 						/>
 						<button

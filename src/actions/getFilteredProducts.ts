@@ -1,7 +1,7 @@
 import { supabase } from '../supabase/client';
 import type { Product, VariantProduct } from '../interfaces';
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 25;
 
 type Args = {
   brands: string[];
@@ -29,7 +29,7 @@ export async function getFilteredProducts({
 let baseQuery = supabase
   .from('products_with_price')
   .select(
-    'id, name, slug, images, features, description, created_at, brand_id, category_id, price',
+    'id, name, slug, images, features, description, created_at, brand_id, category_id, price, source, external_code',
     { count: 'exact' }
   )
   .range(from, to);
@@ -95,13 +95,15 @@ if (searchTerm?.trim()) {
         slug: r.slug as string,
         images: (r.images ?? []) as string[],
         features: (r.features ?? []) as string[],
-        description: (r.description ?? {}) as any, // si tenés tipo Json, castealo a ese
+        description: (r.description ?? {}) as any,
         created_at: r.created_at ?? new Date().toISOString(),
         brand_id: (r.brand_id as string) ?? '',
         category_id: (r.category_id as string) ?? '',
         variants: variantsByProduct[pid] ?? [],
         brand: null,
         category: null,
+        source: ((r as any).source as 'local' | 'cdr') ?? 'local',
+        external_code: ((r as any).external_code as string | null) ?? null,
       };
     });
 

@@ -13,7 +13,7 @@ export const Pagination = ({ totalItems, page, setPage }: Props) => {
 		setPage(prevPage => Math.max(prevPage - 1, 1));
 	};
 
-	const itemsPerPage = 10;
+	const itemsPerPage = 25;
 	const totalPages = totalItems
 		? Math.ceil(totalItems / itemsPerPage)
 		: 1;

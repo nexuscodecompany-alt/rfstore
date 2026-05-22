@@ -8,21 +8,23 @@ import { prepareProducts } from '../helpers';
 import { useHomeProducts } from '../hooks';
 
 export const HomePage = () => {
-	const { popularProducts, isLoading, isError } = useHomeProducts();
-	const preparedPopularProducts = prepareProducts(popularProducts);
+	const { popularProducts, recentProducts, isLoading, isError } = useHomeProducts();
+	const preparedPopular = prepareProducts(popularProducts);
+	const preparedRecent = prepareProducts(recentProducts);
 
 	return (
 		<div>
 			<FeatureGrid />
 
-			{!isLoading && !isError && (
-				<ProductGrid
-					title='Productos Destacados'
-					products={preparedPopularProducts}
-				/>
+			{!isLoading && !isError && preparedPopular.length > 0 && (
+				<ProductGrid title='Productos Destacados' products={preparedPopular} />
 			)}
 
 			<Brands />
+
+			{!isLoading && !isError && preparedRecent.length > 0 && (
+				<ProductGrid title='Recién Llegados' products={preparedRecent} />
+			)}
 
 			{/* CTA dark */}
 			<section className='relative section-dark py-20 my-16 overflow-hidden bleed-full'>
@@ -60,6 +62,13 @@ export const HomePage = () => {
 					</div>
 				</div>
 			</section>
+
+			{!isLoading && !isError && preparedPopular.length > 0 && (
+				<ProductGrid
+					title='Más Populares'
+					products={[...preparedPopular].reverse()}
+				/>
+			)}
 
 			<WhatsAppButton />
 		</div>
