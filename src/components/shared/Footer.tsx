@@ -1,8 +1,12 @@
 import { BiChevronRight } from 'react-icons/bi';
 import { Link } from 'react-router-dom';
 import { socialLinks } from '../../constants/links';
+import { useLegalPages } from '../../hooks/settings/useLegalPages';
 
 export const Footer = () => {
+	const { data: legalPages } = useLegalPages();
+	const legalEntries = Object.entries(legalPages ?? {});
+
 	return (
 		<footer className='relative section-dark mt-20'>
 			<div
@@ -85,8 +89,19 @@ export const Footer = () => {
 							Legal
 						</p>
 						<nav className='flex flex-col gap-2.5 text-sm text-white/60'>
-							<Link to='#' className='hover:text-white transition-colors'>Privacidad</Link>
-							<Link to='#' className='hover:text-white transition-colors'>Términos de uso</Link>
+							{legalEntries.length > 0 ? (
+								legalEntries.map(([slug, page]) => (
+									<Link
+										key={slug}
+										to={`/legal/${slug}`}
+										className='hover:text-white transition-colors'
+									>
+										{page.title}
+									</Link>
+								))
+							) : (
+								<span className='text-white/40'>Próximamente</span>
+							)}
 						</nav>
 					</div>
 				</div>

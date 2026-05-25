@@ -6,6 +6,7 @@ const PAGE_SIZE = 25;
 type Args = {
   brands: string[];
   categories?: string[];
+  subcategories?: string[];
   priceMin?: number;
   priceMax?: number;
   page: number;
@@ -16,6 +17,7 @@ type Args = {
 export async function getFilteredProducts({
   brands,
   categories = [],
+  subcategories = [],
   priceMin,
   priceMax,
   page,
@@ -29,7 +31,7 @@ export async function getFilteredProducts({
 let baseQuery = supabase
   .from('products_with_price')
   .select(
-    'id, name, slug, images, features, description, created_at, brand_id, category_id, price, source, external_code',
+    'id, name, slug, images, features, description, created_at, brand_id, category_id, subcategory_id, price, source, external_code',
     { count: 'exact' }
   )
   .range(from, to);
@@ -39,11 +41,17 @@ if (sortOrder === 'asc') {
   baseQuery = baseQuery.order('price', { ascending: true });
 } else if (sortOrder === 'desc') {
   baseQuery = baseQuery.order('price', { ascending: false });
+} else {
+  // Por defecto: primero los productos de CDR ('cdr' < 'local'), luego los más nuevos.
+  baseQuery = baseQuery
+    .order('source', { ascending: true })
+    .order('created_at', { ascending: false });
 }
 
 // aplicar filtros
-if (brands?.length)      baseQuery = baseQuery.in('brand_id', brands);
-if (categories?.length)  baseQuery = baseQuery.in('category_id', categories);
+if (brands?.length)        baseQuery = baseQuery.in('brand_id', brands);
+if (categories?.length)    baseQuery = baseQuery.in('category_id', categories);
+if (subcategories?.length) baseQuery = baseQuery.in('subcategory_id', subcategories);
 if (typeof priceMin === 'number') baseQuery = baseQuery.gte('price', priceMin);
 if (typeof priceMax === 'number') baseQuery = baseQuery.lte('price', priceMax);
 

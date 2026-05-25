@@ -3,7 +3,7 @@ import { HiOutlineArrowDown, HiOutlineArrowUp, HiOutlineSearch } from 'react-ico
 import { CardProduct } from '../components/products/CardProduct';
 import { ContainerFilter } from '../components/products/ContainerFilter';
 import { prepareProducts } from '../helpers';
-import { useFilteredProducts } from '../hooks';
+import { useFilteredProducts, useTaxonomies } from '../hooks';
 import { Pagination } from '../components/shared/Pagination';
 import WhatsAppButton from '../components/shared/WhatsAppButton';
 
@@ -11,14 +11,25 @@ export const CellPhonesPage = () => {
 	const [page, setPage] = useState(1);
 	const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
 	const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+	const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
 	const [priceMin, setPriceMin] = useState<number | undefined>(undefined);
 	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
 	const [searchTerm, setSearchTerm] = useState('');
 	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
 
+	const { categories } = useTaxonomies();
+
 	useEffect(() => {
 		setPage(1);
-	}, [selectedBrands, selectedCategories, priceMin, priceMax, searchTerm, sortOrder]);
+	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, sortOrder]);
+
+	const toggleCategory = (id: string) => {
+		setSelectedCategories(prev =>
+			prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
+		);
+		// Al cambiar categorías, limpiamos subcategorías para evitar filtros incoherentes.
+		setSelectedSubcategories([]);
+	};
 
 	const {
 		data: products = [],
@@ -28,6 +39,7 @@ export const CellPhonesPage = () => {
 		page,
 		brands: selectedBrands,
 		categories: selectedCategories,
+		subcategories: selectedSubcategories,
 		priceMin,
 		priceMax,
 		searchTerm,
@@ -45,6 +57,38 @@ export const CellPhonesPage = () => {
 					Explorá todos nuestros productos. Filtrá por marca, categoría o precio.
 				</p>
 			</div>
+
+			{/* Barra de categorías */}
+			{categories.length > 0 && (
+				<div className='mb-8 flex flex-wrap justify-center gap-2'>
+					<button
+						onClick={() => {
+							setSelectedCategories([]);
+							setSelectedSubcategories([]);
+						}}
+						className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+							selectedCategories.length === 0
+								? 'bg-brand-600 text-white shadow-soft'
+								: 'bg-ink-100 text-ink-600 hover:bg-ink-200'
+						}`}
+					>
+						Todas
+					</button>
+					{categories.map(cat => (
+						<button
+							key={cat.id}
+							onClick={() => toggleCategory(cat.id)}
+							className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
+								selectedCategories.includes(cat.id)
+									? 'bg-brand-600 text-white shadow-soft'
+									: 'bg-ink-100 text-ink-600 hover:bg-ink-200'
+							}`}
+						>
+							{cat.name}
+						</button>
+					))}
+				</div>
+			)}
 
 			<div className='flex justify-center mb-10'>
 				<div className='relative w-full max-w-2xl'>
@@ -100,6 +144,8 @@ export const CellPhonesPage = () => {
 					selectedBrands={selectedBrands}
 					selectedCategories={selectedCategories}
 					setSelectedCategories={setSelectedCategories}
+					selectedSubcategories={selectedSubcategories}
+					setSelectedSubcategories={setSelectedSubcategories}
 					priceMin={priceMin}
 					priceMax={priceMax}
 					setPriceMin={setPriceMin}

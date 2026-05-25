@@ -8,6 +8,7 @@ export * from './products/useCreateProduct';
 export * from './products/useProduct';
 export * from './products/useDeleteProduct';
 export * from './products/useUpdateProduct';
+export * from './products/useHomeSections';
 
 
 
@@ -39,3 +40,9 @@ export * from './taxonomy/useTaxonomies';
 /*             SETTINGS               */
 /* ********************************** */
 export * from './settings/useFeatureFlag';
+export * from './settings/usePricingConfig';
+
+/* ********************************** */
+/*             DASHBOARD              */
+/* ********************************** */
+export * from './dashboard/useDashboardMetrics';

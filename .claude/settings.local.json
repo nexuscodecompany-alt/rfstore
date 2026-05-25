@@ -23,7 +23,19 @@
       "Bash(curl -s --ssl-no-revoke -X POST https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-sync-products -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw' -H 'Content-Type: application/json' -d '{\"full\": true}' --max-time 580)",
       "Bash(curl -s --ssl-no-revoke -X POST https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-sync-products -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw' -H 'Content-Type: application/json' -d '{\"full\": true}' --max-time 200)",
       "Bash(curl *)",
-      "mcp__claude_ai_Supabase__get_edge_function"
+      "mcp__claude_ai_Supabase__get_edge_function",
+      "PowerShell(npx tsc -b --verbose 2>&1 | Select-Object -Last 60)",
+      "PowerShell(npx tsc -b 2>&1 | Select-Object -Last 40; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx vite build 2>&1 | Select-Object -Last 25; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc -b 2>&1 | Select-Object -Last 20; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc -b 2>&1 | Select-Object -Last 10; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc -b 2>&1 | Select-Object -Last 25; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc -b 2>&1 | Select-Object -Last 30; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(npx tsc -p tsconfig.app.json --noEmit 2>&1 | Select-Object -Last 30; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 30; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 20; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx vite build 2>&1 | Select-Object -Last 12; \"EXIT=$LASTEXITCODE\")",
+      "mcp__claude_ai_Supabase__get_advisors"
     ]
   }
 }

@@ -70,6 +70,7 @@ export const productSchema = z.object({
 		.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido'),
 	brandId: z.string().min(1, 'La marca es obligatoria'),
 	categoryId: z.string().min(1, 'La categoría es obligatoria'),
+	subcategoryId: z.string().optional(),
 	features: z.array(
 		z.object({
 			value: z

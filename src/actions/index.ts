@@ -4,3 +4,6 @@ export * from './order';
 export * from './taxonomy';
 export * from './getFilteredProducts';
 export * from './cdr';
+export * from './pricing';
+export * from './home';
+export * from './legal';

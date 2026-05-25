@@ -7,6 +7,11 @@ import {
     FaPenToSquare,
     FaCloudArrowDown,
     FaMoneyBillTransfer,
+    FaChartLine,
+    FaTags,
+    FaPercent,
+    FaStar,
+    FaScaleBalanced,
 } from 'react-icons/fa6';
 
 export const navbarLinks = [
@@ -55,39 +60,63 @@ export const socialLinks = [
 
 export const dashboardLinks = [
     {
+        id: 0,
+        title: 'Inicio',
+        href: '/dashboard',
+        icon: <FaChartLine size={22} />,
+    },
+    {
         id: 1,
         title: 'Productos',
         href: '/dashboard/productos',
-        icon: <FaBoxOpen size={25} />,
+        icon: <FaBoxOpen size={22} />,
     },
     {
         id: 2,
         title: 'Ordenes',
         href: '/dashboard/ordenes',
-        icon: <FaCartShopping size={25} />,
+        icon: <FaCartShopping size={22} />,
     },
     {
         id: 3,
         title: 'Taxonomías',
         href: '/dashboard/taxonomias',
-        icon: <FaBoxOpen size={25} />,
+        icon: <FaTags size={22} />,
     },
     {
         id: 4,
         title: 'Gestionar Blog',
         href: '/dashboard/blog',
-        icon: <FaPenToSquare size={25} />,
+        icon: <FaPenToSquare size={22} />,
     },
     {
         id: 5,
         title: 'CDR Sync',
         href: '/dashboard/cdr',
-        icon: <FaCloudArrowDown size={25} />,
+        icon: <FaCloudArrowDown size={22} />,
     },
     {
         id: 6,
         title: 'Pagos',
         href: '/dashboard/pagos',
-        icon: <FaMoneyBillTransfer size={25} />,
+        icon: <FaMoneyBillTransfer size={22} />,
+    },
+    {
+        id: 7,
+        title: 'Precios',
+        href: '/dashboard/precios',
+        icon: <FaPercent size={22} />,
+    },
+    {
+        id: 8,
+        title: 'Vitrina Home',
+        href: '/dashboard/vitrina',
+        icon: <FaStar size={22} />,
+    },
+    {
+        id: 9,
+        title: 'Legales',
+        href: '/dashboard/legales',
+        icon: <FaScaleBalanced size={22} />,
     },
 ];

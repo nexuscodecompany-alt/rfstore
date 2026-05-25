@@ -4,8 +4,52 @@ import { supabase } from '../supabase/client';
 // Función para formatear el precio a dólares
 export const formatPrice = (price: number) => {
 	// Formato USD completamente hardcodeado
-	const formatted = price.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+	const formatted = (price ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 	return `USD ${formatted}`;
+};
+
+/* ====================================================================== */
+/*  PRECIOS: margen por tramo (sobre el costo) + IVA -> precio de venta   */
+/* ====================================================================== */
+export interface PricingTier {
+	// Tramo aplica cuando el costo es < max. max=null => "en adelante".
+	max: number | null;
+	pct: number;
+}
+
+export interface PricingConfig {
+	iva_percent: number;
+	tiers: PricingTier[];
+}
+
+// Debe coincidir con la función SQL public.rf_sale_price y el default en app_settings.
+export const DEFAULT_PRICING: PricingConfig = {
+	iva_percent: 22,
+	tiers: [
+		{ max: 50, pct: 30 },
+		{ max: 100, pct: 20 },
+		{ max: null, pct: 15 },
+	],
+};
+
+// Devuelve el margen (%) que corresponde a un costo dado.
+export const marginForCost = (cost: number, cfg: PricingConfig): number => {
+	for (const tier of cfg.tiers) {
+		if (tier.max === null) return tier.pct;
+		if (cost < tier.max) return tier.pct;
+	}
+	return 0;
+};
+
+// Costo (sin IVA) -> precio final de venta (margen por tramo + IVA), redondeado a 2.
+export const salePrice = (
+	cost: number | null | undefined,
+	cfg: PricingConfig = DEFAULT_PRICING
+): number => {
+	if (cost === null || cost === undefined || isNaN(cost)) return 0;
+	const pct = marginForCost(cost, cfg);
+	const final = cost * (1 + pct / 100) * (1 + cfg.iva_percent / 100);
+	return Math.round(final * 100) / 100;
 };
 
 // Función para preparar los productos - (CELULARES)
@@ -90,6 +134,41 @@ export const getStatus = (status: string): string => {
 		default:
 			return status;
 	}
+};
+
+// Estilos de badge según el estado de la orden (panel admin)
+export const orderStatusBadge = (status: string): string => {
+	switch (status) {
+		case 'Concretado':
+			return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
+		case 'Cancelado':
+			return 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
+		case 'Modificado':
+			return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200';
+		case 'Cotización':
+			return 'bg-brand-50 text-brand-700 ring-1 ring-brand-200';
+		default:
+			return 'bg-ink-100 text-ink-700 ring-1 ring-ink-200';
+	}
+};
+
+export const orderStatusOptions = [
+	'Cotización',
+	'Concretado',
+	'Modificado',
+	'Cancelado',
+];
+
+// Función para formatear fecha y hora: 4 may 2026, 17:32
+export const formatDateTime = (date: string): string => {
+	const d = new Date(date);
+	return d.toLocaleString('es-UY', {
+		day: '2-digit',
+		month: 'short',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+	});
 };
 
 // Función para generar el slug de un producto

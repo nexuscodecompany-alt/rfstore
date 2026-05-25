@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { HiOutlineAdjustmentsHorizontal } from 'react-icons/hi2';
 import { useTaxonomies } from '../../hooks';
 
@@ -7,49 +7,132 @@ interface Props {
 	setSelectedBrands: (brands: string[]) => void;
 	selectedCategories: string[];
 	setSelectedCategories: (categories: string[]) => void;
+	selectedSubcategories: string[];
+	setSelectedSubcategories: (subs: string[]) => void;
 	priceMin?: number;
 	priceMax?: number;
 	setPriceMin: (v?: number) => void;
 	setPriceMax: (v?: number) => void;
 }
 
+const VISIBLE = 6;
+
+interface Option {
+	id: string;
+	name: string;
+}
+
+/* Bloque de checkboxes con "Ver más / Ver menos" */
+const CheckboxBlock = ({
+	title,
+	options,
+	selected,
+	onToggle,
+	emptyHint,
+}: {
+	title: string;
+	options: Option[];
+	selected: string[];
+	onToggle: (id: string) => void;
+	emptyHint?: string;
+}) => {
+	const [showAll, setShowAll] = useState(false);
+	const visible = showAll ? options : options.slice(0, VISIBLE);
+
+	return (
+		<div className='flex flex-col gap-2.5'>
+			<h4 className='text-xs font-bold uppercase tracking-wider text-ink-500'>
+				{title}
+			</h4>
+
+			{options.length === 0 ? (
+				<p className='text-xs text-ink-400'>{emptyHint ?? 'Sin opciones.'}</p>
+			) : (
+				<>
+					<div className='flex flex-col gap-2'>
+						{visible.map(opt => (
+							<label
+								key={opt.id}
+								className='inline-flex items-center gap-2.5 cursor-pointer group'
+							>
+								<input
+									type='checkbox'
+									className='w-4 h-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600/30 focus:ring-2 accent-brand-600 cursor-pointer'
+									checked={selected.includes(opt.id)}
+									onChange={() => onToggle(opt.id)}
+								/>
+								<span className='text-sm text-ink-700 group-hover:text-ink-900 transition-colors'>
+									{opt.name}
+								</span>
+							</label>
+						))}
+					</div>
+
+					{options.length > VISIBLE && (
+						<button
+							onClick={() => setShowAll(s => !s)}
+							className='self-start text-xs font-semibold text-brand-700 hover:text-brand-900'
+						>
+							{showAll ? 'Ver menos' : `Ver más (${options.length - VISIBLE})`}
+						</button>
+					)}
+				</>
+			)}
+		</div>
+	);
+};
+
 export const ContainerFilter = ({
 	selectedBrands,
 	setSelectedBrands,
 	selectedCategories,
 	setSelectedCategories,
+	selectedSubcategories,
+	setSelectedSubcategories,
 	priceMin,
 	priceMax,
 	setPriceMin,
 	setPriceMax,
 }: Props) => {
-	const { brands, categories } = useTaxonomies();
+	const { brands, categories, subcategories } = useTaxonomies();
 	const [localMin, setLocalMin] = useState<string>(priceMin?.toString() || '');
 	const [localMax, setLocalMax] = useState<string>(priceMax?.toString() || '');
-
-	useEffect(() => {
-		setPriceMin(localMin === '' ? undefined : Number(localMin));
-	}, [localMin, setPriceMin]);
-	useEffect(() => {
-		setPriceMax(localMax === '' ? undefined : Number(localMax));
-	}, [localMax, setPriceMax]);
 
 	const toggle = (list: string[], setList: (v: string[]) => void, id: string) => {
 		if (list.includes(id)) setList(list.filter(b => b !== id));
 		else setList([...list, id]);
 	};
 
+	// Subcategorías visibles: si hay categorías seleccionadas, sólo las de esas categorías.
+	const visibleSubcategories =
+		selectedCategories.length > 0
+			? subcategories.filter(s => selectedCategories.includes(s.category_id))
+			: subcategories;
+
+	const applyMin = (v: string) => {
+		setLocalMin(v);
+		setPriceMin(v === '' ? undefined : Number(v));
+	};
+	const applyMax = (v: string) => {
+		setLocalMax(v);
+		setPriceMax(v === '' ? undefined : Number(v));
+	};
+
 	const totalActive =
 		selectedBrands.length +
 		selectedCategories.length +
+		selectedSubcategories.length +
 		(priceMin !== undefined ? 1 : 0) +
 		(priceMax !== undefined ? 1 : 0);
 
 	const clearAll = () => {
 		setSelectedBrands([]);
 		setSelectedCategories([]);
+		setSelectedSubcategories([]);
 		setLocalMin('');
 		setLocalMax('');
+		setPriceMin(undefined);
+		setPriceMax(undefined);
 	};
 
 	return (
@@ -75,63 +158,57 @@ export const ContainerFilter = ({
 			</div>
 
 			<div className='flex flex-col gap-6'>
-				<div className='flex flex-col gap-2.5'>
-					<h4 className='text-xs font-bold uppercase tracking-wider text-ink-500'>Marcas</h4>
-					<div className='flex flex-col gap-2'>
-						{brands.map(brand => (
-							<label
-								key={brand.id}
-								className='inline-flex items-center gap-2.5 cursor-pointer group'
-							>
-								<input
-									type='checkbox'
-									className='w-4 h-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600/30 focus:ring-2 accent-brand-600 cursor-pointer'
-									checked={selectedBrands.includes(brand.id)}
-									onChange={() => toggle(selectedBrands, setSelectedBrands, brand.id)}
-								/>
-								<span className='text-sm text-ink-700 group-hover:text-ink-900 transition-colors'>
-									{brand.name}
-								</span>
-							</label>
-						))}
-					</div>
-				</div>
+				{/* 1. Categorías */}
+				<CheckboxBlock
+					title='Categorías'
+					options={categories.map(c => ({ id: c.id, name: c.name }))}
+					selected={selectedCategories}
+					onToggle={id =>
+						toggle(selectedCategories, setSelectedCategories, id)
+					}
+				/>
 
 				<div className='h-px bg-ink-100' />
 
-				<div className='flex flex-col gap-2.5'>
-					<h4 className='text-xs font-bold uppercase tracking-wider text-ink-500'>Categorías</h4>
-					<div className='flex flex-col gap-2'>
-						{categories.map(category => (
-							<label
-								key={category.id}
-								className='inline-flex items-center gap-2.5 cursor-pointer group'
-							>
-								<input
-									type='checkbox'
-									className='w-4 h-4 rounded border-ink-300 text-brand-600 focus:ring-brand-600/30 focus:ring-2 accent-brand-600 cursor-pointer'
-									checked={selectedCategories.includes(category.id)}
-									onChange={() => toggle(selectedCategories, setSelectedCategories, category.id)}
-								/>
-								<span className='text-sm text-ink-700 group-hover:text-ink-900 transition-colors'>
-									{category.name}
-								</span>
-							</label>
-						))}
-					</div>
-				</div>
+				{/* 2. Subcategorías */}
+				<CheckboxBlock
+					title='Subcategorías'
+					options={visibleSubcategories.map(s => ({ id: s.id, name: s.name }))}
+					selected={selectedSubcategories}
+					onToggle={id =>
+						toggle(selectedSubcategories, setSelectedSubcategories, id)
+					}
+					emptyHint={
+						selectedCategories.length > 0
+							? 'Esta categoría no tiene subcategorías.'
+							: 'Elegí una categoría para ver sus subcategorías.'
+					}
+				/>
 
 				<div className='h-px bg-ink-100' />
 
+				{/* 3. Marcas */}
+				<CheckboxBlock
+					title='Marcas'
+					options={brands.map(b => ({ id: b.id, name: b.name }))}
+					selected={selectedBrands}
+					onToggle={id => toggle(selectedBrands, setSelectedBrands, id)}
+				/>
+
+				<div className='h-px bg-ink-100' />
+
+				{/* 4. Precio */}
 				<div className='flex flex-col gap-2.5'>
-					<h4 className='text-xs font-bold uppercase tracking-wider text-ink-500'>Precio</h4>
+					<h4 className='text-xs font-bold uppercase tracking-wider text-ink-500'>
+						Precio
+					</h4>
 					<div className='flex items-center gap-2'>
 						<input
 							type='number'
 							className='w-full px-3 py-2 text-sm bg-white border border-ink-200 rounded-lg placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-brand-600/20 focus:border-brand-600 transition-all'
 							placeholder='Mín'
 							value={localMin}
-							onChange={e => setLocalMin(e.target.value)}
+							onChange={e => applyMin(e.target.value)}
 						/>
 						<span className='text-ink-400 text-sm'>—</span>
 						<input
@@ -139,7 +216,7 @@ export const ContainerFilter = ({
 							className='w-full px-3 py-2 text-sm bg-white border border-ink-200 rounded-lg placeholder:text-ink-400 focus:outline-none focus:ring-2 focus:ring-brand-600/20 focus:border-brand-600 transition-all'
 							placeholder='Máx'
 							value={localMax}
-							onChange={e => setLocalMax(e.target.value)}
+							onChange={e => applyMax(e.target.value)}
 						/>
 					</div>
 				</div>

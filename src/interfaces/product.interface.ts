@@ -37,6 +37,7 @@ export interface Product {
 	variants: VariantProduct[];
 	brand_id: string;
 	category_id: string;
+	subcategory_id?: string | null;
 	brand?: ProductBrand | null;
 	category?: ProductCategory | null;
 	source?: 'local' | 'cdr';
@@ -74,6 +75,7 @@ export interface ProductInput {
 	variants: VariantInput[];
 	brandId: string;
 	categoryId: string;
+	subcategoryId?: string | null;
 }
 
 export interface VariantInput {

@@ -1,6 +1,7 @@
 import { LuMinus, LuPlus } from "react-icons/lu";
 import { Separator } from "../components/shared/Separator";
-import { formatPrice, prepareProducts } from "../helpers";
+import { formatPrice, prepareProducts, salePrice } from "../helpers";
+import { usePricingConfig } from "../hooks";
 import { CiDeliveryTruck } from "react-icons/ci";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { BsChatLeftText } from "react-icons/bs";
@@ -46,6 +47,7 @@ export const CellPhonePage = () => {
   const decrement = useCounterStore((state) => state.decrement);
 
   const addItem = useCartStore((state) => state.addItem);
+  const pricing = usePricingConfig();
 
   const navigate = useNavigate();
 
@@ -110,7 +112,7 @@ export const CellPhonePage = () => {
         image: product?.images[0] || "",
         color: selectedVariant.color_name,
         storage: selectedVariant.storage,
-        price: selectedVariant.price,
+        price: salePrice(selectedVariant.price, pricing),
         quantity: count,
         source: (product?.source as 'local' | 'cdr') || 'local',
         externalCode: product?.external_code ?? null,
@@ -131,7 +133,7 @@ export const CellPhonePage = () => {
         image: product?.images[0] || "",
         color: selectedVariant.color_name,
         storage: selectedVariant.storage,
-        price: selectedVariant.price,
+        price: salePrice(selectedVariant.price, pricing),
         quantity: count,
         source: (product?.source as 'local' | 'cdr') || 'local',
         externalCode: product?.external_code ?? null,
@@ -172,9 +174,14 @@ export const CellPhonePage = () => {
           <div className="flex items-center gap-5">
             <span className="text-lg font-semibold tracking-wide">
               {formatPrice(
-                selectedVariant?.price || product.variants[0]?.price
+                salePrice(
+                  selectedVariant?.price ?? product.variants[0]?.price,
+                  pricing
+                )
               )}{" "}
-              + IVA
+              <span className="text-xs font-medium text-ink-500">
+                IVA incluido
+              </span>
             </span>
 
             <div className="relative">

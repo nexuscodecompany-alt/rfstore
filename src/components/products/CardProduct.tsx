@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { FiPlus } from 'react-icons/fi';
 import { Link } from 'react-router-dom';
 import { VariantProduct } from '../../interfaces';
-import { formatPrice } from '../../helpers';
+import { formatPrice, salePrice } from '../../helpers';
 import { Tag } from '../shared/Tag';
 import { useCartStore } from '../../store/cart.store';
-import { usePaymentsEnabled } from '../../hooks';
+import { usePaymentsEnabled, usePricingConfig } from '../../hooks';
 import toast from 'react-hot-toast';
 
 interface Props {
@@ -40,10 +40,16 @@ export const CardProduct = ({
 
 	const addItem = useCartStore(state => state.addItem);
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
+	const pricing = usePricingConfig();
 
 	const selectedVariant = variants.find(
 		variant => variant.color === activeColor.color
 	);
+
+	// Precio de venta final (margen + IVA). "Desde" = mínimo entre variantes.
+	const displayPrice = variants.length
+		? Math.min(...variants.map(v => salePrice(v.price, pricing)))
+		: salePrice(price, pricing);
 
 	const stock = selectedVariant?.stock || 0;
 	const isOutOfStock = stock === 0;
@@ -60,7 +66,7 @@ export const CardProduct = ({
 				image: img,
 				color: activeColor.name,
 				storage: selectedVariant.storage,
-				price: selectedVariant.price,
+				price: salePrice(selectedVariant.price, pricing),
 				quantity: 1,
 				source: source ?? 'local',
 				externalCode: externalCode ?? null,
@@ -132,9 +138,11 @@ export const CardProduct = ({
 
 				<div className='flex items-baseline gap-1.5 pt-1'>
 					<p className='text-base font-bold text-ink-900'>
-						{formatPrice(price)}
+						{formatPrice(displayPrice)}
 					</p>
-					<span className='text-[10px] text-ink-500 font-medium'>+ IVA</span>
+					<span className='text-[10px] text-ink-500 font-medium'>
+						IVA incluido
+					</span>
 				</div>
 
 				{colors.length > 0 && (

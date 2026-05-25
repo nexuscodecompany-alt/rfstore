@@ -5,19 +5,20 @@ import { FeatureGrid } from '../components/home/FeatureGrid';
 import { Brands } from '../components/home/Brands';
 import WhatsAppButton from '../components/shared/WhatsAppButton';
 import { prepareProducts } from '../helpers';
-import { useHomeProducts } from '../hooks';
+import { useHomeSections } from '../hooks';
 
 export const HomePage = () => {
-	const { popularProducts, recentProducts, isLoading, isError } = useHomeProducts();
-	const preparedPopular = prepareProducts(popularProducts);
-	const preparedRecent = prepareProducts(recentProducts);
+	const { featured, recent, popular, isLoading, isError } = useHomeSections();
+	const preparedFeatured = prepareProducts(featured);
+	const preparedRecent = prepareProducts(recent);
+	const preparedPopular = prepareProducts(popular);
 
 	return (
 		<div>
 			<FeatureGrid />
 
-			{!isLoading && !isError && preparedPopular.length > 0 && (
-				<ProductGrid title='Productos Destacados' products={preparedPopular} />
+			{!isLoading && !isError && preparedFeatured.length > 0 && (
+				<ProductGrid title='Productos Destacados' products={preparedFeatured} />
 			)}
 
 			<Brands />
@@ -64,10 +65,7 @@ export const HomePage = () => {
 			</section>
 
 			{!isLoading && !isError && preparedPopular.length > 0 && (
-				<ProductGrid
-					title='Más Populares'
-					products={[...preparedPopular].reverse()}
-				/>
+				<ProductGrid title='Más Populares' products={preparedPopular} />
 			)}
 
 			<WhatsAppButton />

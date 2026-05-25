@@ -71,14 +71,14 @@ export const TableProduct = () => {
 
   if (!products || products.length === 0) {
     return (
-      <div className="flex flex-col flex-1 border border-gray-200 rounded-lg p-5 bg-white items-center justify-center gap-2">
-        <h2 className="font-semibold text-lg">No hay productos</h2>
-        <p className="text-sm text-gray-500">
+      <div className="flex flex-col flex-1 border border-ink-200/70 rounded-2xl p-8 bg-white shadow-soft items-center justify-center gap-2">
+        <h2 className="font-semibold text-lg text-ink-900">No hay productos</h2>
+        <p className="text-sm text-ink-500">
           Agrega tu primer producto para verlo aquí.
         </p>
         <Link
           to="/dashboard/productos/new"
-          className="bg-black text-white py-[6px] px-2 rounded-md text-sm font-semibold"
+          className="mt-2 bg-brand-600 text-white py-2 px-4 rounded-full text-sm font-semibold hover:bg-brand-700 transition-all"
         >
           Agregar Producto
         </Link>
@@ -87,13 +87,7 @@ export const TableProduct = () => {
   }
 
   return (
-    <div className="flex flex-col flex-1 border border-gray-200 rounded-lg p-5 bg-white">
-      <h1 className="font-bold text-xl">Productos</h1>
-
-      <p className="text-sm mt-1 mb-8 font-regular text-gray-500">
-        Gestiona tus productos y mira las estadísticas de tus ventas
-      </p>
-
+    <div className="flex flex-col flex-1 border border-ink-200/70 rounded-2xl p-5 bg-white shadow-soft">
       <div className="mb-6">
         <div className="relative max-w-md">
           <input
@@ -101,7 +95,7 @@ export const TableProduct = () => {
             placeholder="Buscar productos por nombre, slug, marca o categoría..."
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            className="w-full px-4 py-2 pl-10 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
+            className="w-full px-4 py-2 pl-10 border border-ink-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent"
           />
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <svg

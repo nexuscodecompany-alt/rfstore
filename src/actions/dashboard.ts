@@ -1,0 +1,106 @@
+import { supabase } from '../supabase/client';
+
+// El cliente está tipado con los tipos generados de tablas, que no incluyen
+// estas funciones RPC nuevas. Usamos un acceso laxo solo para las llamadas rpc.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const rpc = (name: string, args: Record<string, unknown>) =>
+	(supabase as any).rpc(name, args);
+
+export interface StatusBreakdownItem {
+	status: string;
+	count: number;
+	amount: number;
+}
+
+export interface DashboardOverview {
+	orders_in_period: number;
+	revenue_period: number;
+	avg_order_value: number;
+	orders_total: number;
+	status_breakdown: StatusBreakdownItem[];
+	concretado_count: number;
+	customers_new_period: number;
+	customers_total: number;
+	products_total: number;
+	products_local: number;
+	products_cdr: number;
+	stock_units: number;
+	variants_out_of_stock: number;
+	variants_low_stock: number;
+	inventory_value: number;
+	brands_total: number;
+	categories_total: number;
+	prev_revenue_period: number;
+	prev_orders_in_period: number;
+}
+
+export interface TopProduct {
+	product_id: string;
+	name: string;
+	image: string | null;
+	units: number;
+	revenue: number;
+}
+
+export interface TopBrand {
+	name: string;
+	products: number;
+}
+
+export interface SalesPoint {
+	day: string;
+	orders: number;
+	amount: number;
+}
+
+export interface DashboardData {
+	overview: DashboardOverview;
+	topProducts: TopProduct[];
+	bottomProducts: TopProduct[];
+	topBrands: TopBrand[];
+	timeseries: SalesPoint[];
+}
+
+export const getDashboardData = async (
+	from: string,
+	to: string
+): Promise<DashboardData> => {
+	const [overviewRes, topRes, bottomRes, brandsRes, seriesRes] =
+		await Promise.all([
+			rpc('dashboard_overview', { p_from: from, p_to: to }),
+			rpc('dashboard_top_products', {
+				p_from: from,
+				p_to: to,
+				p_limit: 5,
+				p_direction: 'top',
+			}),
+			rpc('dashboard_top_products', {
+				p_from: from,
+				p_to: to,
+				p_limit: 5,
+				p_direction: 'bottom',
+			}),
+			rpc('dashboard_top_brands', { p_limit: 6 }),
+			rpc('dashboard_sales_timeseries', { p_from: from, p_to: to }),
+		]);
+
+	const firstError =
+		overviewRes.error ||
+		topRes.error ||
+		bottomRes.error ||
+		brandsRes.error ||
+		seriesRes.error;
+
+	if (firstError) {
+		console.error('getDashboardData:', firstError);
+		throw new Error(firstError.message);
+	}
+
+	return {
+		overview: overviewRes.data as DashboardOverview,
+		topProducts: (topRes.data ?? []) as TopProduct[],
+		bottomProducts: (bottomRes.data ?? []) as TopProduct[],
+		topBrands: (brandsRes.data ?? []) as TopBrand[],
+		timeseries: (seriesRes.data ?? []) as SalesPoint[],
+	};
+};

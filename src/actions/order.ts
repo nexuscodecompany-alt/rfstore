@@ -2,122 +2,33 @@ import { OrderInput } from '../interfaces';
 import { supabase } from '../supabase/client';
 
 export const createOrder = async (order: OrderInput) => {
-	// 1. Obtener el usuario autenticado + Cliente de tabla customer
-	const { data, error: errorUser } = await supabase.auth.getUser();
-
-	if (errorUser) {
-		console.log(errorUser);
-		throw new Error('No se pudo obtener el usuario');
-	}
-
-	if (!data.user) {
-		throw new Error('Usuario no autenticado');
-	}
-
-	const userId = data.user.id;
-
-	const { data: customer, error: errorCustomer } = await supabase
-		.from('customers')
-		.select('id')
-		.eq('user_id', userId)
-		.single();
-
-	if (errorCustomer) {
-		console.log(errorCustomer);
-		throw new Error('No se pudo obtener el cliente');
-	}
-
-	// 2. Verificar que haya stock suficiente para cada variante en el carrito
-	for (const item of order.cartItems) {
-		const { data: variantData, error: variantError } = await supabase
-			.from('variants')
-			.select('stock')
-			.eq('id', item.variantId)
-			.single();
-
-		if (variantError) {
-			console.log(variantError);
-			throw new Error('No se pudo obtener la variante');
-		}
-
-		if (!variantData) throw new Error('Variante no encontrada');
-
-		if (variantData.stock < item.quantity)
-			throw new Error('Stock insuficiente');
-	}
-
-	// 3. Guardar la dirección del envío
-	const { data: addressData, error: addressError } = await supabase
-		.from('addresses')
-		.insert({
+	// La creación de la orden (validación de stock, dirección, items y descuento
+	// de stock) se hace de forma atómica en el servidor vía la función place_order,
+	// que corre con privilegios y resuelve el cliente a partir del usuario autenticado.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { data, error } = await (supabase as any).rpc('place_order', {
+		p_items: order.cartItems.map(item => ({
+			variant_id: item.variantId,
+			quantity: item.quantity,
+			price: item.price,
+		})),
+		p_total: order.totalAmount,
+		p_address: {
 			address_line1: order.address.addressLine1,
-			address_line2: order.address.addressLine2,
+			address_line2: order.address.addressLine2 ?? null,
 			city: order.address.city,
 			state: order.address.state,
-			postal_code: order.address.postalCode,
+			postal_code: order.address.postalCode ?? null,
 			country: order.address.country,
-			customer_id: customer.id,
-		})
-		.select()
-		.single();
+		},
+	});
 
-	if (addressError) throw new Error(addressError.message);
-
-	// 4. Crear la orden
-	const { data: orderData, error: orderError } = await supabase
-		.from('orders')
-		.insert({
-			customer_id: customer.id,
-			address_id: addressData.id,
-			total_amount: order.totalAmount,
-			status: 'Cotización',
-		})
-		.select()
-		.single();
-
-	if (orderError) throw new Error(orderError.message);
-
-	// 5. Crear los order items
-	const orderItems = order.cartItems.map(item => ({
-		order_id: orderData.id,
-		variant_id: item.variantId,
-		price: item.price,
-		quantity: item.quantity,
-	}));
-
-	const { error: orderItemsError } = await supabase
-		.from('order_items')
-		.insert(orderItems);
-
-	if (orderItemsError) throw new Error(orderItemsError.message);
-
-	// 6. Reducir el stock de cada variante
-	for (const item of order.cartItems) {
-		// Obtener el stock actual
-		const { data: variantData } = await supabase
-			.from('variants')
-			.select('stock')
-			.eq('id', item.variantId)
-			.single();
-
-		if (!variantData) continue;
-
-		const newStock = variantData.stock - item.quantity;
-
-		const { error: updatedStockError } = await supabase
-			.from('variants')
-			.update({
-				stock: newStock,
-			})
-			.eq('id', item.variantId);
-
-		if (updatedStockError) {
-			console.log(updatedStockError);
-			throw new Error(`No se pudo actualizar el stock de la variante`);
-		}
+	if (error) {
+		console.log(error);
+		throw new Error(error.message || 'No se pudo crear la orden');
 	}
 
-	return orderData;
+	return { id: data as number };
 };
 
 export const getOrdersByCustomerId = async () => {

@@ -9,7 +9,13 @@ export const DashboardOrdersPage = () => {
 
 	return (
 		<div className='space-y-5'>
-			<h1 className='text-2xl font-bold'>Órdenes</h1>
+			<div>
+				<h1 className='text-2xl font-bold text-ink-900'>Órdenes</h1>
+				<p className='text-sm text-ink-500'>
+					{data.length}{' '}
+					{data.length === 1 ? 'pedido registrado' : 'pedidos registrados'}
+				</p>
+			</div>
 
 			<TableOrdersAdmin orders={data} />
 		</div>

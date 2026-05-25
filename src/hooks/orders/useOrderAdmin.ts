@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { getOrderById } from '../../actions';
+import { getOrderByIdAdmin } from '../../actions';
 
 export const useOrderAdmin = (id: number) => {
-	const { data, isLoading } = useQuery({
+	const { data, isLoading, isError, error } = useQuery({
 		queryKey: ['order', 'admin', id],
-		queryFn: () => getOrderById(id),
+		queryFn: () => getOrderByIdAdmin(id),
 		enabled: !!id,
 		retry: false,
 	});
@@ -12,5 +12,7 @@ export const useOrderAdmin = (id: number) => {
 	return {
 		data,
 		isLoading,
+		isError,
+		error,
 	};
 };

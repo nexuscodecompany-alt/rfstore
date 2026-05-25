@@ -35,6 +35,7 @@ const initialState: ProductFormValues = {
   slug: "",
   brandId: "",
   categoryId: "",
+  subcategoryId: "",
   features: [{ value: "" }],
   description: {} as JSONContent,
   images: [],
@@ -103,8 +104,13 @@ export const FormProduct = ({ titleForm }: Props) => {
   const { mutate: createProduct, isPending } = useCreateProduct();
   const { mutate: updateProduct, isPending: isUpdatePending } =
     useUpdateProduct(product?.id || "");
-  const { brands, categories } = useTaxonomies();
+  const { brands, categories, subcategories } = useTaxonomies();
   const navigate = useNavigate();
+
+  const watchCategory = watch("categoryId");
+  const filteredSubcategories = subcategories.filter(
+    (s) => s.category_id === watchCategory
+  );
 
   // Carga los datos del producto cuando se está en modo "edición"
   useEffect(() => {
@@ -116,6 +122,7 @@ export const FormProduct = ({ titleForm }: Props) => {
         // Forzamos string (en la BD pueden venir null)
         brandId: product.brand_id ?? "",
         categoryId: product.category_id ?? "",
+        subcategoryId: (product as any).subcategory_id ?? "",
 
         // El form espera [{ value: string }]
         features: (product.features ?? []).map((f: any) => ({
@@ -156,6 +163,7 @@ export const FormProduct = ({ titleForm }: Props) => {
       features,
       brandId: data.brandId,
       categoryId: data.categoryId,
+      subcategoryId: data.subcategoryId || null,
     };
 
     if (slug) {
@@ -164,7 +172,7 @@ export const FormProduct = ({ titleForm }: Props) => {
       createProduct(submissionData, {
         onSuccess: () => {
           resetForm();
-          navigate("/dashboard/products");
+          navigate("/dashboard/productos");
         },
       });
     }
@@ -267,6 +275,30 @@ export const FormProduct = ({ titleForm }: Props) => {
                 {errors.categoryId.message as string}
               </p>
             )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-medium">
+              Subcategoría{" "}
+              <span className="text-xs font-normal text-gray-400">
+                (opcional)
+              </span>
+            </label>
+            <select
+              className="p-2 border border-gray-300 rounded-md disabled:bg-gray-100 disabled:cursor-not-allowed"
+              disabled={!watchCategory}
+              {...register("subcategoryId")}
+            >
+              <option value="">
+                {watchCategory
+                  ? "Sin subcategoría"
+                  : "Elegí primero una categoría"}
+              </option>
+              {filteredSubcategories.map((sub) => (
+                <option key={sub.id} value={sub.id}>
+                  {sub.name}
+                </option>
+              ))}
+            </select>
           </div>
         </SectionFormProduct>
 

@@ -126,6 +126,7 @@ export const createProduct = async (productInput: ProductInput) => {
                 images: [],
                 brand_id: productInput.brandId,
                 category_id: productInput.categoryId,
+                subcategory_id: productInput.subcategoryId || null,
             })
             .select()
             .single();
@@ -287,6 +288,7 @@ export const updateProduct = async (
             description: productInput.description,
             brand_id: productInput.brandId,
             category_id: productInput.categoryId,
+            subcategory_id: productInput.subcategoryId || null,
         })
         .eq('id', productId)
         .select()

@@ -23,6 +23,11 @@ import {
     DashboardTaxonomiesPage,
     DashboardCdrSyncPage,
     DashboardPaymentsPage,
+    DashboardHomePage,
+    DashboardPricingPage,
+    DashboardHomeSectionsPage,
+    DashboardLegalPage,
+    LegalPage,
 } from '../pages';
 import { ClientLayout } from '../layouts/ClientLayout';
 import { DashboardLayout } from '../layouts/DashboardLayout';
@@ -58,6 +63,12 @@ export const router = createBrowserRouter([
              {
                 path: 'blog/:slug', // Esta es la ruta PÚBLICA para que los clientes vean el blog
                 element: <PostDetailPage />,
+            },
+
+            // --- Páginas legales (Términos, Privacidad, etc.) ---
+            {
+                path: 'legal/:slug',
+                element: <LegalPage />,
             },
 
 
@@ -106,7 +117,7 @@ export const router = createBrowserRouter([
         children: [
             {
                 index: true,
-                element: <Navigate to='/dashboard/productos' replace />,
+                element: <DashboardHomePage />,
             },
             {
                 path: 'productos',
@@ -152,6 +163,18 @@ export const router = createBrowserRouter([
             {
                 path: 'pagos',
                 element: <DashboardPaymentsPage />,
+            },
+            {
+                path: 'precios',
+                element: <DashboardPricingPage />,
+            },
+            {
+                path: 'vitrina',
+                element: <DashboardHomeSectionsPage />,
+            },
+            {
+                path: 'legales',
+                element: <DashboardLegalPage />,
             },
         ],
     },
