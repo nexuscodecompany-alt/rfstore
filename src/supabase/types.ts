@@ -329,6 +329,7 @@ export type Database = {
       }
       products: {
         Row: {
+          active: boolean
           brand_id: string
           category_id: string | null
           created_at: string
@@ -347,6 +348,7 @@ export type Database = {
           subcategory_id: string | null
         }
         Insert: {
+          active?: boolean
           brand_id: string
           category_id?: string | null
           created_at?: string
@@ -365,6 +367,7 @@ export type Database = {
           subcategory_id?: string | null
         }
         Update: {
+          active?: boolean
           brand_id?: string
           category_id?: string | null
           created_at?: string

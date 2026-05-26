@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HiOutlineAdjustmentsHorizontal } from 'react-icons/hi2';
-import { useTaxonomies } from '../../hooks';
+import { useBrandsByCategories, useTaxonomies } from '../../hooks';
 
 interface Props {
 	selectedBrands: string[];
@@ -95,8 +95,27 @@ export const ContainerFilter = ({
 	setPriceMax,
 }: Props) => {
 	const { brands, categories, subcategories } = useTaxonomies();
+	const { data: availableBrandIds } = useBrandsByCategories(
+		selectedCategories,
+		selectedSubcategories
+	);
 	const [localMin, setLocalMin] = useState<string>(priceMin?.toString() || '');
 	const [localMax, setLocalMax] = useState<string>(priceMax?.toString() || '');
+
+	// Si hay categorías seleccionadas, mostramos sólo las marcas que tienen
+	// productos en ellas (evita marcas vacías). Mientras carga, mostramos todas.
+	const visibleBrands =
+		selectedCategories.length > 0 && availableBrandIds
+			? brands.filter(b => availableBrandIds.includes(b.id))
+			: brands;
+
+	// Quitamos de la selección las marcas que ya no aplican a la categoría elegida,
+	// para que el listado de productos no quede filtrado por una marca oculta.
+	useEffect(() => {
+		if (selectedCategories.length === 0 || !availableBrandIds) return;
+		const pruned = selectedBrands.filter(id => availableBrandIds.includes(id));
+		if (pruned.length !== selectedBrands.length) setSelectedBrands(pruned);
+	}, [availableBrandIds, selectedCategories, selectedBrands, setSelectedBrands]);
 
 	const toggle = (list: string[], setList: (v: string[]) => void, id: string) => {
 		if (list.includes(id)) setList(list.filter(b => b !== id));
@@ -190,9 +209,14 @@ export const ContainerFilter = ({
 				{/* 3. Marcas */}
 				<CheckboxBlock
 					title='Marcas'
-					options={brands.map(b => ({ id: b.id, name: b.name }))}
+					options={visibleBrands.map(b => ({ id: b.id, name: b.name }))}
 					selected={selectedBrands}
 					onToggle={id => toggle(selectedBrands, setSelectedBrands, id)}
+					emptyHint={
+						selectedCategories.length > 0
+							? 'No hay marcas con productos en esta categoría.'
+							: 'Sin marcas.'
+					}
 				/>
 
 				<div className='h-px bg-ink-100' />

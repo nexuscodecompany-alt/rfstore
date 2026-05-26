@@ -35,7 +35,10 @@
       "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 30; \"TSC_EXIT=$LASTEXITCODE\")",
       "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 20; \"TSC_EXIT=$LASTEXITCODE\")",
       "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx vite build 2>&1 | Select-Object -Last 12; \"EXIT=$LASTEXITCODE\")",
-      "mcp__claude_ai_Supabase__get_advisors"
+      "mcp__claude_ai_Supabase__get_advisors",
+      "Bash(ls supabase/migrations)",
+      "Bash(ls supabase *)",
+      "Bash(node -e \"console.log\\(new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(1121.5\\), '|', new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(9.15\\), '|', new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(73.2\\)\\)\")"
     ]
   }
 }

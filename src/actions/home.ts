@@ -1,6 +1,10 @@
 import { supabase } from '../supabase/client';
 import type { Product } from '../interfaces';
-import { getRandomProducts, getRecentProducts } from './product';
+import {
+	getRandomProducts,
+	getRecentProducts,
+	hideOutOfStockCdrProducts,
+} from './product';
 
 export type HomeSectionKey = 'home_featured' | 'home_recent' | 'home_popular';
 
@@ -44,9 +48,11 @@ export const getProductsByIds = async (ids: string[]): Promise<Product[]> => {
 	const { data, error } = await supabase
 		.from('products')
 		.select('*, variants(*), brand:brands(*), category:categories(*)')
+		.eq('active', true)
 		.in('id', ids);
 	if (error) throw new Error(error.message);
-	const map = new Map((data ?? []).map(p => [p.id, p]));
+	const visible = hideOutOfStockCdrProducts(data ?? []);
+	const map = new Map(visible.map(p => [p.id, p]));
 	return ids
 		.map(id => map.get(id))
 		.filter(Boolean) as unknown as Product[];

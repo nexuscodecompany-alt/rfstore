@@ -2,6 +2,26 @@ import { extractFilePath } from '../helpers';
 import { ProductInput } from '../interfaces';
 import { supabase } from '../supabase/client';
 
+// Regla de negocio: los productos sincronizados de CDR sin stock NO se muestran
+// en la web. (Los productos locales/manuales se muestran siempre, aunque tengan
+// stock 0.) Se aplica a las consultas que van directo a la tabla `products`;
+// el listado de tienda y el home usan la vista `products_with_price`, que ya
+// filtra estos productos a nivel de base de datos.
+type StockedRow = {
+    source?: string | null;
+    variants?: ({ stock?: number | null } | null)[] | null;
+};
+
+export const hideOutOfStockCdrProducts = <T extends StockedRow>(rows: T[]): T[] =>
+    rows.filter(p => {
+        if (p.source !== 'cdr') return true;
+        const totalStock = (p.variants ?? []).reduce(
+            (sum, v) => sum + (v?.stock ?? 0),
+            0
+        );
+        return totalStock > 0;
+    });
+
 export const getProducts = async (page: number) => {
     const itemsPerPage = 10;
     const from = (page - 1) * itemsPerPage;
@@ -31,6 +51,7 @@ export const getRecentProducts = async () => {
     const { data: products, error } = await supabase
         .from('products')
         .select('*, variants(*), brand:brands(*), category:categories(*)')
+        .eq('active', true)
         .order('created_at', { ascending: false })
         .limit(4);
 
@@ -39,13 +60,14 @@ export const getRecentProducts = async () => {
         throw new Error(error.message);
     }
 
-    return products;
+    return hideOutOfStockCdrProducts(products);
 };
 
 export const getRandomProducts = async () => {
     const { data: products, error } = await supabase
         .from('products')
         .select('*, variants(*), brand:brands(*), category:categories(*)')
+        .eq('active', true)
         .limit(20);
 
     if (error) {
@@ -53,7 +75,7 @@ export const getRandomProducts = async () => {
         throw new Error(error.message);
     }
 
-    const randomProducts = products
+    const randomProducts = hideOutOfStockCdrProducts(products)
         .sort(() => 0.5 - Math.random())
         .slice(0, 8);
 
@@ -83,6 +105,7 @@ export const getSimilarProductsByCategory = async (
         .from('products')
         .select('*, variants(*), brand:brands(*), category:categories(*)')
         .eq('category_id', categoryId)
+        .eq('active', true)
         .neq('id', excludeProductId)
         .order('created_at', { ascending: false })
         .limit(4);
@@ -92,13 +115,14 @@ export const getSimilarProductsByCategory = async (
         throw new Error(error.message);
     }
 
-    return products;
+    return hideOutOfStockCdrProducts(products);
 };
 
 export const searchProducts = async (searchTerm: string) => {
     const { data, error } = await supabase
         .from('products')
         .select('*, variants(*), brand:brands(*), category:categories(*)')
+        .eq('active', true)
         .ilike('name', `%${searchTerm}%`);
 
     if (error) {
@@ -106,12 +130,46 @@ export const searchProducts = async (searchTerm: string) => {
         throw new Error(error.message);
     }
 
-    return data;
+    return hideOutOfStockCdrProducts(data);
 };
 
 /* ********************************** */
 /* ADMINISTRADOR          */
 /* ********************************** */
+// Listado para el panel admin: trae TODOS los productos (activos e inactivos,
+// y CDR con o sin stock) con búsqueda + paginación. A diferencia de la tienda,
+// no usa la vista products_with_price para que el admin pueda gestionarlos todos.
+export const getAdminProducts = async (page: number, searchTerm = '') => {
+    const itemsPerPage = 25;
+    const from = (page - 1) * itemsPerPage;
+    const to = from + itemsPerPage - 1;
+
+    let query = supabase
+        .from('products')
+        .select('*, variants(*), brand:brands(*), category:categories(*)', {
+            count: 'exact',
+        })
+        .order('created_at', { ascending: false });
+
+    if (searchTerm.trim()) {
+        const ilike = `%${searchTerm.trim()}%`;
+        query = query.or(`name.ilike.${ilike},slug.ilike.${ilike}`);
+    }
+
+    const { data: products, error, count } = await query.range(from, to);
+    if (error) throw new Error(error.message);
+    return { products: products ?? [], count: count ?? 0 };
+};
+
+// Activa / inactiva un producto (para ocultarlo o mostrarlo en la web).
+export const setProductActive = async (id: string, active: boolean) => {
+    const { error } = await supabase
+        .from('products')
+        .update({ active })
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
 export const createProduct = async (productInput: ProductInput) => {
     try {
         console.log('Creating product with input:', productInput);

@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react';
 import { FaEllipsis } from 'react-icons/fa6';
 import { HiOutlineExternalLink } from 'react-icons/hi';
 import { Link } from 'react-router-dom';
-import { useDeleteProduct, useFilteredProducts } from '../../../hooks';
+import {
+  useAdminProducts,
+  useDeleteProduct,
+  useSetProductActive,
+} from '../../../hooks';
 import { Loader } from '../../shared/Loader';
 import { formatDate, formatPrice } from '../../../helpers';
 import { Pagination } from '../../shared/Pagination';
@@ -14,6 +18,7 @@ const tableHeaders = [
   'Variante',
   'Precio',
   'Stock',
+  'Estado',
   'Fecha de creación',
   '',
 ];
@@ -38,18 +43,13 @@ export const TableProduct = () => {
     };
   }, [inputValue]);
 
-  const {
-    data: products = [],
-    isLoading,
-    totalProducts,
-  } = useFilteredProducts({
+  const { products, isLoading, totalProducts } = useAdminProducts(
     page,
-    searchTerm,
-    brands: [],
-    categories: [],
-  });
+    searchTerm
+  );
 
   const { mutate, isPending } = useDeleteProduct();
+  const { mutate: toggleActive } = useSetProductActive();
 
   const handleMenuToggle = (index: number) => {
     setOpenMenuIndex(openMenuIndex === index ? null : index);
@@ -174,6 +174,17 @@ export const TableProduct = () => {
                   <CellTableProduct
                     content={(selectedVariant.stock || 0).toString()}
                   />
+                  <td className="p-4 align-middle">
+                    {product.active ? (
+                      <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        Activo
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 ring-1 ring-rose-200">
+                        Inactivo
+                      </span>
+                    )}
+                  </td>
                   <CellTableProduct content={formatDate(product.created_at)} />
                   <td className="relative">
                     <button
@@ -197,6 +208,18 @@ export const TableProduct = () => {
                             className="inline-block"
                           />
                         </Link>
+                        <button
+                          className="block w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                          onClick={() => {
+                            toggleActive({
+                              id: product.id,
+                              active: !product.active,
+                            });
+                            setOpenMenuIndex(null);
+                          }}
+                        >
+                          {product.active ? 'Inactivar' : 'Activar'}
+                        </button>
                         <button
                           className="block w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
                           onClick={() => handleDeleteProduct(product.id)}

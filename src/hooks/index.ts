@@ -2,6 +2,8 @@
 /*              PRODUCTOS             */
 /* ********************************** */
 export * from './products/useProducts';
+export * from './products/useAdminProducts';
+export * from './products/useSetProductActive';
 export * from './products/useFilteredProducts';
 export * from './products/useHomeProducts';
 export * from './products/useCreateProduct';
@@ -35,6 +37,7 @@ export * from './orders/useOrderAdmin';
 /*            TAXONOMIES             */
 /* ********************************** */
 export * from './taxonomy/useTaxonomies';
+export * from './taxonomy/useBrandsByCategories';
 
 /* ********************************** */
 /*             SETTINGS               */

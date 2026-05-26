@@ -1,10 +1,14 @@
 import { Color, Product, VariantProduct } from '../interfaces';
 import { supabase } from '../supabase/client';
 
-// Función para formatear el precio a dólares
+// Función para formatear el precio a dólares.
+// Formato uruguayo: punto como separador de miles y coma para los centavos.
+// Ej: 1121.5 -> "USD 1.121,50", 9.15 -> "USD 9,15".
 export const formatPrice = (price: number) => {
-	// Formato USD completamente hardcodeado
-	const formatted = (price ?? 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+	const formatted = new Intl.NumberFormat('es-UY', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(price ?? 0);
 	return `USD ${formatted}`;
 };
 
@@ -26,6 +30,7 @@ export interface PricingConfig {
 export const DEFAULT_PRICING: PricingConfig = {
 	iva_percent: 22,
 	tiers: [
+		{ max: 10, pct: 50 },
 		{ max: 50, pct: 30 },
 		{ max: 100, pct: 20 },
 		{ max: null, pct: 15 },

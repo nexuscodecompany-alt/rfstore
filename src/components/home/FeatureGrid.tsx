@@ -22,7 +22,7 @@ const features = [
 	{
 		icon: BiWorld,
 		title: 'Garantía oficial',
-		desc: 'Hasta 6 meses de garantía en todos los equipos',
+		desc: 'Garantía en todos los equipos',
 	},
 ];
 

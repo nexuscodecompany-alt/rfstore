@@ -38,6 +38,31 @@ export const getSubcategories = async (): Promise<Subcategory[]> => {
 	return data as Subcategory[];
 };
 
+// Devuelve los ids de marcas que tienen productos visibles en las categorías
+// (y, si se indican, subcategorías) dadas. Usa la vista products_with_price,
+// así respeta el filtro de stock (los CDR sin stock no cuentan como marca activa).
+export const getBrandIdsByCategories = async (
+	categoryIds: string[],
+	subcategoryIds: string[] = []
+): Promise<string[]> => {
+	if (!categoryIds.length) return [];
+	let query = supabase
+		.from('products_with_price')
+		.select('brand_id')
+		.in('category_id', categoryIds)
+		.not('brand_id', 'is', null);
+	if (subcategoryIds.length) query = query.in('subcategory_id', subcategoryIds);
+
+	const { data, error } = await query;
+	if (error) throw new Error(error.message);
+
+	const ids = new Set<string>();
+	(data ?? []).forEach(row => {
+		if (row.brand_id) ids.add(row.brand_id as string);
+	});
+	return [...ids];
+};
+
 /* ------------------------------ MARCAS ----------------------------- */
 export const createBrand = async (name: string): Promise<Brand> => {
 	const { data, error } = await supabase
