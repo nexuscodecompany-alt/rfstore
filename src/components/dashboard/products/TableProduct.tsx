@@ -6,6 +6,7 @@ import {
   useAdminProducts,
   useDeleteProduct,
   useSetProductActive,
+  useTaxonomies,
 } from '../../../hooks';
 import { Loader } from '../../shared/Loader';
 import { formatDate, formatPrice } from '../../../helpers';
@@ -15,6 +16,8 @@ import { CellTableProduct } from './CellTableProduct';
 const tableHeaders = [
   '',
   'Nombre',
+  'Marca',
+  'Categoría',
   'Variante',
   'Precio',
   'Stock',
@@ -31,6 +34,10 @@ export const TableProduct = () => {
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [inputValue, setInputValue] = useState('');
+  const [brandFilter, setBrandFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+
+  const { brands, categories } = useTaxonomies();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -45,7 +52,9 @@ export const TableProduct = () => {
 
   const { products, isLoading, totalProducts } = useAdminProducts(
     page,
-    searchTerm
+    searchTerm,
+    brandFilter,
+    categoryFilter
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -67,62 +76,109 @@ export const TableProduct = () => {
     setOpenMenuIndex(null);
   };
 
-  if (isLoading || isPending) return <Loader />;
-
-  if (!products || products.length === 0) {
-    return (
-      <div className="flex flex-col flex-1 border border-ink-200/70 rounded-2xl p-8 bg-white shadow-soft items-center justify-center gap-2">
-        <h2 className="font-semibold text-lg text-ink-900">No hay productos</h2>
-        <p className="text-sm text-ink-500">
-          Agrega tu primer producto para verlo aquí.
-        </p>
-        <Link
-          to="/dashboard/productos/new"
-          className="mt-2 bg-brand-600 text-white py-2 px-4 rounded-full text-sm font-semibold hover:bg-brand-700 transition-all"
-        >
-          Agregar Producto
-        </Link>
-      </div>
-    );
-  }
+  const isBusy = isLoading || isPending;
+  const showEmpty = !isBusy && (!products || products.length === 0);
 
   return (
     <div className="flex flex-col flex-1 border border-ink-200/70 rounded-2xl p-5 bg-white shadow-soft">
-      <div className="mb-6">
-        <div className="relative max-w-md">
-          <input
-            type="text"
-            placeholder="Buscar productos por nombre, slug, marca o categoría..."
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            className="w-full px-4 py-2 pl-10 border border-ink-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent"
-          />
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <svg
-              className="h-5 w-5 text-gray-400"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
+      <div className="mb-6 flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative flex-1 sm:max-w-md">
+            <input
+              type="text"
+              placeholder="Buscar productos por nombre, slug, marca o categoría..."
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              className="w-full px-4 py-2 pl-10 border border-ink-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-transparent"
+            />
+            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <svg
+                className="h-5 w-5 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                />
+              </svg>
+            </div>
           </div>
+
+          <select
+            value={brandFilter}
+            onChange={(e) => {
+              setBrandFilter(e.target.value);
+              setPage(1);
+            }}
+            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+          >
+            <option value="">Todas las marcas</option>
+            {brands.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+
+          <select
+            value={categoryFilter}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              setPage(1);
+            }}
+            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+          >
+            <option value="">Todas las categorías</option>
+            <option value="none">⚠ Sin categoría</option>
+            {categories.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+
+          {(brandFilter || categoryFilter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setBrandFilter('');
+                setCategoryFilter('');
+                setPage(1);
+              }}
+              className="text-xs font-semibold text-brand-700 hover:text-brand-900"
+            >
+              Limpiar filtros
+            </button>
+          )}
         </div>
-        {searchTerm && (
-          <p className="text-sm text-gray-500 mt-2">
-            {totalProducts} producto{totalProducts !== 1 ? 's' : ''} encontrado
-            {totalProducts !== 1 ? 's' : ''} para "{searchTerm}"
-          </p>
-        )}
+
+        <p className="text-sm text-gray-500">
+          {totalProducts} producto{totalProducts !== 1 ? 's' : ''}
+          {searchTerm ? ` para "${searchTerm}"` : ''}
+        </p>
       </div>
 
-      <div className="relative w-full h-full">
-        <table className="text-sm w-full caption-bottom overflow-auto">
+      {isBusy ? (
+        <div className="flex items-center justify-center py-20">
+          <Loader />
+        </div>
+      ) : showEmpty ? (
+        <div className="flex flex-col items-center justify-center gap-2 py-20">
+          <h2 className="font-semibold text-lg text-ink-900">
+            No se encontraron productos
+          </h2>
+          <p className="text-sm text-ink-500">
+            Probá con otros filtros o términos de búsqueda.
+          </p>
+        </div>
+      ) : (
+        <>
+          <div className="relative w-full h-full">
+            <table className="text-sm w-full caption-bottom overflow-auto">
           <thead className="border-b border-gray-200 pb-3">
             <tr className="text-sm font-bold">
               {tableHeaders.map((header, index) => (
@@ -153,6 +209,20 @@ export const TableProduct = () => {
                     />
                   </td>
                   <CellTableProduct content={product.name} />
+                  <td className="p-4 align-middle text-sm text-ink-700">
+                    {product.brand?.name ?? '—'}
+                  </td>
+                  <td className="p-4 align-middle">
+                    {product.category?.name ? (
+                      <span className="text-sm text-ink-700">
+                        {product.category.name}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200">
+                        Sin categoría
+                      </span>
+                    )}
+                  </td>
                   <td className="p-4 font-medium tracking-tighter">
                     <select
                       className="border border-gray-300 rounded-md p-1 w-full"
@@ -232,11 +302,13 @@ export const TableProduct = () => {
                 </tr>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+              </tbody>
+            </table>
+          </div>
 
-      <Pagination page={page} setPage={setPage} totalItems={totalProducts} />
+          <Pagination page={page} setPage={setPage} totalItems={totalProducts} />
+        </>
+      )}
     </div>
   );
 };

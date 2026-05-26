@@ -140,7 +140,12 @@ export const searchProducts = async (searchTerm: string) => {
 // Listado para el panel admin: trae TODOS los productos (activos e inactivos,
 // y CDR con o sin stock) con búsqueda + paginación. A diferencia de la tienda,
 // no usa la vista products_with_price para que el admin pueda gestionarlos todos.
-export const getAdminProducts = async (page: number, searchTerm = '') => {
+export const getAdminProducts = async (
+    page: number,
+    searchTerm = '',
+    brandId = '',
+    categoryId = ''
+) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
     const to = from + itemsPerPage - 1;
@@ -159,6 +164,12 @@ export const getAdminProducts = async (page: number, searchTerm = '') => {
         const ilike = `%${searchTerm.trim()}%`;
         query = query.or(`name.ilike.${ilike},slug.ilike.${ilike}`);
     }
+
+    if (brandId) query = query.eq('brand_id', brandId);
+
+    // 'none' = productos sin categoría (los CDR a recategorizar).
+    if (categoryId === 'none') query = query.is('category_id', null);
+    else if (categoryId) query = query.eq('category_id', categoryId);
 
     const { data: products, error, count } = await query.range(from, to);
     if (error) throw new Error(error.message);
