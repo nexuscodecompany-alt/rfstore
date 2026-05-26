@@ -35,6 +35,7 @@ export const getProducts = async (page: number) => {
         .from('products')
         .select('*, variants(*), brand:brands(*), category:categories(*)', { count: 'exact' })
         .order('created_at', { ascending: false })
+        .order('id', { ascending: true })
         .range(from, to);
 
     if (error) {
@@ -149,7 +150,10 @@ export const getAdminProducts = async (page: number, searchTerm = '') => {
         .select('*, variants(*), brand:brands(*), category:categories(*)', {
             count: 'exact',
         })
-        .order('created_at', { ascending: false });
+        // Desempate por id (único) para que "siguiente" no repita ni saltee
+        // productos que comparten created_at (los lotes del sync de CDR).
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: true });
 
     if (searchTerm.trim()) {
         const ilike = `%${searchTerm.trim()}%`;

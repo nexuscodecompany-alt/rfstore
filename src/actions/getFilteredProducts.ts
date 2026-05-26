@@ -48,6 +48,10 @@ if (sortOrder === 'asc') {
     .order('created_at', { ascending: false });
 }
 
+// Desempate por id (único): sin esto, los productos que comparten created_at/price
+// salen en orden inestable entre páginas y la paginación repite/saltea artículos.
+baseQuery = baseQuery.order('id', { ascending: true });
+
 // aplicar filtros
 if (brands?.length)        baseQuery = baseQuery.in('brand_id', brands);
 if (categories?.length)    baseQuery = baseQuery.in('category_id', categories);
