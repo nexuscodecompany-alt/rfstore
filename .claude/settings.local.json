@@ -38,7 +38,10 @@
       "mcp__claude_ai_Supabase__get_advisors",
       "Bash(ls supabase/migrations)",
       "Bash(ls supabase *)",
-      "Bash(node -e \"console.log\\(new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(1121.5\\), '|', new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(9.15\\), '|', new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(73.2\\)\\)\")"
+      "Bash(node -e \"console.log\\(new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(1121.5\\), '|', new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(9.15\\), '|', new Intl.NumberFormat\\('es-UY',{minimumFractionDigits:2,maximumFractionDigits:2}\\).format\\(73.2\\)\\)\")",
+      "mcp__claude_ai_Vercel__list_teams",
+      "mcp__claude_ai_Vercel__list_projects",
+      "mcp__claude_ai_Vercel__list_deployments"
     ]
   }
 }

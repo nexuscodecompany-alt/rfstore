@@ -12,9 +12,9 @@ export const useUpdateProduct = (productId: string) => {
 		mutationFn: async (data: ProductInput) =>
 			updateProduct(productId, data),
 		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: ['products'],
-			});
+			queryClient.invalidateQueries({ queryKey: ['products'] });
+			queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+			queryClient.invalidateQueries({ queryKey: ['product'] });
 			toast.success('Producto actualizado', {
 				position: 'bottom-right',
 			});

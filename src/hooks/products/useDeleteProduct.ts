@@ -8,9 +8,8 @@ export const useDeleteProduct = () => {
 	const { mutate, isPending } = useMutation({
 		mutationFn: deleteProduct,
 		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: ['products'],
-			});
+			queryClient.invalidateQueries({ queryKey: ['products'] });
+			queryClient.invalidateQueries({ queryKey: ['admin-products'] });
 			toast.success('Producto eliminado correctamente', {
 				position: 'bottom-right',
 			});

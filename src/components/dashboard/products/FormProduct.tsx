@@ -6,7 +6,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import { SectionFormProduct } from "./SectionFormProduct";
 import { InputForm } from "./InputForm";
 import { FeaturesInput } from "./FeaturesInput";
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import toast from "react-hot-toast";
 import { generateSlug } from "../../../helpers";
 import { VariantsInput } from "./VariantsInput";
@@ -71,7 +71,7 @@ export const FormProduct = ({ titleForm }: Props) => {
   const {
     register,
     handleSubmit,
-    formState: { errors },
+    formState: { errors, isDirty },
     setValue,
     watch,
     control,
@@ -113,13 +113,12 @@ export const FormProduct = ({ titleForm }: Props) => {
     (s) => s.category_id === watchCategory
   );
 
-  // Carga los datos del producto cuando se está en modo "edición".
-  // Guardamos el id ya inicializado para que un refetch (p. ej. al volver
-  // el foco a la ventana) NO vuelva a hacer reset y borre los cambios del admin.
-  const initializedProductId = useRef<string | null>(null);
+  // Carga los datos del producto en modo "edición".
+  // Recargamos el form cada vez que llegan datos frescos del producto (p. ej. al
+  // reabrirlo tras guardar), PERO solo si el usuario no empezó a editar (isDirty),
+  // así no le pisamos los cambios mientras trabaja.
   useEffect(() => {
-    if (product && !isLoading && initializedProductId.current !== product.id) {
-      initializedProductId.current = product.id;
+    if (product && !isLoading && !isDirty) {
       const formDataFromProduct: ProductFormValues = {
         name: product.name ?? "",
         slug: product.slug ?? "",
@@ -155,7 +154,7 @@ export const FormProduct = ({ titleForm }: Props) => {
       reset(formDataFromProduct);
       setFormData(formDataFromProduct);
     }
-  }, [product, isLoading, reset, setFormData]);
+  }, [product, isLoading, isDirty, reset, setFormData]);
 
   const onSubmit = handleSubmit((data) => {
     const features = data.features.map((feature) => feature.value);

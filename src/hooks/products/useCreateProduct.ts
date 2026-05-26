@@ -10,9 +10,8 @@ export const useCreateProduct = () => {
 	const { mutate, isPending } = useMutation({
 		mutationFn: createProduct,
 		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: ['products'],
-			});
+			queryClient.invalidateQueries({ queryKey: ['products'] });
+			queryClient.invalidateQueries({ queryKey: ['admin-products'] });
 			navigate('/dashboard/productos');
 		},
 		onError: error => {
