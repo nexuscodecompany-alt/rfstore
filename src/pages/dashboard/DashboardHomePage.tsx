@@ -6,7 +6,7 @@ import {
 	HiOutlineArrowTrendingUp,
 	HiOutlineArrowTrendingDown,
 	HiOutlineUserPlus,
-	HiOutlineArchiveBox,
+	HiOutlineDocumentText,
 	HiOutlineCube,
 	HiOutlineSquares2X2,
 	HiOutlineExclamationTriangle,
@@ -312,9 +312,20 @@ export const DashboardHomePage = () => {
 					<div className='grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4'>
 						<StatCard
 							icon={<HiOutlineBanknotes size={20} />}
-							label='Ingresos (cotizado)'
+							label='Ingresos (pagado)'
+							value={formatPrice(o.paid_revenue_period)}
+							sub={`${num(o.paid_orders_in_period)} pagadas`}
+							delta={deltaPercent(
+								o.paid_revenue_period,
+								o.prev_paid_revenue_period
+							)}
+							tone='emerald'
+						/>
+						<StatCard
+							icon={<HiOutlineDocumentText size={20} />}
+							label='Cotizado (pipeline)'
 							value={formatPrice(o.revenue_period)}
-							delta={deltaPercent(o.revenue_period, o.prev_revenue_period)}
+							sub={`${num(o.orders_in_period)} cotizaciones`}
 							tone='brand'
 						/>
 						<StatCard
@@ -329,10 +340,11 @@ export const DashboardHomePage = () => {
 						/>
 						<StatCard
 							icon={<HiOutlineReceiptPercent size={20} />}
-							label='Ticket promedio'
+							label='Ticket prom. (cotiz.)'
 							value={formatPrice(o.avg_order_value)}
-							tone='emerald'
+							tone='slate'
 						/>
+
 						<StatCard
 							icon={<HiOutlineArrowTrendingUp size={20} />}
 							label='Conversión'
@@ -340,19 +352,12 @@ export const DashboardHomePage = () => {
 							sub={`${num(o.concretado_count)} concretadas`}
 							tone='emerald'
 						/>
-
 						<StatCard
 							icon={<HiOutlineUserPlus size={20} />}
 							label='Clientes nuevos'
 							value={num(o.customers_new_period)}
 							sub={`${num(o.customers_total)} en total`}
 							tone='brand'
-						/>
-						<StatCard
-							icon={<HiOutlineArchiveBox size={20} />}
-							label='Valor inventario'
-							value={formatPrice(o.inventory_value)}
-							tone='violet'
 						/>
 						<StatCard
 							icon={<HiOutlineCube size={20} />}
@@ -404,8 +409,8 @@ export const DashboardHomePage = () => {
 							<SectionCard
 								title='Órdenes por día'
 								action={
-									<span className='text-sm font-semibold text-ink-900'>
-										{formatPrice(o.revenue_period)}
+									<span className='text-sm font-semibold text-ink-500'>
+										Cotizado: {formatPrice(o.revenue_period)}
 									</span>
 								}
 							>

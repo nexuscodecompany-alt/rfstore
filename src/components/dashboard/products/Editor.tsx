@@ -15,6 +15,16 @@ interface Props {
 	initialContent?: JSONContent;
 }
 
+// Los productos de CDR guardan la descripción como un nodo { type: 'html', html }.
+// Tiptap no lo entiende, así que extraemos el HTML como string para que lo parsee.
+const normalizeContent = (content?: JSONContent): JSONContent | string => {
+	const first = content?.content?.[0] as { type?: string; html?: string } | undefined;
+	if (first?.type === 'html') {
+		return first.html ?? '';
+	}
+	return content ?? '';
+};
+
 export const MenuBar = ({
 	editor,
 }: {
@@ -103,7 +113,7 @@ export const Editor = ({
 }: Props) => {
 	const editor = useEditor({
 		extensions: [StarterKit],
-		content: initialContent || '',
+		content: normalizeContent(initialContent),
 		onUpdate: ({ editor }) => {
 			// Aquí actualizamos el valor del campo 'description.content en el formulario
 			const content = editor.getJSON();
@@ -119,7 +129,7 @@ export const Editor = ({
 
 	useEffect(() => {
 		if (initialContent && editor) {
-			editor.commands.setContent(initialContent);
+			editor.commands.setContent(normalizeContent(initialContent));
 		}
 	}, [initialContent, editor]);
 

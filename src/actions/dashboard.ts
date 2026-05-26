@@ -14,8 +14,11 @@ export interface StatusBreakdownItem {
 
 export interface DashboardOverview {
 	orders_in_period: number;
-	revenue_period: number;
+	revenue_period: number; // Cotizado (pipeline, NO ingreso)
 	avg_order_value: number;
+	paid_revenue_period: number; // Ingresos reales (pagado)
+	paid_orders_in_period: number;
+	prev_paid_revenue_period: number;
 	orders_total: number;
 	status_breakdown: StatusBreakdownItem[];
 	concretado_count: number;
@@ -27,7 +30,6 @@ export interface DashboardOverview {
 	stock_units: number;
 	variants_out_of_stock: number;
 	variants_low_stock: number;
-	inventory_value: number;
 	brands_total: number;
 	categories_total: number;
 	prev_revenue_period: number;

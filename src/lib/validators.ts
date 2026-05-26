@@ -48,8 +48,17 @@ const isContentEmpty = (value: JSONContent): boolean => {
 		return true;
 	}
 
-	return !value.content.some(
-		node =>
+	return !value.content.some(node => {
+		// Nodo "html" que usan los productos sincronizados de CDR.
+		if (
+			node.type === 'html' &&
+			typeof (node as { html?: string }).html === 'string' &&
+			(node as { html?: string }).html!.trim() !== ''
+		) {
+			return true;
+		}
+
+		return (
 			node.type === 'paragraph' &&
 			node.content &&
 			Array.isArray(node.content) &&
@@ -59,7 +68,8 @@ const isContentEmpty = (value: JSONContent): boolean => {
 					textNode.text &&
 					textNode.text.trim() !== ''
 			)
-	);
+		);
+	});
 };
 
 export const productSchema = z.object({

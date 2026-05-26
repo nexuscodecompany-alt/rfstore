@@ -6,7 +6,8 @@ import { useNavigate, useParams } from "react-router-dom";
 import { SectionFormProduct } from "./SectionFormProduct";
 import { InputForm } from "./InputForm";
 import { FeaturesInput } from "./FeaturesInput";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import toast from "react-hot-toast";
 import { generateSlug } from "../../../helpers";
 import { VariantsInput } from "./VariantsInput";
 import { UploaderImages } from "./UploaderImages";
@@ -112,9 +113,13 @@ export const FormProduct = ({ titleForm }: Props) => {
     (s) => s.category_id === watchCategory
   );
 
-  // Carga los datos del producto cuando se está en modo "edición"
+  // Carga los datos del producto cuando se está en modo "edición".
+  // Guardamos el id ya inicializado para que un refetch (p. ej. al volver
+  // el foco a la ventana) NO vuelva a hacer reset y borre los cambios del admin.
+  const initializedProductId = useRef<string | null>(null);
   useEffect(() => {
-    if (product && !isLoading) {
+    if (product && !isLoading && initializedProductId.current !== product.id) {
+      initializedProductId.current = product.id;
       const formDataFromProduct: ProductFormValues = {
         name: product.name ?? "",
         slug: product.slug ?? "",
@@ -176,6 +181,22 @@ export const FormProduct = ({ titleForm }: Props) => {
         },
       });
     }
+  }, (formErrors) => {
+    // Si la validación falla, antes el formulario no daba ninguna señal.
+    // Mostramos el primer mensaje de error para que el admin sepa qué corregir.
+    const collectMessage = (errObj: any): string | null => {
+      if (!errObj) return null;
+      if (typeof errObj.message === "string") return errObj.message;
+      for (const key of Object.keys(errObj)) {
+        const found = collectMessage(errObj[key]);
+        if (found) return found;
+      }
+      return null;
+    };
+    const message = collectMessage(formErrors);
+    toast.error(message || "Revisá los campos del formulario", {
+      position: "bottom-right",
+    });
   });
 
   const watchName = watch("name");
