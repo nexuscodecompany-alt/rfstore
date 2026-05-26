@@ -2,13 +2,13 @@ import { Color, Product, VariantProduct } from '../interfaces';
 import { supabase } from '../supabase/client';
 
 // Función para formatear el precio a dólares.
-// Formato uruguayo: punto como separador de miles y coma para los centavos.
-// Ej: 1121.5 -> "USD 1.121,50", 9.15 -> "USD 9,15".
+// Sin decimales y redondeado hacia arriba; punto como separador de miles.
+// Ej: 1121 -> "USD 1.121", 12.22 -> "USD 13".
 export const formatPrice = (price: number) => {
 	const formatted = new Intl.NumberFormat('es-UY', {
-		minimumFractionDigits: 2,
-		maximumFractionDigits: 2,
-	}).format(price ?? 0);
+		minimumFractionDigits: 0,
+		maximumFractionDigits: 0,
+	}).format(Math.ceil(price ?? 0));
 	return `USD ${formatted}`;
 };
 
@@ -46,7 +46,8 @@ export const marginForCost = (cost: number, cfg: PricingConfig): number => {
 	return 0;
 };
 
-// Costo (sin IVA) -> precio final de venta (margen por tramo + IVA), redondeado a 2.
+// Costo (sin IVA) -> precio final de venta (margen por tramo + IVA).
+// Redondeado SIEMPRE hacia arriba al entero (sin decimales). Ej: 12.22 -> 13.
 export const salePrice = (
 	cost: number | null | undefined,
 	cfg: PricingConfig = DEFAULT_PRICING
@@ -54,7 +55,7 @@ export const salePrice = (
 	if (cost === null || cost === undefined || isNaN(cost)) return 0;
 	const pct = marginForCost(cost, cfg);
 	const final = cost * (1 + pct / 100) * (1 + cfg.iva_percent / 100);
-	return Math.round(final * 100) / 100;
+	return Math.ceil(final);
 };
 
 // Función para preparar los productos - (CELULARES)
