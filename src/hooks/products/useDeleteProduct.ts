@@ -14,9 +14,9 @@ export const useDeleteProduct = () => {
 				position: 'bottom-right',
 			});
 		},
-		onError: error => {
-			console.log(error);
-			toast.error('Ocurrió un error al eliminar el producto', {
+		onError: (error: Error) => {
+			console.error(error);
+			toast.error(`No se pudo eliminar: ${error.message}`, {
 				position: 'bottom-right',
 			});
 		},

@@ -151,8 +151,16 @@ export const DashboardTaxonomiesPage = () => {
 	});
 
 	const inv = (key: string) => qc.invalidateQueries({ queryKey: [key] });
-	const onErr = (e: Error) =>
-		toast.error(e.message || 'Ocurrió un error', { position: 'bottom-right' });
+	const onErr = (e: Error) => {
+		// Mensajes de FK / unique constraint son crípticos: damos pista al usuario.
+		const raw = e.message || 'Ocurrió un error';
+		const friendly = raw.match(/foreign key/i)
+			? 'No se puede borrar: hay registros que la usan. Quitala primero de los productos que la referencian.'
+			: raw.match(/duplicate key|unique/i)
+			? 'Ya existe un registro con ese nombre.'
+			: raw;
+		toast.error(friendly, { position: 'bottom-right' });
+	};
 
 	// Marcas
 	const mAddBrand = useMutation({ mutationFn: createBrand, onSuccess: () => inv('brands'), onError: onErr });

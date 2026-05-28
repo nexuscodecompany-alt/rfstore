@@ -191,142 +191,111 @@ export const setProductActive = async (id: string, active: boolean) => {
 };
 
 export const createProduct = async (productInput: ProductInput) => {
-    try {
-        console.log('Creating product with input:', productInput);
-        
-        const { data: product, error: productError } = await supabase
-            .from('products')
-            .insert({
-                name: productInput.name,
-                slug: productInput.slug,
-                features: productInput.features,
-                description: productInput.description,
-                images: [],
-                brand_id: productInput.brandId,
-                category_id: productInput.categoryId,
-                subcategory_id: productInput.subcategoryId || null,
-            })
-            .select()
-            .single();
+    const { data: product, error: productError } = await supabase
+        .from('products')
+        .insert({
+            name: productInput.name,
+            slug: productInput.slug,
+            features: productInput.features,
+            description: productInput.description,
+            images: [],
+            brand_id: productInput.brandId,
+            category_id: productInput.categoryId,
+            subcategory_id: productInput.subcategoryId || null,
+        })
+        .select()
+        .single();
 
-        if (productError) {
-            console.error('Product creation error:', productError);
-            throw new Error(productError.message);
-        }
-        
-        console.log('Product created successfully:', product);
+    if (productError) throw new Error(productError.message);
 
-        const folderName = product.id;
+    const folderName = product.id;
 
-        const uploadedImages = await Promise.all(
-            productInput.images.map(async image => {
-                const { data, error } = await supabase.storage
-                    .from('product-images')
-                    .upload(`${folderName}/${product.id}-${image.name}`, image);
+    const uploadedImages = await Promise.all(
+        productInput.images.map(async image => {
+            const { data, error } = await supabase.storage
+                .from('product-images')
+                .upload(`${folderName}/${product.id}-${image.name}`, image);
 
-                if (error) throw new Error(error.message);
+            if (error) throw new Error(error.message);
 
-                const imageUrl = `${
-                    supabase.storage
-                        .from('product-images')
-                        .getPublicUrl(data.path).data.publicUrl
-                }`;
+            return supabase.storage
+                .from('product-images')
+                .getPublicUrl(data.path).data.publicUrl;
+        })
+    );
 
-                return imageUrl;
-            })
-        );
+    const { error: updatedError } = await supabase
+        .from('products')
+        .update({ images: uploadedImages })
+        .eq('id', product.id);
 
-        const { error: updatedError } = await supabase
-            .from('products')
-            .update({
-                images: uploadedImages,
-            })
-            .eq('id', product.id);
+    if (updatedError) throw new Error(updatedError.message);
 
-        if (updatedError) throw new Error(updatedError.message);
+    const variants = productInput.variants.map(variant => ({
+        product_id: product.id,
+        stock: variant.stock,
+        price: variant.price,
+        storage: variant.storage,
+        color: variant.color,
+        color_name: variant.colorName,
+    }));
 
-        const variants = productInput.variants.map(variant => ({
-            product_id: product.id,
-            stock: variant.stock,
-            price: variant.price,
-            storage: variant.storage,
-            color: variant.color,
-            color_name: variant.colorName,
-        }));
+    const { error: variantsError } = await supabase
+        .from('variants')
+        .insert(variants);
 
-        const { error: variantsError } = await supabase
-            .from('variants')
-            .insert(variants);
+    if (variantsError) throw new Error(variantsError.message);
 
-        if (variantsError) throw new Error(variantsError.message);
-
-        return product;
-    } catch (error) {
-        console.log(error);
-        throw new Error('Error inesperado, Vuelva a intentarlo');
-    }
+    return product;
 };
 
 export const deleteProduct = async (productId: string) => {
-    try {
-        const { data: variants, error: getVariantsError } = await supabase
-            .from('variants')
-            .select('id')
-            .eq('product_id', productId);
-        
-        if (getVariantsError) throw new Error(getVariantsError.message);
+    // Las variants tienen FK con order_items (RESTRICT). Si el producto tiene ventas
+    // históricas, borramos primero los order_items asociados.
+    const { data: variants, error: getVariantsError } = await supabase
+        .from('variants')
+        .select('id')
+        .eq('product_id', productId);
+    if (getVariantsError) throw new Error(getVariantsError.message);
 
-        const variantIds = variants.map(v => v.id);
-
-        if (variantIds.length > 0) {
-            const { error: deleteOrderItemsError } = await supabase
-                .from('order_items')
-                .delete()
-                .in('variant_id', variantIds);
-            
-            if (deleteOrderItemsError) throw new Error(deleteOrderItemsError.message);
-        }
-
-        const { error: variantsError } = await supabase
-            .from('variants')
+    const variantIds = (variants ?? []).map(v => v.id);
+    if (variantIds.length > 0) {
+        const { error: deleteOrderItemsError } = await supabase
+            .from('order_items')
             .delete()
-            .eq('product_id', productId);
-
-        if (variantsError) throw new Error(variantsError.message);
-
-        const { data: productImages, error: productImagesError } = await supabase
-            .from('products')
-            .select('images')
-            .eq('id', productId)
-            .single();
-
-        if (productImagesError) throw new Error(productImagesError.message);
-
-        const { error: productDeleteError } = await supabase
-            .from('products')
-            .delete()
-            .eq('id', productId);
-
-        if (productDeleteError) throw new Error(productDeleteError.message);
-
-        if (productImages.images.length > 0) {
-            const paths = productImages.images
-                .map(image => extractFilePath(image))
-                .filter((path): path is string => path !== null);
-
-            if (paths.length > 0) {
-                const { error: storageError } = await supabase.storage
-                    .from('product-images')
-                    .remove(paths);
-
-                if (storageError) throw new Error(storageError.message);
-            }
-        }
-
-        return true;
-    } catch (error) {
-        throw new Error('No se pudo eliminar el producto debido a un error en la base de datos.');
+            .in('variant_id', variantIds);
+        if (deleteOrderItemsError) throw new Error(deleteOrderItemsError.message);
     }
+
+    // Obtener imágenes ANTES de borrar el producto (después no se puede recuperar).
+    const { data: productImages, error: productImagesError } = await supabase
+        .from('products')
+        .select('images')
+        .eq('id', productId)
+        .single();
+    if (productImagesError) throw new Error(productImagesError.message);
+
+    // Las variants se borran en cascada por la FK products → variants.
+    const { error: productDeleteError } = await supabase
+        .from('products')
+        .delete()
+        .eq('id', productId);
+    if (productDeleteError) throw new Error(productDeleteError.message);
+
+    const paths = (productImages?.images ?? [])
+        .map(extractFilePath)
+        .filter((path): path is string => path !== null);
+
+    if (paths.length > 0) {
+        const { error: storageError } = await supabase.storage
+            .from('product-images')
+            .remove(paths);
+        // Si falla la limpieza de storage, el producto ya quedó borrado.
+        // Lo reportamos como warning para no romper la UI.
+        if (storageError) console.warn('Storage cleanup:', storageError.message);
+    }
+
+    return true;
 };
 
 export const updateProduct = async (

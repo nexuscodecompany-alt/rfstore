@@ -74,9 +74,16 @@ export const TableProduct = () => {
     });
   };
 
-  const handleDeleteProduct = (id: string) => {
-    mutate(id);
+  const handleDeleteProduct = (id: string, name: string) => {
     setOpenMenuIndex(null);
+    if (
+      !window.confirm(
+        `¿Eliminar "${name}"? Esta acción borra el producto, sus variantes e imágenes, y los items de órdenes históricas que lo referencian.`
+      )
+    ) {
+      return;
+    }
+    mutate(id);
   };
 
   const isBusy = isLoading || isPending;
@@ -328,8 +335,8 @@ export const TableProduct = () => {
                           {product.active ? 'Inactivar' : 'Activar'}
                         </button>
                         <button
-                          className="block w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                          onClick={() => handleDeleteProduct(product.id)}
+                          className="block w-full text-left px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                          onClick={() => handleDeleteProduct(product.id, product.name)}
                         >
                           Eliminar
                         </button>
