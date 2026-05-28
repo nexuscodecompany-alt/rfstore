@@ -7,11 +7,13 @@ export const useAdminProducts = (
 	page: number,
 	searchTerm: string,
 	brandId = '',
-	categoryId = ''
+	categoryId = '',
+	source: '' | 'local' | 'cdr' = ''
 ) => {
 	const { data, isLoading } = useQuery({
-		queryKey: ['admin-products', page, searchTerm, brandId, categoryId],
-		queryFn: () => getAdminProducts(page, searchTerm, brandId, categoryId),
+		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source],
+		queryFn: () =>
+			getAdminProducts(page, searchTerm, brandId, categoryId, source),
 	});
 
 	return {

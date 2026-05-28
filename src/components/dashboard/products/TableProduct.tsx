@@ -16,6 +16,7 @@ import { CellTableProduct } from './CellTableProduct';
 const tableHeaders = [
   '',
   'Nombre',
+  'Origen',
   'Marca',
   'Categoría',
   'Variante',
@@ -36,6 +37,7 @@ export const TableProduct = () => {
   const [inputValue, setInputValue] = useState('');
   const [brandFilter, setBrandFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'' | 'local' | 'cdr'>('');
 
   const { brands, categories } = useTaxonomies();
 
@@ -54,7 +56,8 @@ export const TableProduct = () => {
     page,
     searchTerm,
     brandFilter,
-    categoryFilter
+    categoryFilter,
+    sourceFilter
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -141,12 +144,26 @@ export const TableProduct = () => {
             ))}
           </select>
 
-          {(brandFilter || categoryFilter) && (
+          <select
+            value={sourceFilter}
+            onChange={(e) => {
+              setSourceFilter(e.target.value as '' | 'local' | 'cdr');
+              setPage(1);
+            }}
+            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+          >
+            <option value="">Todos los orígenes</option>
+            <option value="local">Solo manuales</option>
+            <option value="cdr">Solo CDR</option>
+          </select>
+
+          {(brandFilter || categoryFilter || sourceFilter) && (
             <button
               type="button"
               onClick={() => {
                 setBrandFilter('');
                 setCategoryFilter('');
+                setSourceFilter('');
                 setPage(1);
               }}
               className="text-xs font-semibold text-brand-700 hover:text-brand-900"
@@ -208,7 +225,27 @@ export const TableProduct = () => {
                       className="w-16 h-16 aspect-square rounded-md object-contain"
                     />
                   </td>
-                  <CellTableProduct content={product.name} />
+                  <td className="p-4 align-middle">
+                    <div className="text-sm font-medium text-ink-900">
+                      {product.name}
+                    </div>
+                    {product.external_code && (
+                      <div className="text-xs text-ink-500">
+                        cod. {product.external_code}
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-4 align-middle">
+                    {product.source === 'cdr' ? (
+                      <span className="inline-flex items-center rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200">
+                        CDR
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center rounded-full bg-ink-50 px-2.5 py-1 text-xs font-semibold text-ink-700 ring-1 ring-ink-200">
+                        Manual
+                      </span>
+                    )}
+                  </td>
                   <td className="p-4 align-middle text-sm text-ink-700">
                     {product.brand?.name ?? '—'}
                   </td>
