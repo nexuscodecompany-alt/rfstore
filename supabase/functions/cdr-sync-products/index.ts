@@ -1,11 +1,11 @@
 // deno-lint-ignore-file no-explicit-any
-// Edge Function: cdr-sync-products
-// - Llama productos_con_galeria del WS de CDR usando fecha = último sync.
-// - Hace upsert en products por external_code.
-// - Descarga imágenes nuevas (compara md5) a bucket cdr-images.
-// - Marca productos como source='cdr'.
-// - Actualiza app_settings.cdr_last_full_sync.
-
+// Edge Function: cdr-sync-products (v5)
+// Espejo del código desplegado en Supabase. Modos:
+//  - 'new-only'      (default): solo inserta los códigos que no están en DB
+//  - 'update-prices'           : actualiza price/stock de los que ya están
+//  - 'full'                    : ambos
+// `background: true` por defecto: corre con EdgeRuntime.waitUntil y responde 202.
+// Body legacy `{ full: true }` se mapea a mode='full'.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { corsHeaders } from '../_shared/cors.ts';
 import { fetchProductosConGaleria, type CdrProduct } from '../_shared/cdr-soap.ts';
@@ -16,251 +16,129 @@ const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const CDR_EMAIL = Deno.env.get('CDR_EMAIL')!;
 const CDR_TOKEN = Deno.env.get('CDR_TOKEN')!;
 const IMAGE_BUCKET = 'cdr-images';
+const PRODUCT_CONCURRENCY = 8;
+const IMAGE_CONCURRENCY = 4;
 
-const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
-	auth: { persistSession: false, autoRefreshToken: false },
-});
-
-interface SyncReport {
-	ok: boolean;
-	fetched: number;
-	inserted: number;
-	updated: number;
-	images_downloaded: number;
-	images_skipped: number;
-	errors: string[];
-	since: string;
-	finished_at: string;
-}
+const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
 
 async function getSetting<T>(key: string, fallback: T): Promise<T> {
 	const { data } = await supabase.from('app_settings').select('value').eq('key', key).single();
 	return (data?.value as T) ?? fallback;
 }
-
 async function setSetting(key: string, value: any): Promise<void> {
 	await supabase.from('app_settings').upsert({ key, value, updated_at: new Date().toISOString() });
 }
 
-async function downloadImageIfChanged(
-	productCode: string,
-	idx: number,
-	imgUrl: string,
-	md5: string,
-	storedMd5s: Record<string, string>
-): Promise<{ publicUrl: string | null; md5: string; downloaded: boolean }> {
-	const key = String(idx);
+async function downloadImage(productCode: string, idx: number, imgUrl: string): Promise<{ publicUrl: string; }> {
 	const storedPath = `${productCode}/${idx}.bin`;
-
-	if (storedMd5s[key] === md5) {
-		// imagen no cambió: devuelvo la URL pública existente
-		const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(storedPath);
-		return { publicUrl: data.publicUrl, md5, downloaded: false };
-	}
-
 	const resp = await fetch(imgUrl);
-	if (!resp.ok) {
-		throw new Error(`No se pudo bajar imagen ${imgUrl}: HTTP ${resp.status}`);
-	}
+	if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 	const contentType = resp.headers.get('content-type') || 'image/jpeg';
 	const bytes = new Uint8Array(await resp.arrayBuffer());
-
-	const { error: upErr } = await supabase.storage
-		.from(IMAGE_BUCKET)
-		.upload(storedPath, bytes, { contentType, upsert: true });
-
-	if (upErr) throw new Error(`Upload fallido (${storedPath}): ${upErr.message}`);
-
+	const { error: upErr } = await supabase.storage.from(IMAGE_BUCKET).upload(storedPath, bytes, { contentType, upsert: true });
+	if (upErr) throw new Error(upErr.message);
 	const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(storedPath);
-	return { publicUrl: data.publicUrl, md5, downloaded: true };
+	return { publicUrl: data.publicUrl };
 }
 
-async function upsertProduct(
-	p: CdrProduct,
-	defaults: { categoryId: string; brandId: string },
-	report: SyncReport
-): Promise<void> {
+async function insertNewProduct(p: CdrProduct, defaults: { categoryId: string; brandId: string }, counters: any): Promise<void> {
 	const externalCode = p.codigo;
-	if (!externalCode) {
-		report.errors.push('Producto sin código, ignorado');
-		return;
-	}
+	if (!externalCode) return;
 
-	// ¿Existe ya?
-	const { data: existing } = await supabase
-		.from('products')
-		.select('id, image_md5s, slug, brand_id, category_id')
-		.eq('external_code', externalCode)
-		.maybeSingle();
-
-	const storedMd5s: Record<string, string> =
-		(existing?.image_md5s as Record<string, string>) ?? {};
-
-	// Descargar / refrescar imágenes
+	const gallery = p.galeria ?? [];
 	const newMd5s: Record<string, string> = {};
 	const imageUrls: string[] = [];
 
-	for (let i = 0; i < (p.galeria ?? []).length; i++) {
-		const g = p.galeria[i];
-		try {
-			const res = await downloadImageIfChanged(externalCode, i, g.img, g.md5, storedMd5s);
-			if (res.publicUrl) imageUrls.push(res.publicUrl);
-			newMd5s[String(i)] = res.md5;
-			if (res.downloaded) report.images_downloaded++;
-			else report.images_skipped++;
-		} catch (e: any) {
-			report.errors.push(`img ${externalCode}#${i}: ${e.message}`);
+	for (let i = 0; i < gallery.length; i += IMAGE_CONCURRENCY) {
+		const chunk = gallery.slice(i, i + IMAGE_CONCURRENCY);
+		const res = await Promise.allSettled(chunk.map((g, j) => downloadImage(externalCode, i + j, g.img).then(r => ({ ...r, idx: i + j, md5: g.md5 }))));
+		for (const r of res) {
+			if (r.status === 'fulfilled') {
+				imageUrls.push(r.value.publicUrl);
+				newMd5s[String(r.value.idx)] = r.value.md5;
+				counters.images_downloaded++;
+			} else {
+				counters.errors.push(`img ${externalCode}: ${r.reason?.message ?? r.reason}`);
+			}
 		}
 	}
 
 	const stockNum = typeof p.stock === 'number' ? p.stock : Number(p.stock) || 0;
 	const priceUsd = Number(p.precio) || 0;
-
 	const baseSlug = slugify(`${p.nombre}-${externalCode}`);
+	const descriptionJson = p.descripcion ? { type: 'doc', content: [{ type: 'html', html: p.descripcion }] } : { type: 'doc', content: [] };
+	const productRow = { name: p.nombre || externalCode, slug: baseSlug, brand_id: defaults.brandId, category_id: defaults.categoryId, features: [p.copete, p.modelo ? `Modelo: ${p.modelo}` : null, p.nro_parte ? `Nro parte: ${p.nro_parte}` : null, p.gtin ? `GTIN: ${p.gtin}` : null].filter(Boolean), description: descriptionJson, images: imageUrls, source: 'cdr', external_code: externalCode, price_usd: priceUsd, last_synced_at: new Date().toISOString(), image_md5s: newMd5s };
+	const { data: inserted, error } = await supabase.from('products').insert(productRow).select('id').single();
+	if (error) { counters.errors.push(`insert ${externalCode}: ${error.message}`); return; }
+	await supabase.from('variants').insert({ product_id: inserted.id, color: '#000000', color_name: 'Unico', storage: '-', price: priceUsd, stock: stockNum });
+	counters.inserted++;
+}
 
-	// Descripción: si viene HTML del WS, lo guardamos como JSONContent básico (string)
-	const descriptionJson = p.descripcion
-		? { type: 'doc', content: [{ type: 'html', html: p.descripcion }] }
-		: { type: 'doc', content: [] };
+async function updateExistingProductStock(externalCode: string, p: CdrProduct, counters: any): Promise<void> {
+	const { data: existing } = await supabase.from('products').select('id').eq('external_code', externalCode).maybeSingle();
+	if (!existing) return;
+	const stockNum = typeof p.stock === 'number' ? p.stock : Number(p.stock) || 0;
+	const priceUsd = Number(p.precio) || 0;
+	await supabase.from('products').update({ price_usd: priceUsd, last_synced_at: new Date().toISOString() }).eq('id', existing.id);
+	const { data: existingVar } = await supabase.from('variants').select('id').eq('product_id', existing.id).maybeSingle();
+	if (existingVar) await supabase.from('variants').update({ price: priceUsd, stock: stockNum }).eq('id', existingVar.id);
+	counters.updated++;
+}
 
-	const productRow = {
-		name: p.nombre || externalCode,
-		slug: existing?.slug ?? baseSlug,
-		brand_id: existing?.brand_id ?? defaults.brandId,
-		category_id: existing?.category_id ?? defaults.categoryId,
-		features: [
-			p.copete,
-			p.modelo ? `Modelo: ${p.modelo}` : null,
-			p.nro_parte ? `Nro parte: ${p.nro_parte}` : null,
-			p.gtin ? `GTIN: ${p.gtin}` : null,
-		].filter(Boolean) as string[],
-		description: descriptionJson,
-		images: imageUrls,
-		source: 'cdr',
-		external_code: externalCode,
-		price_usd: priceUsd,
-		last_synced_at: new Date().toISOString(),
-		image_md5s: newMd5s,
-	};
+async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: any) {
+	try {
+		const products = await fetchProductosConGaleria(CDR_EMAIL, CDR_TOKEN, '2015-01-01 00:00:00');
+		counters.fetched = products.length;
 
-	if (existing) {
-		const { error } = await supabase
-			.from('products')
-			.update(productRow)
-			.eq('id', existing.id);
-		if (error) {
-			report.errors.push(`update ${externalCode}: ${error.message}`);
-			return;
+		const { data: existingRows } = await supabase.from('products').select('external_code').eq('source', 'cdr');
+		const existingCodes = new Set((existingRows ?? []).map((r: any) => r.external_code));
+		counters.already_in_db = existingCodes.size;
+
+		const catId = await getSetting<string>('cdr_default_category_id', '');
+		const brandId = await getSetting<string>('cdr_default_brand_id', '');
+		if (!catId || !brandId) throw new Error('defaults no configurados');
+
+		const toInsert = products.filter(p => p.codigo && !existingCodes.has(p.codigo));
+		const toUpdate = products.filter(p => p.codigo && existingCodes.has(p.codigo));
+		counters.to_insert = toInsert.length;
+		counters.to_update = toUpdate.length;
+
+		if (mode === 'new-only' || mode === 'full') {
+			for (let i = 0; i < toInsert.length; i += PRODUCT_CONCURRENCY) {
+				const chunk = toInsert.slice(i, i + PRODUCT_CONCURRENCY);
+				await Promise.allSettled(chunk.map(p => insertNewProduct(p, { categoryId: catId, brandId }, counters)));
+			}
 		}
-
-		// variante única para CDR
-		const { data: existingVar } = await supabase
-			.from('variants')
-			.select('id')
-			.eq('product_id', existing.id)
-			.maybeSingle();
-
-		if (existingVar) {
-			await supabase
-				.from('variants')
-				.update({ price: priceUsd, stock: stockNum })
-				.eq('id', existingVar.id);
-		} else {
-			await supabase.from('variants').insert({
-				product_id: existing.id,
-				color: '#000000',
-				color_name: 'Único',
-				storage: '-',
-				price: priceUsd,
-				stock: stockNum,
-			});
+		if (mode === 'update-prices' || mode === 'full') {
+			for (let i = 0; i < toUpdate.length; i += PRODUCT_CONCURRENCY * 2) {
+				const chunk = toUpdate.slice(i, i + PRODUCT_CONCURRENCY * 2);
+				await Promise.allSettled(chunk.map(p => updateExistingProductStock(p.codigo, p, counters)));
+			}
 		}
-		report.updated++;
-	} else {
-		const { data: inserted, error } = await supabase
-			.from('products')
-			.insert(productRow)
-			.select('id')
-			.single();
-		if (error) {
-			report.errors.push(`insert ${externalCode}: ${error.message}`);
-			return;
-		}
-		await supabase.from('variants').insert({
-			product_id: inserted.id,
-			color: '#000000',
-			color_name: 'Único',
-			storage: '-',
-			price: priceUsd,
-			stock: stockNum,
-		});
-		report.inserted++;
+		counters.ok = counters.errors.length === 0;
+		counters.finished_at = new Date().toISOString();
+		await setSetting('cdr_last_sync_report', counters);
+		await setSetting('cdr_last_full_sync', new Date().toISOString().slice(0, 19).replace('T', ' '));
+	} catch (e: any) {
+		counters.errors.push(`fatal: ${e.message}`);
+		counters.ok = false;
+		counters.finished_at = new Date().toISOString();
+		await setSetting('cdr_last_sync_report', counters);
 	}
 }
 
 Deno.serve(async req => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+	const body: { mode?: 'new-only' | 'update-prices' | 'full'; background?: boolean; full?: boolean } = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
+	const mode = body.mode ?? (body.full ? 'full' : 'new-only');
+	const bg = body.background !== false;
+	const counters: any = { inserted: 0, updated: 0, images_downloaded: 0, fetched: 0, already_in_db: 0, to_insert: 0, to_update: 0, errors: [], mode };
 
-	const report: SyncReport = {
-		ok: false,
-		fetched: 0,
-		inserted: 0,
-		updated: 0,
-		images_downloaded: 0,
-		images_skipped: 0,
-		errors: [],
-		since: '',
-		finished_at: '',
-	};
-
-	try {
-		// Permite forzar sync completo: { full: true } o usar last_sync
-		const body: { full?: boolean; since?: string } = req.method === 'POST'
-			? await req.json().catch(() => ({}))
-			: {};
-
-		const lastSync = await getSetting<string>('cdr_last_full_sync', '2015-01-01 00:00:00');
-		const since = body.full ? '2015-01-01 00:00:00' : (body.since ?? lastSync);
-		report.since = since;
-
-		const startedAt = new Date();
-
-		const products = await fetchProductosConGaleria(CDR_EMAIL, CDR_TOKEN, since);
-		report.fetched = products.length;
-
-		const catId = await getSetting<string>('cdr_default_category_id', '');
-		const brandId = await getSetting<string>('cdr_default_brand_id', '');
-
-		if (!catId || !brandId) {
-			throw new Error('cdr_default_category_id o cdr_default_brand_id no configurados en app_settings');
-		}
-
-		for (const p of products) {
-			try {
-				await upsertProduct(p, { categoryId: catId, brandId }, report);
-			} catch (e: any) {
-				report.errors.push(`${p.codigo}: ${e.message}`);
-			}
-		}
-
-		await setSetting(
-			'cdr_last_full_sync',
-			startedAt.toISOString().slice(0, 19).replace('T', ' ')
-		);
-
-		report.ok = report.errors.length === 0;
-		report.finished_at = new Date().toISOString();
-
-		return new Response(JSON.stringify(report), {
-			headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-			status: 200,
-		});
-	} catch (e: any) {
-		report.errors.push(`fatal: ${e.message}`);
-		report.finished_at = new Date().toISOString();
-		return new Response(JSON.stringify(report), {
-			headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-			status: 500,
-		});
+	if (bg) {
+		// @ts-ignore EdgeRuntime global
+		EdgeRuntime.waitUntil(runSync(mode, counters));
+		return new Response(JSON.stringify({ ok: true, started: true, mode_dispatched: mode }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 202 });
 	}
+	await runSync(mode, counters);
+	return new Response(JSON.stringify(counters), { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 200 });
 });

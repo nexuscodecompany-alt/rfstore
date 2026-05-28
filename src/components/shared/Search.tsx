@@ -2,9 +2,10 @@ import { useState } from 'react';
 import { HiOutlineSearch } from 'react-icons/hi';
 import { IoMdClose } from 'react-icons/io';
 import { useGlobalStore } from '../../store/global.store';
-import { formatPrice } from '../../helpers';
+import { formatPrice, salePrice } from '../../helpers';
 import { searchProducts } from '../../actions';
 import { useNavigate } from 'react-router-dom';
+import { usePricingConfig } from '../../hooks';
 
 // 1) Tipo del resultado según el action
 type SearchResult = Awaited<ReturnType<typeof searchProducts>>;
@@ -16,6 +17,7 @@ export const Search = () => {
 
   const closeSheet = useGlobalStore(state => state.closeSheet);
   const navigate = useNavigate();
+  const pricing = usePricingConfig();
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,7 +51,12 @@ export const Search = () => {
         {searchResults.length > 0 ? (
           <ul>
             {searchResults.map(product => {
-              const v0 = (product as any).variants?.[0]; // accesos seguros
+              const variants = (product as any).variants ?? [];
+              const v0 = variants[0]; // accesos seguros
+              const minCost = variants.length
+                ? Math.min(...variants.map((v: any) => Number(v.price) || 0))
+                : Number((product as any).price) || 0;
+              const displayPrice = salePrice(minCost, pricing);
               return (
                 <li className="py-2 group" key={(product as any).id}>
                   <button
@@ -75,7 +82,10 @@ export const Search = () => {
                       </p>
 
                       <p className="text-sm font-medium text-gray-600">
-                        {formatPrice(v0?.price ?? (product as any).price ?? 0)}
+                        {formatPrice(displayPrice)}{' '}
+                        <span className="text-[10px] text-gray-500">
+                          IVA incluido
+                        </span>
                       </p>
                     </div>
                   </button>

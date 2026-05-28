@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { PreparedProducts } from '../../interfaces';
 import { CardProduct } from '../products/CardProduct';
 import { HiOutlineArrowDown, HiOutlineArrowUp } from 'react-icons/hi2';
+import { salePrice } from '../../helpers';
+import { usePricingConfig } from '../../hooks';
 
 interface Props {
 	title: string;
@@ -11,6 +13,7 @@ interface Props {
 export const ProductGrid = ({ title, products }: Props) => {
 	const [searchTerm] = useState('');
 	const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+	const pricing = usePricingConfig();
 
 	const filteredProducts = products.filter(
 		product =>
@@ -20,8 +23,15 @@ export const ProductGrid = ({ title, products }: Props) => {
 			(product.categoryName || '').toLowerCase().includes(searchTerm.toLowerCase())
 	);
 
+	const finalPrice = (p: PreparedProducts) =>
+		p.variants?.length
+			? Math.min(...p.variants.map(v => salePrice(v.price, pricing)))
+			: salePrice(p.price, pricing);
+
 	const sortedProducts = [...filteredProducts].sort((a, b) => {
-		return sortOrder === 'desc' ? b.price - a.price : a.price - b.price;
+		const pa = finalPrice(a);
+		const pb = finalPrice(b);
+		return sortOrder === 'desc' ? pb - pa : pa - pb;
 	});
 
 	return (
