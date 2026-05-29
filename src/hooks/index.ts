@@ -45,6 +45,7 @@ export * from './taxonomy/useBrandsByCategories';
 export * from './settings/useFeatureFlag';
 export * from './settings/usePricingConfig';
 export * from './settings/useUsdUyuRate';
+export * from './settings/useShippingRates';
 
 /* ********************************** */
 /*             DASHBOARD              */

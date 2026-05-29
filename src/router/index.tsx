@@ -27,6 +27,7 @@ import {
     DashboardPricingPage,
     DashboardHomeSectionsPage,
     DashboardLegalPage,
+    DashboardShippingPage,
     LegalPage,
 } from '../pages';
 import { ClientLayout } from '../layouts/ClientLayout';
@@ -175,6 +176,10 @@ export const router = createBrowserRouter([
             {
                 path: 'legales',
                 element: <DashboardLegalPage />,
+            },
+            {
+                path: 'envios',
+                element: <DashboardShippingPage />,
             },
         ],
     },

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { FiPlus } from 'react-icons/fi';
+import { FaWhatsapp } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { VariantProduct } from '../../interfaces';
 import { formatPrice, salePrice } from '../../helpers';
@@ -7,6 +8,12 @@ import { Tag } from '../shared/Tag';
 import { useCartStore } from '../../store/cart.store';
 import { usePaymentsEnabled, usePricingConfig } from '../../hooks';
 import toast from 'react-hot-toast';
+
+const WHATSAPP_NUMBER = '59894116299';
+const whatsappLinkFor = (productName: string) =>
+	`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+		`Hola, me interesa el producto "${productName}". ¿Está disponible?`
+	)}`;
 
 interface Props {
 	img: string;
@@ -53,6 +60,7 @@ export const CardProduct = ({
 
 	const stock = selectedVariant?.stock || 0;
 	const isOutOfStock = stock === 0;
+	const isCdr = source === 'cdr' && paymentsEnabled;
 
 	const handleAddClick = (e: React.MouseEvent<HTMLButtonElement>) => {
 		e.preventDefault();
@@ -108,16 +116,6 @@ export const CardProduct = ({
 					loading='lazy'
 					className='relative h-full w-full object-contain p-6 group-hover:scale-105 transition-transform duration-500 ease-out'
 				/>
-
-				{/* QUICK ADD on hover */}
-				<button
-					onClick={handleAddClick}
-					disabled={isOutOfStock}
-					className='absolute bottom-3 right-3 grid place-items-center w-10 h-10 bg-ink-900 text-white rounded-full shadow-soft opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 hover:bg-brand-600 hover:scale-105 transition-all duration-300 disabled:bg-ink-300 disabled:cursor-not-allowed disabled:opacity-50'
-					aria-label='Añadir al carrito'
-				>
-					<FiPlus size={18} />
-				</button>
 			</Link>
 
 			{/* INFO */}
@@ -146,7 +144,7 @@ export const CardProduct = ({
 				</div>
 
 				{colors.length > 0 && (
-					<div className='flex items-center gap-2 pt-2 mt-auto border-t border-ink-100'>
+					<div className='flex items-center gap-2 pt-2 border-t border-ink-100'>
 						<span className='text-[10px] font-medium text-ink-500'>Color:</span>
 						<div className='flex gap-1.5'>
 							{colors.map(color => (
@@ -169,6 +167,31 @@ export const CardProduct = ({
 						</div>
 					</div>
 				)}
+
+				{/* CTA: agregar al carrito si es CDR, WhatsApp si no */}
+				<div className='mt-auto pt-3'>
+					{isCdr ? (
+						<button
+							onClick={handleAddClick}
+							disabled={isOutOfStock}
+							className='w-full inline-flex items-center justify-center gap-2 bg-ink-900 text-white text-xs font-semibold rounded-lg py-2.5 hover:bg-brand-600 transition-colors disabled:bg-ink-300 disabled:cursor-not-allowed'
+						>
+							<FiPlus size={16} />
+							{isOutOfStock ? 'Agotado' : 'Agregar al carrito'}
+						</button>
+					) : (
+						<a
+							href={whatsappLinkFor(name)}
+							target='_blank'
+							rel='noopener noreferrer'
+							onClick={e => e.stopPropagation()}
+							className='w-full inline-flex items-center justify-center gap-2 bg-[#25D366] text-white text-xs font-semibold rounded-lg py-2.5 hover:bg-[#1ebe5d] transition-colors'
+						>
+							<FaWhatsapp size={16} />
+							Consultar por WhatsApp
+						</a>
+					)}
+				</div>
 			</div>
 		</div>
 	);

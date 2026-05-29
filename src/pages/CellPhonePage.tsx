@@ -1,10 +1,11 @@
 import { LuMinus, LuPlus } from "react-icons/lu";
 import { Separator } from "../components/shared/Separator";
 import { formatPrice, prepareProducts, salePrice } from "../helpers";
-import { usePricingConfig } from "../hooks";
+import { usePaymentsEnabled, usePricingConfig } from "../hooks";
 import { CiDeliveryTruck } from "react-icons/ci";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { BsChatLeftText } from "react-icons/bs";
+import { FaWhatsapp } from "react-icons/fa";
 import { ProductDescription } from "../components/one-product/ProductDescription";
 import { GridImages } from "../components/one-product/GridImages";
 import { useProduct } from "../hooks/products/useProduct";
@@ -48,6 +49,7 @@ export const CellPhonePage = () => {
 
   const addItem = useCartStore((state) => state.addItem);
   const pricing = usePricingConfig();
+  const { enabled: paymentsEnabled } = usePaymentsEnabled();
 
   const navigate = useNavigate();
 
@@ -101,6 +103,12 @@ export const CellPhonePage = () => {
 
   // Obtener el stock
   const isOutOfStock = selectedVariant?.stock === 0;
+  const isCdr = product?.source === 'cdr' && paymentsEnabled;
+  const whatsappHref = product
+    ? `https://wa.me/59894116299?text=${encodeURIComponent(
+        `Hola, me interesa el producto "${product.name}". ¿Está disponible?`
+      )}`
+    : '#';
 
   // Función para añadir al carrito
   const addToCart = () => {
@@ -253,6 +261,22 @@ export const CellPhonePage = () => {
             >
               Agotado
             </button>
+          ) : !isCdr ? (
+            // Productos no-CDR: solo consulta por WhatsApp.
+            <div className="flex flex-col gap-3">
+              <a
+                href={whatsappHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="py-4 text-xs font-semibold tracking-widest text-white uppercase bg-[#25D366] rounded-full flex items-center justify-center gap-2 hover:bg-[#1ebe5d] transition-colors"
+              >
+                <FaWhatsapp size={18} />
+                Consultar por WhatsApp
+              </a>
+              <p className="text-[11px] text-center text-ink-500">
+                Este producto se vende por consulta. Te respondemos en minutos.
+              </p>
+            </div>
           ) : (
             <>
               {/* Contador */}

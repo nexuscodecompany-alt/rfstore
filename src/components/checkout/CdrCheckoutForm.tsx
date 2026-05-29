@@ -9,6 +9,11 @@ import {
 	type CartItemForMP,
 } from '../../actions';
 import { useUser, useUsdUyuRate } from '../../hooks';
+import {
+	ShippingZoneSelector,
+	ShippingSelection,
+	emptyShippingSelection,
+} from './ShippingZoneSelector';
 import toast from 'react-hot-toast';
 import { formatPrice } from '../../helpers';
 import { ItemsCheckout } from './ItemsCheckout';
@@ -42,7 +47,6 @@ export const CdrCheckoutForm = () => {
 	const [depositInfo, setDepositInfo] = useState<DepositInfo>({});
 	const [proofFile, setProofFile] = useState<File | null>(null);
 	const { data: fx } = useUsdUyuRate();
-	const totalUyu = fx ? Math.round(totalAmount * fx.rate) : null;
 
 	const [form, setForm] = useState({
 		fullName: '',
@@ -55,6 +59,12 @@ export const CdrCheckoutForm = () => {
 		postalCode: '',
 		country: 'Uruguay',
 	});
+	const [shipping, setShipping] = useState<ShippingSelection>(
+		emptyShippingSelection
+	);
+	const shippingCostUsd = shipping.cost_usd;
+	const grandTotalUsd = totalAmount + shippingCostUsd;
+	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
 
 	useEffect(() => {
 		if (session?.user?.email) setForm(f => ({ ...f, email: session.user.email ?? '' }));
@@ -81,6 +91,16 @@ export const CdrCheckoutForm = () => {
 		}
 		if (!form.line1 || !form.city) {
 			toast.error('Completá la dirección de envío');
+			return;
+		}
+
+		// Validación de envío
+		if (shipping.zone === 'montevideo' && !shipping.barrio) {
+			toast.error('Elegí tu barrio para calcular el envío');
+			return;
+		}
+		if (shipping.zone === 'interior' && !shipping.department) {
+			toast.error('Elegí el departamento de destino');
 			return;
 		}
 
@@ -125,6 +145,10 @@ export const CdrCheckoutForm = () => {
 					},
 					customer_email: form.email,
 					customer_name: form.fullName,
+					shipping_zone: shipping.zone,
+					shipping_barrio: shipping.barrio ?? undefined,
+					shipping_department: shipping.department ?? undefined,
+					shipping_cost_usd: shipping.cost_usd,
 				});
 				cleanCart();
 				// Redirect a MP. En PROD usar init_point; en dev se puede usar sandbox.
@@ -163,11 +187,15 @@ export const CdrCheckoutForm = () => {
 				.insert({
 					customer_id: customer.id,
 					address_id: addrRow.id,
-					total_amount: totalAmount,
+					total_amount: grandTotalUsd,
 					status: 'pago_pendiente',
 					payment_method: method,
 					payment_status: 'pending',
-				})
+					shipping_zone: shipping.zone,
+					shipping_barrio: shipping.barrio,
+					shipping_department: shipping.department,
+					shipping_cost_usd: shipping.cost_usd,
+				} as any)
 				.select()
 				.single();
 			if (orderErr) throw new Error(orderErr.message);
@@ -230,6 +258,10 @@ export const CdrCheckoutForm = () => {
 					value={form.phone}
 					onChange={e => setForm({ ...form, phone: e.target.value })}
 				/>
+			</section>
+
+			<section className='space-y-3'>
+				<ShippingZoneSelector value={shipping} onChange={setShipping} />
 			</section>
 
 			<section className='space-y-3'>
@@ -360,18 +392,36 @@ export const CdrCheckoutForm = () => {
 				<ItemsCheckout />
 			</div>
 
-			<div className='flex items-center justify-between gap-3'>
-				<p className='text-sm text-gray-600'>Total a pagar</p>
-				<div className='text-right'>
-					<p className='font-bold text-lg'>{formatPrice(totalAmount)}</p>
-					{method === 'mercadopago' && totalUyu !== null && fx && (
-						<p className='text-[11px] text-gray-500'>
-							≈ UYU {totalUyu.toLocaleString('es-UY')}{' '}
-							<span title={`Cotización: ${fx.rate.toFixed(2)} (${fx.source})`}>
-								(al dólar BROU de hoy)
-							</span>
-						</p>
-					)}
+			<div className='space-y-1 border-t border-ink-200 pt-3'>
+				<div className='flex items-center justify-between text-sm text-ink-600'>
+					<span>Subtotal</span>
+					<span>{formatPrice(totalAmount)}</span>
+				</div>
+				<div className='flex items-center justify-between text-sm text-ink-600'>
+					<span>Envío {shipping.zone === 'interior' ? '(DAC)' : ''}</span>
+					<span>
+						{shipping.zone === 'interior'
+							? 'Pago en agencia'
+							: shippingCostUsd > 0
+							? formatPrice(shippingCostUsd)
+							: shipping.barrio
+							? 'Gratis'
+							: '—'}
+					</span>
+				</div>
+				<div className='flex items-center justify-between gap-3 pt-2 border-t border-ink-100'>
+					<p className='text-sm font-semibold text-gray-700'>Total a pagar</p>
+					<div className='text-right'>
+						<p className='font-bold text-lg'>{formatPrice(grandTotalUsd)}</p>
+						{method === 'mercadopago' && totalUyu !== null && fx && (
+							<p className='text-[11px] text-gray-500'>
+								≈ UYU {totalUyu.toLocaleString('es-UY')}{' '}
+								<span title={`Cotización: ${fx.rate.toFixed(2)} (${fx.source})`}>
+									(al dólar BCU oficial de hoy)
+								</span>
+							</p>
+						)}
+					</div>
 				</div>
 			</div>
 

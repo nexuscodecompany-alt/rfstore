@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import { RiSecurePaymentLine } from 'react-icons/ri';
 import { CartItem } from './CartItem';
 import { useCartStore } from '../../store/cart.store';
+import { usePaymentsEnabled } from '../../hooks';
 
 export const Cart = () => {
 	const closeSheet = useGlobalStore(state => state.closeSheet);
@@ -14,6 +15,12 @@ export const Cart = () => {
 	const totalItemsInCart = useCartStore(
 		state => state.totalItemsInCart
 	);
+	const { enabled: paymentsEnabled } = usePaymentsEnabled();
+	const allCdr =
+		paymentsEnabled &&
+		cartItems.length > 0 &&
+		cartItems.every(i => i.source === 'cdr');
+	const ctaLabel = allCdr ? 'Continuar con tu compra' : 'Continuar con la cotización';
 
 	return (
 		<div className='flex flex-col h-full'>
@@ -45,7 +52,7 @@ export const Cart = () => {
 							className='w-full bg-black text-white py-3.5 rounded-full flex items-center justify-center gap-3'
 						>
 							<RiSecurePaymentLine size={24} />
-							Continuar con la Cotización 
+							{ctaLabel}
 						</Link>
 
 						<button

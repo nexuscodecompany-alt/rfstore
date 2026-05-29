@@ -17,7 +17,7 @@ const fetchRate = async (): Promise<UsdUyuRate> => {
 	if (!venta || venta <= 0) throw new Error('cotización inválida');
 	return {
 		rate: venta,
-		source: 'BROU venta (dolarapi.com)',
+		source: 'BCU oficial (dolarapi.com)',
 		fetched_at: new Date().toISOString(),
 	};
 };

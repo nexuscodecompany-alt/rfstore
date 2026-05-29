@@ -8,3 +8,4 @@ export * from './pricing';
 export * from './home';
 export * from './legal';
 export * from './notifications';
+export * from './shipping';

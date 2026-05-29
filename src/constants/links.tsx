@@ -12,6 +12,7 @@ import {
     FaPercent,
     FaStar,
     FaScaleBalanced,
+    FaTruck,
 } from 'react-icons/fa6';
 
 export const navbarLinks = [
@@ -118,5 +119,11 @@ export const dashboardLinks = [
         title: 'Legales',
         href: '/dashboard/legales',
         icon: <FaScaleBalanced size={22} />,
+    },
+    {
+        id: 10,
+        title: 'Envíos',
+        href: '/dashboard/envios',
+        icon: <FaTruck size={22} />,
     },
 ];
