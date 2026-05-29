@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FaEllipsis } from 'react-icons/fa6';
 import { HiOutlineExternalLink } from 'react-icons/hi';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   useAdminProducts,
   useDeleteProduct,
@@ -35,9 +35,24 @@ export const TableProduct = () => {
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [inputValue, setInputValue] = useState('');
+  const [searchParams, setSearchParams] = useSearchParams();
   const [brandFilter, setBrandFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<'' | 'local' | 'cdr'>('');
+  const [sourceFilter, setSourceFilter] = useState<'' | 'local' | 'cdr'>(
+    (searchParams.get('source') as '' | 'local' | 'cdr') || ''
+  );
+  const [activeFilter, setActiveFilter] = useState<'' | 'active' | 'inactive'>(
+    (searchParams.get('estado') as '' | 'active' | 'inactive') || ''
+  );
+
+  // Si vienen filtros por query string (ej desde /dashboard/cdr), persistirlos en estado
+  useEffect(() => {
+    const s = searchParams.get('source') as '' | 'local' | 'cdr' | null;
+    const a = searchParams.get('estado') as '' | 'active' | 'inactive' | null;
+    if (s !== null && s !== sourceFilter) setSourceFilter(s);
+    if (a !== null && a !== activeFilter) setActiveFilter(a);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   const { brands, categories } = useTaxonomiesAdmin();
 
@@ -57,7 +72,8 @@ export const TableProduct = () => {
     searchTerm,
     brandFilter,
     categoryFilter,
-    sourceFilter
+    sourceFilter,
+    activeFilter
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -164,13 +180,28 @@ export const TableProduct = () => {
             <option value="cdr">Solo CDR</option>
           </select>
 
-          {(brandFilter || categoryFilter || sourceFilter) && (
+          <select
+            value={activeFilter}
+            onChange={(e) => {
+              setActiveFilter(e.target.value as '' | 'active' | 'inactive');
+              setPage(1);
+            }}
+            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+          >
+            <option value="">Cualquier estado</option>
+            <option value="active">Solo activos</option>
+            <option value="inactive">Solo inactivos (pendientes)</option>
+          </select>
+
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter) && (
             <button
               type="button"
               onClick={() => {
                 setBrandFilter('');
                 setCategoryFilter('');
                 setSourceFilter('');
+                setActiveFilter('');
+                setSearchParams({}, { replace: true });
                 setPage(1);
               }}
               className="text-xs font-semibold text-brand-700 hover:text-brand-900"

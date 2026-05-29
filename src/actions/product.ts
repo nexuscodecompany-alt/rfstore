@@ -145,7 +145,8 @@ export const getAdminProducts = async (
     searchTerm = '',
     brandId = '',
     categoryId = '',
-    source: '' | 'local' | 'cdr' = ''
+    source: '' | 'local' | 'cdr' = '',
+    activeFilter: '' | 'active' | 'inactive' = ''
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
@@ -175,6 +176,9 @@ export const getAdminProducts = async (
     // 'local' incluye filas con source NULL (cargas viejas previas al sync).
     if (source === 'local') query = query.or('source.eq.local,source.is.null');
     else if (source === 'cdr') query = query.eq('source', 'cdr');
+
+    if (activeFilter === 'active') query = query.eq('active', true);
+    else if (activeFilter === 'inactive') query = query.eq('active', false);
 
     const { data: products, error, count } = await query.range(from, to);
     if (error) throw new Error(error.message);

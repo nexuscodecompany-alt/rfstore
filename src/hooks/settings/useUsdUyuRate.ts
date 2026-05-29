@@ -1,25 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 
-// Cotización dólar BROU venta vía dolarapi.com.
-// El back también la consulta (con cache propio), esto es solo para mostrar
-// el equivalente UYU en el checkout antes de redirigir a MercadoPago.
+// Cotización USD→UYU (BCU oficial) servida por nuestra edge function.
+// Usar la edge function evita problemas de DNS/bloqueo de dolarapi.com en
+// algunas redes del cliente (ISP, antivirus, firewall corporativo).
 export interface UsdUyuRate {
 	rate: number;
 	source: string;
 	fetched_at: string;
+	stale?: boolean;
 }
 
+const SUPABASE_URL = import.meta.env.VITE_PROJECT_URL_SUPABASE;
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_API_KEY;
+
 const fetchRate = async (): Promise<UsdUyuRate> => {
-	const r = await fetch('https://api.dolarapi.com/v1/uruguay/oficial');
-	if (!r.ok) throw new Error(`dolarapi HTTP ${r.status}`);
+	const r = await fetch(`${SUPABASE_URL}/functions/v1/get-fx-rate`, {
+		headers: { apikey: SUPABASE_ANON },
+	});
+	if (!r.ok) throw new Error(`get-fx-rate HTTP ${r.status}`);
 	const j = await r.json();
-	const venta = Number(j.venta);
-	if (!venta || venta <= 0) throw new Error('cotización inválida');
-	return {
-		rate: venta,
-		source: 'BCU oficial (dolarapi.com)',
-		fetched_at: new Date().toISOString(),
-	};
+	if (!j.rate || j.rate <= 0) throw new Error('cotización inválida');
+	return j as UsdUyuRate;
 };
 
 export const useUsdUyuRate = () =>

@@ -89,6 +89,19 @@ export const CdrCheckoutForm = () => {
 			navigate('/login');
 			return;
 		}
+		if (!form.fullName.trim()) {
+			toast.error('Ingresá tu nombre completo');
+			return;
+		}
+		const phoneDigits = form.phone.replace(/\D/g, '');
+		if (phoneDigits.length < 8) {
+			toast.error('Ingresá un teléfono válido (mín. 8 dígitos)');
+			return;
+		}
+		if (!form.email.trim() || !/^.+@.+\..+$/.test(form.email)) {
+			toast.error('Ingresá un email válido');
+			return;
+		}
 		if (!form.line1 || !form.city) {
 			toast.error('Completá la dirección de envío');
 			return;
@@ -239,24 +252,31 @@ export const CdrCheckoutForm = () => {
 			<section className='space-y-3'>
 				<h3 className='text-lg font-semibold'>Datos de contacto</h3>
 				<input
-					className='border rounded p-2 w-full'
-					placeholder='Nombre completo'
+					className='border rounded p-2 w-full invalid:border-rose-400'
+					placeholder='Nombre completo *'
 					value={form.fullName}
 					onChange={e => setForm({ ...form, fullName: e.target.value })}
+					required
+					minLength={2}
 				/>
 				<input
 					type='email'
-					className='border rounded p-2 w-full'
-					placeholder='Email'
+					className='border rounded p-2 w-full invalid:border-rose-400'
+					placeholder='Email *'
 					value={form.email}
 					onChange={e => setForm({ ...form, email: e.target.value })}
 					required
 				/>
 				<input
-					className='border rounded p-2 w-full'
-					placeholder='Teléfono'
+					type='tel'
+					inputMode='tel'
+					className='border rounded p-2 w-full invalid:border-rose-400'
+					placeholder='Teléfono * (ej: 094 116 299)'
 					value={form.phone}
 					onChange={e => setForm({ ...form, phone: e.target.value })}
+					required
+					minLength={8}
+					pattern='[0-9 +()-]{8,}'
 				/>
 			</section>
 

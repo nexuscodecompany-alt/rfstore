@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../../supabase/client';
+
+const supabaseCountPending = async () =>
+	supabase
+		.from('products')
+		.select('id', { count: 'exact', head: true })
+		.eq('source', 'cdr')
+		.eq('active', false);
 import {
 	assignCdrProductTaxonomy,
 	getAppSettings,
@@ -93,9 +101,43 @@ export const DashboardCdrSyncPage = () => {
 	const { notifications, unreadCount, markOne, markAll } =
 		useAdminNotifications();
 
+	const { data: pendingData } = useQuery({
+		queryKey: ['cdr_pending_review_count'],
+		queryFn: async () => {
+			const { count } = await supabaseCountPending();
+			return count ?? 0;
+		},
+		refetchInterval: 60 * 1000,
+	});
+	const pendingCount = pendingData ?? 0;
+
 	return (
 		<div className='flex flex-col gap-8'>
 			<h1 className='text-xl font-bold'>Integración CDR</h1>
+
+			{pendingCount > 0 && (
+				<Link
+					to='/dashboard/productos?source=cdr&estado=inactive'
+					className='block p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-300 hover:from-amber-100 hover:to-amber-200 transition-all'
+				>
+					<div className='flex items-center justify-between gap-3'>
+						<div>
+							<p className='text-amber-900 font-bold text-base flex items-center gap-2'>
+								<HiOutlineSparkles size={20} />
+								{pendingCount} producto{pendingCount === 1 ? '' : 's'} de CDR
+								pendiente{pendingCount === 1 ? '' : 's'} de aprobación
+							</p>
+							<p className='text-xs text-amber-800 mt-1'>
+								Los productos nuevos entran inactivos. Revisalos y activá los que
+								querés mostrar en la web.
+							</p>
+						</div>
+						<span className='text-amber-700 text-sm font-semibold'>
+							Ver listado →
+						</span>
+					</div>
+				</Link>
+			)}
 
 			{/* Productos nuevos detectados */}
 			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>

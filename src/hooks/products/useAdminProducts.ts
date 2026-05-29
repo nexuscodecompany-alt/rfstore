@@ -8,12 +8,13 @@ export const useAdminProducts = (
 	searchTerm: string,
 	brandId = '',
 	categoryId = '',
-	source: '' | 'local' | 'cdr' = ''
+	source: '' | 'local' | 'cdr' = '',
+	activeFilter: '' | 'active' | 'inactive' = ''
 ) => {
 	const { data, isLoading } = useQuery({
-		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source],
+		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter],
 		queryFn: () =>
-			getAdminProducts(page, searchTerm, brandId, categoryId, source),
+			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter),
 	});
 
 	return {
