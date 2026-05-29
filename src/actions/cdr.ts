@@ -72,6 +72,10 @@ export interface CreatePreferenceResult {
 	preference_id: string;
 	init_point: string;
 	sandbox_init_point: string;
+	total_usd: number;
+	total_uyu: number;
+	fx_rate: number;
+	fx_source: string;
 }
 
 export const createMpPreference = (payload: {
@@ -92,6 +96,11 @@ export const confirmManualPayment = (orderId: number, action: 'approve' | 'rejec
 	invokeFn<{ ok: boolean }>('manual-payment-confirm', {
 		order_id: orderId,
 		action,
+	});
+
+export const sendTransferEmail = (orderId: number) =>
+	invokeFn<{ ok: boolean; message_id?: string; sent_to?: string }>('send-transfer-email', {
+		order_id: orderId,
 	});
 
 export const getAppSettings = async () => {

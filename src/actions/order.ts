@@ -98,7 +98,7 @@ export const getOrderById = async (orderId: number) => {
 		.from('orders')
 		.select(
 			`
-				id, total_amount, status, created_at,
+				id, total_amount, status, created_at, payment_method, payment_status,
 				addresses:addresses(*),
 				order_items:order_items(quantity, price, variants(color_name, storage, products(name, images)))
 			`
@@ -124,6 +124,8 @@ export const getOrderById = async (orderId: number) => {
 		})),
 		totalAmount: order.total_amount,
 		status: order.status,
+		paymentMethod: order.payment_method as string | null,
+		paymentStatus: order.payment_status as string,
 		created_at: order.created_at,
 		address: {
 			addressLine1: order.addresses.address_line1,

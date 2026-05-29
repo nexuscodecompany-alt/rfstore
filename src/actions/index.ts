@@ -7,3 +7,4 @@ export * from './cdr';
 export * from './pricing';
 export * from './home';
 export * from './legal';
+export * from './notifications';

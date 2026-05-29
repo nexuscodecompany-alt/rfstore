@@ -10,7 +10,7 @@ import {
 	HiOutlineChevronDown,
 } from 'react-icons/hi2';
 import {
-	getBrands,
+	getBrandsAdmin,
 	getCategories,
 	getSubcategories,
 	createBrand,
@@ -140,7 +140,7 @@ export const DashboardTaxonomiesPage = () => {
 	const qc = useQueryClient();
 	const [openCat, setOpenCat] = useState<string | null>(null);
 
-	const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: getBrands });
+	const { data: brands = [] } = useQuery({ queryKey: ['brands', 'admin'], queryFn: getBrandsAdmin });
 	const { data: categories = [] } = useQuery({
 		queryKey: ['categories'],
 		queryFn: getCategories,

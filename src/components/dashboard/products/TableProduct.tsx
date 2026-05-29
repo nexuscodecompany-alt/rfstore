@@ -6,7 +6,7 @@ import {
   useAdminProducts,
   useDeleteProduct,
   useSetProductActive,
-  useTaxonomies,
+  useTaxonomiesAdmin,
 } from '../../../hooks';
 import { Loader } from '../../shared/Loader';
 import { formatDate, formatPrice } from '../../../helpers';
@@ -39,7 +39,7 @@ export const TableProduct = () => {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'' | 'local' | 'cdr'>('');
 
-  const { brands, categories } = useTaxonomies();
+  const { brands, categories } = useTaxonomiesAdmin();
 
   useEffect(() => {
     const timer = setTimeout(() => {

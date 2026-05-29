@@ -3,14 +3,23 @@ import { useOrder, useUser } from '../hooks';
 import { Loader } from '../components/shared/Loader';
 import { CiCircleCheck } from 'react-icons/ci';
 import { formatPrice } from '../helpers';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { supabase } from '../supabase/client';
+import { getAppSettings } from '../actions';
+
+interface TransferInfo {
+	banco?: string;
+	cuenta?: string;
+	titular?: string;
+	rut?: string;
+}
 
 export const ThankyouPage = () => {
 	const { id } = useParams<{ id: string }>();
 
 	const { data, isLoading, isError } = useOrder(Number(id));
 	const { isLoading: isLoadingSession } = useUser();
+	const [transferInfo, setTransferInfo] = useState<TransferInfo | null>(null);
 
 	const navigate = useNavigate();
 
@@ -21,6 +30,18 @@ export const ThankyouPage = () => {
 			}
 		});
 	}, [navigate]);
+
+	useEffect(() => {
+		if (data?.paymentMethod !== 'transfer') return;
+		(async () => {
+			try {
+				const map = await getAppSettings();
+				setTransferInfo((map.get('payment_transfer_info') as TransferInfo) ?? null);
+			} catch (e) {
+				console.warn('settings:', e);
+			}
+		})();
+	}, [data?.paymentMethod]);
 
 	if (isError) return <div>Error al cargar la orden</div>;
 
@@ -51,6 +72,61 @@ export const ThankyouPage = () => {
 						{userName ? `¡Gracias, ${userName}!` : '¡Gracias!'}
 					</p>
 				</div>
+
+				{data.paymentMethod === 'transfer' && (
+					<div className='border-2 border-emerald-200 bg-emerald-50/60 w-full p-5 rounded-md space-y-3 md:w-[600px]'>
+						<div className='flex items-center justify-between'>
+							<h3 className='font-bold text-emerald-900'>
+								Datos para transferir — Pedido #{data.id}
+							</h3>
+							<span className='text-xs text-emerald-700 font-medium'>
+								Te mandamos también un mail
+							</span>
+						</div>
+						<div className='grid grid-cols-1 gap-2 text-sm'>
+							<div className='flex justify-between border-b border-emerald-100 pb-2'>
+								<span className='text-emerald-800'>Banco</span>
+								<span className='font-semibold text-ink-900'>
+									{transferInfo?.banco || '—'}
+								</span>
+							</div>
+							<div className='flex justify-between border-b border-emerald-100 pb-2'>
+								<span className='text-emerald-800'>Cuenta</span>
+								<span className='font-semibold text-ink-900'>
+									{transferInfo?.cuenta || '—'}
+								</span>
+							</div>
+							<div className='flex justify-between border-b border-emerald-100 pb-2'>
+								<span className='text-emerald-800'>Titular</span>
+								<span className='font-semibold text-ink-900'>
+									{transferInfo?.titular || '—'}
+								</span>
+							</div>
+							<div className='flex justify-between border-b border-emerald-100 pb-2'>
+								<span className='text-emerald-800'>RUT</span>
+								<span className='font-semibold text-ink-900'>
+									{transferInfo?.rut || '—'}
+								</span>
+							</div>
+							<div className='flex justify-between border-b border-emerald-100 pb-2'>
+								<span className='text-emerald-800'>Monto</span>
+								<span className='font-bold text-ink-900'>
+									{formatPrice(data.totalAmount)}
+								</span>
+							</div>
+							<div className='flex justify-between'>
+								<span className='text-emerald-800'>Concepto</span>
+								<span className='font-semibold text-ink-900'>
+									Pedido {data.id}
+								</span>
+							</div>
+						</div>
+						<p className='text-xs text-emerald-800 leading-relaxed pt-2'>
+							Hacé la transferencia por el equivalente al dólar venta del BROU
+							del día. Una vez recibida, despachamos tu pedido y te avisamos.
+						</p>
+					</div>
+				)}
 
 				<div className='border border-slate-200 w-full p-5 rounded-md space-y-3 md:w-[600px]'>
 					<h3 className='font-medium'>Detalles del pedido</h3>

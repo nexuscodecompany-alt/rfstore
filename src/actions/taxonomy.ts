@@ -3,6 +3,7 @@ import { supabase } from '../supabase/client';
 export interface Brand {
 	id: string;
 	name: string;
+	hidden?: boolean;
 }
 
 export interface Category {
@@ -17,7 +18,20 @@ export interface Subcategory {
 }
 
 /* ----------------------------- LECTURA ----------------------------- */
+// Marcas visibles para el público (excluye las marcadas hidden, ej. "CDR").
 export const getBrands = async (): Promise<Brand[]> => {
+	const { data, error } = await supabase
+		.from('brands')
+		.select('*')
+		.eq('hidden', false)
+		.order('name');
+	if (error) throw new Error(error.message);
+	return data as Brand[];
+};
+
+// Marcas para el admin (incluye las ocultas, ej. "CDR" donde se acumulan productos
+// sin clasificar).
+export const getBrandsAdmin = async (): Promise<Brand[]> => {
 	const { data, error } = await supabase.from('brands').select('*').order('name');
 	if (error) throw new Error(error.message);
 	return data as Brand[];

@@ -3,9 +3,46 @@ import { HiOutlineArrowDown, HiOutlineArrowUp, HiOutlineSearch } from 'react-ico
 import { CardProduct } from '../components/products/CardProduct';
 import { ContainerFilter } from '../components/products/ContainerFilter';
 import { prepareProducts } from '../helpers';
+import {
+	ALL_ICON,
+	NEW_ARRIVALS_ICON,
+	getCategoryIcon,
+} from '../helpers/categoryIcons';
 import { useFilteredProducts, useTaxonomies } from '../hooks';
 import { Pagination } from '../components/shared/Pagination';
 import WhatsAppButton from '../components/shared/WhatsAppButton';
+import { IconType } from 'react-icons';
+
+const CategoryPill = ({
+	active,
+	label,
+	Icon,
+	onClick,
+	highlight,
+}: {
+	active: boolean;
+	label: string;
+	Icon: IconType;
+	onClick: () => void;
+	highlight?: boolean;
+}) => (
+	<button
+		onClick={onClick}
+		className={`group flex items-center justify-center gap-1.5 sm:gap-2 rounded-xl px-2.5 py-2.5 sm:px-3 text-[11px] sm:text-xs font-semibold transition-all border ${
+			active
+				? highlight
+					? 'bg-gradient-to-br from-brand-500 to-brand-700 text-white border-transparent shadow-card'
+					: 'bg-brand-600 text-white border-transparent shadow-soft'
+				: highlight
+				? 'bg-white text-brand-700 border-brand-200 hover:bg-brand-50 hover:border-brand-300'
+				: 'bg-white text-ink-700 border-ink-200 hover:bg-ink-50 hover:border-ink-300'
+		}`}
+		title={label}
+	>
+		<Icon size={16} className='shrink-0' />
+		<span className='truncate text-left'>{label}</span>
+	</button>
+);
 
 export const CellPhonesPage = () => {
 	const [page, setPage] = useState(1);
@@ -16,20 +53,49 @@ export const CellPhonesPage = () => {
 	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
 	const [searchTerm, setSearchTerm] = useState('');
 	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
+	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
 
-	const { categories } = useTaxonomies();
+	const { categories, subcategories } = useTaxonomies();
 
 	useEffect(() => {
 		setPage(1);
-	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, sortOrder]);
+	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, sortOrder, newArrivalsOnly]);
 
-	const toggleCategory = (id: string) => {
-		setSelectedCategories(prev =>
-			prev.includes(id) ? prev.filter(c => c !== id) : [...prev, id]
-		);
-		// Al cambiar categorías, limpiamos subcategorías para evitar filtros incoherentes.
+	const selectCategory = (id: string) => {
+		// Selección exclusiva: una categoría a la vez en la barra de arriba.
+		setNewArrivalsOnly(false);
+		if (selectedCategories.includes(id) && selectedCategories.length === 1) {
+			// Click sobre la misma categoría = volver a "Todas".
+			setSelectedCategories([]);
+		} else {
+			setSelectedCategories([id]);
+		}
 		setSelectedSubcategories([]);
 	};
+
+	const selectAll = () => {
+		setNewArrivalsOnly(false);
+		setSelectedCategories([]);
+		setSelectedSubcategories([]);
+	};
+
+	const selectNewArrivals = () => {
+		setNewArrivalsOnly(true);
+		setSelectedCategories([]);
+		setSelectedSubcategories([]);
+	};
+
+	const toggleSubcategory = (id: string) => {
+		setSelectedSubcategories(prev =>
+			prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
+		);
+	};
+
+	// Sólo mostramos subcategorías cuando hay una categoría seleccionada.
+	const visibleSubcategories =
+		selectedCategories.length === 1
+			? subcategories.filter(s => s.category_id === selectedCategories[0])
+			: [];
 
 	const {
 		data: products = [],
@@ -44,6 +110,7 @@ export const CellPhonesPage = () => {
 		priceMax,
 		searchTerm,
 		sortOrder,
+		newArrivalsOnly,
 	});
 
 	const preparedProducts = prepareProducts(products);
@@ -58,35 +125,56 @@ export const CellPhonesPage = () => {
 				</p>
 			</div>
 
-			{/* Barra de categorías */}
+			{/* Barra de categorías con iconos, 2 filas en desktop */}
 			{categories.length > 0 && (
-				<div className='mb-8 flex flex-wrap justify-center gap-2'>
-					<button
-						onClick={() => {
-							setSelectedCategories([]);
-							setSelectedSubcategories([]);
-						}}
-						className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-							selectedCategories.length === 0
-								? 'bg-brand-600 text-white shadow-soft'
-								: 'bg-ink-100 text-ink-600 hover:bg-ink-200'
-						}`}
-					>
-						Todas
-					</button>
-					{categories.map(cat => (
-						<button
-							key={cat.id}
-							onClick={() => toggleCategory(cat.id)}
-							className={`rounded-full px-4 py-2 text-sm font-semibold transition-all ${
-								selectedCategories.includes(cat.id)
-									? 'bg-brand-600 text-white shadow-soft'
-									: 'bg-ink-100 text-ink-600 hover:bg-ink-200'
-							}`}
-						>
-							{cat.name}
-						</button>
-					))}
+				<div className='mb-6'>
+					<div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2'>
+						{/* Todas */}
+						<CategoryPill
+							active={!newArrivalsOnly && selectedCategories.length === 0}
+							label='Todas'
+							Icon={ALL_ICON}
+							onClick={selectAll}
+						/>
+
+						{/* Recién Llegados (categoría virtual) */}
+						<CategoryPill
+							active={newArrivalsOnly}
+							label='Recién Llegados'
+							Icon={NEW_ARRIVALS_ICON}
+							onClick={selectNewArrivals}
+							highlight
+						/>
+
+						{categories.map(cat => (
+							<CategoryPill
+								key={cat.id}
+								active={selectedCategories.includes(cat.id)}
+								label={cat.name}
+								Icon={getCategoryIcon(cat.name)}
+								onClick={() => selectCategory(cat.id)}
+							/>
+						))}
+					</div>
+
+					{/* Subcategorías (sólo cuando hay UNA categoría seleccionada) */}
+					{visibleSubcategories.length > 0 && (
+						<div className='mt-3 flex flex-wrap items-center justify-center gap-1.5 px-1'>
+							{visibleSubcategories.map(sub => (
+								<button
+									key={sub.id}
+									onClick={() => toggleSubcategory(sub.id)}
+									className={`rounded-full px-3 py-1 text-xs font-semibold transition-all ${
+										selectedSubcategories.includes(sub.id)
+											? 'bg-ink-900 text-white'
+											: 'bg-ink-50 text-ink-600 hover:bg-ink-100 ring-1 ring-ink-200'
+									}`}
+								>
+									{sub.name}
+								</button>
+							))}
+						</div>
+					)}
 				</div>
 			)}
 

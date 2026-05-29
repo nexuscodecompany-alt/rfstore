@@ -10,6 +10,7 @@ export const useFilteredProducts = ({
   page,
   searchTerm,
   sortOrder,
+  newArrivalsOnly,
 }: {
   brands: string[];
   categories?: string[];
@@ -19,9 +20,10 @@ export const useFilteredProducts = ({
   page: number;
   searchTerm?: string;
   sortOrder?: 'asc' | 'desc';
+  newArrivalsOnly?: boolean;
 }) => {
   const { data, isLoading } = useQuery({
-    queryKey: ['filteredProducts', brands, categories, subcategories, priceMin, priceMax, page, searchTerm, sortOrder],
+    queryKey: ['filteredProducts', brands, categories, subcategories, priceMin, priceMax, page, searchTerm, sortOrder, newArrivalsOnly],
     queryFn: () =>
       getFilteredProducts({
         brands,
@@ -32,6 +34,7 @@ export const useFilteredProducts = ({
         page,
         searchTerm,
         sortOrder,
+        newArrivalsOnly,
       }),
     retry: false,
   });

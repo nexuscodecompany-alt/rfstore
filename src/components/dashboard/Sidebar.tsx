@@ -3,7 +3,7 @@ import { dashboardLinks } from '../../constants/links';
 import { Logo } from '../shared/Logo';
 import { IoLogOutOutline } from 'react-icons/io5';
 import { signOut } from '../../actions';
-import { usePaymentsEnabled } from '../../hooks';
+import { usePaymentsEnabled, useAdminNotifications } from '../../hooks';
 
 interface Props {
 	onNavigate?: () => void;
@@ -11,6 +11,7 @@ interface Props {
 
 export const Sidebar = ({ onNavigate }: Props) => {
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
+	const { unreadCount } = useAdminNotifications();
 	const links = dashboardLinks.filter(
 		l => paymentsEnabled || l.href !== '/dashboard/pagos'
 	);
@@ -26,24 +27,33 @@ export const Sidebar = ({ onNavigate }: Props) => {
 			</div>
 
 			<nav className='flex-1 space-y-1.5'>
-				{links.map(link => (
-					<NavLink
-						key={link.id}
-						to={link.href}
-						end={link.href === '/dashboard'}
-						onClick={onNavigate}
-						className={({ isActive }) =>
-							`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
-								isActive
-									? 'bg-gradient-to-r from-brand-600 to-brand-700 text-white shadow-glow-brand'
-									: 'text-ink-300 hover:bg-white/5 hover:text-white'
-							}`
-						}
-					>
-						<span className='shrink-0'>{link.icon}</span>
-						<span>{link.title}</span>
-					</NavLink>
-				))}
+				{links.map(link => {
+					const showBadge =
+						link.href === '/dashboard/cdr' && unreadCount > 0;
+					return (
+						<NavLink
+							key={link.id}
+							to={link.href}
+							end={link.href === '/dashboard'}
+							onClick={onNavigate}
+							className={({ isActive }) =>
+								`group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all duration-200 ${
+									isActive
+										? 'bg-gradient-to-r from-brand-600 to-brand-700 text-white shadow-glow-brand'
+										: 'text-ink-300 hover:bg-white/5 hover:text-white'
+								}`
+							}
+						>
+							<span className='shrink-0'>{link.icon}</span>
+							<span className='flex-1'>{link.title}</span>
+							{showBadge && (
+								<span className='inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-bold ring-2 ring-ink-900'>
+									{unreadCount > 99 ? '99+' : unreadCount}
+								</span>
+							)}
+						</NavLink>
+					);
+				})}
 			</nav>
 
 			<button

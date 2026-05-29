@@ -44,8 +44,10 @@ export * from './taxonomy/useBrandsByCategories';
 /* ********************************** */
 export * from './settings/useFeatureFlag';
 export * from './settings/usePricingConfig';
+export * from './settings/useUsdUyuRate';
 
 /* ********************************** */
 /*             DASHBOARD              */
 /* ********************************** */
 export * from './dashboard/useDashboardMetrics';
+export * from './dashboard/useAdminNotifications';

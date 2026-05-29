@@ -3,14 +3,29 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
 	assignCdrProductTaxonomy,
 	getAppSettings,
-	getBrands,
+	getBrandsAdmin,
 	getCategories,
 	getUnclassifiedCdrProducts,
 	triggerCdrSync,
 	updateAppSetting,
 	type SyncReport,
 } from '../../actions';
+import { useAdminNotifications } from '../../hooks';
+import { Link } from 'react-router-dom';
+import { HiOutlineSparkles, HiOutlineCheck } from 'react-icons/hi2';
 import toast from 'react-hot-toast';
+
+const formatRelative = (iso: string): string => {
+	const diff = Date.now() - new Date(iso).getTime();
+	const min = Math.floor(diff / 60000);
+	if (min < 1) return 'hace instantes';
+	if (min < 60) return `hace ${min} min`;
+	const hr = Math.floor(min / 60);
+	if (hr < 24) return `hace ${hr} h`;
+	const days = Math.floor(hr / 24);
+	if (days < 30) return `hace ${days} d`;
+	return new Date(iso).toLocaleDateString('es-UY');
+};
 
 export const DashboardCdrSyncPage = () => {
 	const queryClient = useQueryClient();
@@ -22,7 +37,7 @@ export const DashboardCdrSyncPage = () => {
 		queryFn: getAppSettings,
 	});
 
-	const { data: brands = [] } = useQuery({ queryKey: ['brands'], queryFn: getBrands });
+	const { data: brands = [] } = useQuery({ queryKey: ['brands', 'admin'], queryFn: getBrandsAdmin });
 	const { data: categories = [] } = useQuery({
 		queryKey: ['categories'],
 		queryFn: getCategories,
@@ -75,9 +90,104 @@ export const DashboardCdrSyncPage = () => {
 		onError: (e: Error) => toast.error(e.message),
 	});
 
+	const { notifications, unreadCount, markOne, markAll } =
+		useAdminNotifications();
+
 	return (
 		<div className='flex flex-col gap-8'>
 			<h1 className='text-xl font-bold'>Integración CDR</h1>
+
+			{/* Productos nuevos detectados */}
+			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
+				<div className='flex items-center justify-between gap-3'>
+					<div className='flex items-center gap-2'>
+						<HiOutlineSparkles className='text-brand-600' size={22} />
+						<h2 className='font-semibold'>
+							Novedades de CDR
+							{unreadCount > 0 && (
+								<span className='ml-2 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-bold'>
+									{unreadCount}
+								</span>
+							)}
+						</h2>
+					</div>
+					{unreadCount > 0 && (
+						<button
+							onClick={() => markAll()}
+							className='text-xs font-semibold text-brand-700 hover:text-brand-900'
+						>
+							Marcar todas como leídas
+						</button>
+					)}
+				</div>
+
+				{notifications.length === 0 ? (
+					<p className='text-sm text-gray-500'>
+						Sin novedades. El cron diario revisa CDR a las 03:00 (hora UY) y
+						avisa acá cuando ingresan productos nuevos.
+					</p>
+				) : (
+					<ul className='divide-y divide-gray-100'>
+						{notifications.map(n => {
+							const isUnread = !n.read_at;
+							const products = n.payload.products ?? [];
+							return (
+								<li
+									key={n.id}
+									className={`py-3 ${isUnread ? 'bg-amber-50/50 -mx-2 px-2 rounded-md' : ''}`}
+								>
+									<div className='flex items-center justify-between gap-3'>
+										<div className='flex-1 min-w-0'>
+											<p className='text-sm'>
+												<b>{n.payload.count} producto
+												{n.payload.count === 1 ? '' : 's'} nuevo
+												{n.payload.count === 1 ? '' : 's'}</b> de CDR
+												<span className='text-xs text-gray-500 ml-2'>
+													· {formatRelative(n.created_at)}
+												</span>
+											</p>
+										</div>
+										{isUnread && (
+											<button
+												onClick={() => markOne(n.id)}
+												className='inline-flex items-center gap-1 text-xs font-semibold text-gray-600 hover:text-gray-900'
+												title='Marcar como leída'
+											>
+												<HiOutlineCheck size={14} />
+												Marcar leída
+											</button>
+										)}
+									</div>
+									{products.length > 0 && (
+										<ul className='mt-2 ml-1 flex flex-wrap gap-1.5'>
+											{products.slice(0, 8).map(p => (
+												<li key={p.id}>
+													<Link
+														to={`/producto/${p.id}`}
+														className='inline-flex items-center gap-1 text-xs bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-md px-2 py-1 text-gray-700'
+													>
+														<span className='font-mono text-[10px] text-gray-400'>
+															{p.code}
+														</span>
+														<span className='truncate max-w-[280px]'>
+															{p.name}
+														</span>
+													</Link>
+												</li>
+											))}
+											{products.length > 8 && (
+												<li className='text-xs text-gray-500 self-center'>
+													y {products.length - 8} más
+												</li>
+											)}
+										</ul>
+									)}
+								</li>
+							);
+						})}
+					</ul>
+				)}
+			</section>
 
 			<section className='p-5 bg-amber-50 border border-amber-300 rounded-lg space-y-3'>
 				<h2 className='font-semibold'>Habilitación de pagos online</h2>

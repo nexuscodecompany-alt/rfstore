@@ -46,17 +46,17 @@ export const Brands = () => {
 				</div>
 
 				<div className='relative overflow-hidden mask-fade-x'>
-					<ul className='flex w-max items-center gap-12 animate-marquee'>
+					<ul className='flex w-max items-center gap-6 animate-marquee'>
 						{loop.map((b, idx) => (
 							<li
 								key={`${b.alt}-${idx}`}
-								className='shrink-0 grid place-items-center w-[160px] h-20'
+								className='shrink-0 grid place-items-center w-[160px] h-20 bg-white rounded-xl px-5 py-4 shadow-soft ring-1 ring-white/10 hover:scale-105 transition-transform duration-300'
 							>
 								<img
 									src={b.image}
 									alt={b.alt}
 									loading='lazy'
-									className='max-h-12 w-auto object-contain opacity-60 brightness-0 invert hover:opacity-100 transition-opacity duration-300'
+									className='max-h-10 w-auto object-contain'
 								/>
 							</li>
 						))}

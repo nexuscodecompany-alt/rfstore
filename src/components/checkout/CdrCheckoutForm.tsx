@@ -5,9 +5,10 @@ import {
 	getAppSettings,
 	uploadPaymentProof,
 	checkCdrStock,
+	sendTransferEmail,
 	type CartItemForMP,
 } from '../../actions';
-import { useUser } from '../../hooks';
+import { useUser, useUsdUyuRate } from '../../hooks';
 import toast from 'react-hot-toast';
 import { formatPrice } from '../../helpers';
 import { ItemsCheckout } from './ItemsCheckout';
@@ -40,6 +41,8 @@ export const CdrCheckoutForm = () => {
 	const [transferInfo, setTransferInfo] = useState<TransferInfo>({});
 	const [depositInfo, setDepositInfo] = useState<DepositInfo>({});
 	const [proofFile, setProofFile] = useState<File | null>(null);
+	const { data: fx } = useUsdUyuRate();
+	const totalUyu = fx ? Math.round(totalAmount * fx.rate) : null;
 
 	const [form, setForm] = useState({
 		fullName: '',
@@ -180,6 +183,17 @@ export const CdrCheckoutForm = () => {
 
 			if (proofFile) {
 				await uploadPaymentProof(orderRow.id, proofFile);
+			}
+
+			// Si es transferencia, mandamos el mail con datos bancarios al comprador.
+			// No bloqueamos el checkout si el mail falla — el cliente igual ve los datos
+			// en /thank-you.
+			if (method === 'transfer') {
+				try {
+					await sendTransferEmail(orderRow.id);
+				} catch (mailErr) {
+					console.warn('No se pudo enviar mail de transferencia:', mailErr);
+				}
 			}
 
 			cleanCart();
@@ -346,9 +360,19 @@ export const CdrCheckoutForm = () => {
 				<ItemsCheckout />
 			</div>
 
-			<div className='flex items-center justify-between'>
+			<div className='flex items-center justify-between gap-3'>
 				<p className='text-sm text-gray-600'>Total a pagar</p>
-				<p className='font-bold text-lg'>USD {formatPrice(totalAmount)}</p>
+				<div className='text-right'>
+					<p className='font-bold text-lg'>{formatPrice(totalAmount)}</p>
+					{method === 'mercadopago' && totalUyu !== null && fx && (
+						<p className='text-[11px] text-gray-500'>
+							≈ UYU {totalUyu.toLocaleString('es-UY')}{' '}
+							<span title={`Cotización: ${fx.rate.toFixed(2)} (${fx.source})`}>
+								(al dólar BROU de hoy)
+							</span>
+						</p>
+					)}
+				</div>
 			</div>
 
 			<button

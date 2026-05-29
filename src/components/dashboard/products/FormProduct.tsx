@@ -16,7 +16,7 @@ import {
   useCreateProduct,
   useProduct,
   useUpdateProduct,
-  useTaxonomies,
+  useTaxonomiesAdmin,
 } from "../../../hooks";
 import { Loader } from "../../shared/Loader";
 import { JSONContent } from "@tiptap/react";
@@ -105,7 +105,7 @@ export const FormProduct = ({ titleForm }: Props) => {
   const { mutate: createProduct, isPending } = useCreateProduct();
   const { mutate: updateProduct, isPending: isUpdatePending } =
     useUpdateProduct(product?.id || "");
-  const { brands, categories, subcategories } = useTaxonomies();
+  const { brands, categories, subcategories } = useTaxonomiesAdmin();
   const navigate = useNavigate();
 
   const watchCategory = watch("categoryId");
