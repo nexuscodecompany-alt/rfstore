@@ -1,4 +1,5 @@
 import { LuMinus, LuPlus } from 'react-icons/lu';
+import toast from 'react-hot-toast';
 import { formatPrice } from '../../helpers';
 import { useCartStore } from '../../store/cart.store';
 
@@ -13,6 +14,7 @@ export interface ICartItem {
 	image: string;
 	source?: 'local' | 'cdr';
 	externalCode?: string | null;
+	stock?: number;
 }
 
 interface Props {
@@ -23,7 +25,19 @@ export const CartItem = ({ item }: Props) => {
 	const removeItem = useCartStore(state => state.removeItem);
 	const updateQuantity = useCartStore(state => state.updateQuantity);
 
+	const maxStock = item.stock ?? Infinity;
+	const atMax = item.quantity >= maxStock;
+
 	const increment = () => {
+		if (atMax) {
+			toast.error(
+				maxStock === 1
+					? 'Solo queda 1 disponible'
+					: `Solo quedan ${maxStock} disponibles`,
+				{ position: 'bottom-right' }
+			);
+			return;
+		}
 		updateQuantity(item.variantId, item.quantity + 1);
 	};
 
@@ -75,7 +89,7 @@ export const CartItem = ({ item }: Props) => {
 						<span className='text-slate-500 text-sm'>
 							{item.quantity}
 						</span>
-						<button onClick={increment}>
+						<button onClick={increment} disabled={atMax}>
 							<LuPlus size={15} />
 						</button>
 					</div>

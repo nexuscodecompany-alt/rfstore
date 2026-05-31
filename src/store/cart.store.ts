@@ -25,20 +25,24 @@ const storeApi: StateCreator<CartState> = set => ({
 				i => i.variantId === item.variantId
 			);
 			let updatedItems;
+			// Limitar al stock disponible si nos lo pasaron.
+			const maxStock = item.stock ?? Infinity;
+			const clamp = (q: number) => Math.max(1, Math.min(maxStock, q));
 
 			if (existingItemIndex >= 0) {
-				// Si el item ya existe en el carrito, actualizamos la cantidad
+				// Si el item ya existe, sumamos cantidad pero respetamos stock
 				updatedItems = state.items.map((i, index) =>
 					index === existingItemIndex
 						? {
 								...i,
-								quantity: i.quantity + item.quantity,
+								// preferimos el stock más fresco del item nuevo
+								stock: item.stock ?? i.stock,
+								quantity: clamp(i.quantity + item.quantity),
 						  }
 						: i
 				);
 			} else {
-				// Si el item no existe en el carrito, lo añadimos
-				updatedItems = [...state.items, item];
+				updatedItems = [...state.items, { ...item, quantity: clamp(item.quantity) }];
 			}
 
 			const newTotalItems = updatedItems.reduce(
@@ -85,9 +89,11 @@ const storeApi: StateCreator<CartState> = set => ({
 
 	updateQuantity: (variantId, quantity) => {
 		set(state => {
-			const updatedItems = state.items.map(i =>
-				i.variantId === variantId ? { ...i, quantity } : i
-			);
+			const updatedItems = state.items.map(i => {
+				if (i.variantId !== variantId) return i;
+				const max = i.stock ?? Infinity;
+				return { ...i, quantity: Math.max(1, Math.min(max, quantity)) };
+			});
 
 			const newTotalItems = updatedItems.reduce(
 				(acc, i) => acc + i.quantity,

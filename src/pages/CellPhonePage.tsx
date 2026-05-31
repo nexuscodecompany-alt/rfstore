@@ -46,6 +46,7 @@ export const CellPhonePage = () => {
   const count = useCounterStore((state) => state.count);
   const increment = useCounterStore((state) => state.increment);
   const decrement = useCounterStore((state) => state.decrement);
+  const resetCounter = useCounterStore((state) => state.reset);
 
   const addItem = useCartStore((state) => state.addItem);
   const pricing = usePricingConfig();
@@ -102,7 +103,14 @@ export const CellPhonePage = () => {
   }, [selectedColor, selectedStorage, product?.variants]);
 
   // Obtener el stock
-  const isOutOfStock = selectedVariant?.stock === 0;
+  const stock = selectedVariant?.stock ?? 0;
+  const isOutOfStock = stock === 0;
+
+  // Resetear contador a 1 cuando cambia la variante (para no quedar con
+  // una cantidad mayor al stock de la nueva).
+  useEffect(() => {
+    resetCounter();
+  }, [selectedVariant?.id, resetCounter]);
   const isCdr = product?.source === 'cdr' && paymentsEnabled;
   const whatsappHref = product
     ? `https://wa.me/59894116299?text=${encodeURIComponent(
@@ -124,6 +132,7 @@ export const CellPhonePage = () => {
         quantity: count,
         source: (product?.source as 'local' | 'cdr') || 'local',
         externalCode: product?.external_code ?? null,
+        stock: selectedVariant.stock,
       });
       toast.success("Producto añadido al carrito", {
         position: "bottom-right",
@@ -145,6 +154,7 @@ export const CellPhonePage = () => {
         quantity: count,
         source: (product?.source as 'local' | 'cdr') || 'local',
         externalCode: product?.external_code ?? null,
+        stock: selectedVariant.stock,
       });
 
       navigate("/checkout");
@@ -281,14 +291,35 @@ export const CellPhonePage = () => {
             <>
               {/* Contador */}
               <div className="space-y-3">
-                <p className="text-sm font-medium">Cantidad:</p>
+                <p className="text-sm font-medium">
+                  Cantidad:
+                  {stock > 0 && stock <= 5 && (
+                    <span className="ml-2 text-xs font-normal text-amber-700">
+                      (quedan {stock} en stock)
+                    </span>
+                  )}
+                </p>
 
                 <div className="flex gap-8 px-5 py-3 border rounded-full border-slate-200 w-fit">
                   <button onClick={decrement} disabled={count === 1}>
                     <LuMinus size={15} />
                   </button>
                   <span className="text-sm text-slate-500">{count}</span>
-                  <button onClick={increment}>
+                  <button
+                    onClick={() => {
+                      if (count >= stock) {
+                        toast.error(
+                          stock === 1
+                            ? "Solo queda 1 disponible"
+                            : `Solo quedan ${stock} disponibles`,
+                          { position: "bottom-right" }
+                        );
+                        return;
+                      }
+                      increment(stock);
+                    }}
+                    disabled={count >= stock}
+                  >
                     <LuPlus size={15} />
                   </button>
                 </div>
