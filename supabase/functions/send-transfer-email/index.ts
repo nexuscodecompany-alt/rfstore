@@ -41,12 +41,20 @@ function renderEmail(opts: {
 	orderId: number;
 	customerName: string;
 	totalUsd: number;
+	totalUyu: number | null;
 	transfer: { banco?: string; cuenta?: string; titular?: string; rut?: string };
 	items: Array<{ name: string; quantity: number; price: number }>;
 }): { subject: string; html: string; text: string } {
-	const { orderId, customerName, totalUsd, transfer, items } = opts;
+	const { orderId, customerName, totalUsd, totalUyu, transfer, items } = opts;
 	const subject = `Datos para tu transferencia — Pedido #${orderId} — RF Store`;
 	const safeName = escapeHtml(customerName || 'Cliente');
+	const totalUsdLabel = `USD ${totalUsd.toFixed(0)}`;
+	const totalUyuLabel = totalUyu !== null
+		? `≈ UYU ${totalUyu.toLocaleString('es-UY')} (al BCU de hoy)`
+		: '';
+	const montoLine = totalUyu !== null
+		? `${totalUsdLabel} <span style="color:#666;font-weight:400;">${totalUyuLabel}</span>`
+		: totalUsdLabel;
 
 	const itemsHtml = items
 		.map(
@@ -77,16 +85,15 @@ function renderEmail(opts: {
               ${bank('Cuenta', transfer.cuenta)}
               ${bank('Titular', transfer.titular)}
               ${bank('RUT', transfer.rut)}
-              ${bank('Monto', `USD ${totalUsd.toFixed(0)}`)}
+              <tr><td style="padding:6px 12px;color:#666;">Monto</td><td style="padding:6px 12px;font-weight:600;color:#111;">${montoLine}</td></tr>
               ${bank('Concepto', `Pedido ${orderId}`)}
             </table>
 
             <h2 style="margin:0 0 12px;font-size:14px;text-transform:uppercase;color:#111;letter-spacing:0.5px;">Detalle del pedido</h2>
             <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin-bottom:8px;">
               ${itemsHtml}
-              <tr><td colspan="2" style="border-top:1px solid #e5e7eb;padding-top:12px;text-align:right;font-size:16px;font-weight:700;">Total: USD ${totalUsd.toFixed(0)}</td></tr>
+              <tr><td colspan="2" style="border-top:1px solid #e5e7eb;padding-top:12px;text-align:right;font-size:16px;font-weight:700;">Total: ${totalUsdLabel}${totalUyu !== null ? ` <span style="font-weight:400;font-size:12px;color:#666;">${totalUyuLabel}</span>` : ''}</td></tr>
             </table>
-            <p style="font-size:11px;color:#888;margin:4px 0 24px;">Precios en USD. Hacé la transferencia por el equivalente al dólar venta del BROU del día.</p>
 
             <h2 style="margin:0 0 12px;font-size:14px;text-transform:uppercase;color:#111;letter-spacing:0.5px;">Siguiente paso</h2>
             <p style="margin:0 0 8px;color:#444;line-height:1.6;">1. Hacé la transferencia desde tu banco a la cuenta indicada.</p>
@@ -98,7 +105,10 @@ function renderEmail(opts: {
       </td></tr>
     </table></body></html>`;
 
-	const text = `Gracias por tu compra, ${customerName || 'Cliente'}!\n\nPedido #${orderId} — Total: USD ${totalUsd.toFixed(0)}\n\nDatos para transferir:\nBanco: ${transfer.banco || '—'}\nCuenta: ${transfer.cuenta || '—'}\nTitular: ${transfer.titular || '—'}\nRUT: ${transfer.rut || '—'}\nConcepto: Pedido ${orderId}\n\nDespues de transferir, subi el comprobante desde tu cuenta o responde este mail con la imagen.`;
+	const totalTextLine = totalUyu !== null
+		? `${totalUsdLabel} (≈ UYU ${totalUyu.toLocaleString('es-UY')} al BCU de hoy)`
+		: totalUsdLabel;
+	const text = `Gracias por tu compra, ${customerName || 'Cliente'}!\n\nPedido #${orderId} — Total: ${totalTextLine}\n\nDatos para transferir:\nBanco: ${transfer.banco || '—'}\nCuenta: ${transfer.cuenta || '—'}\nTitular: ${transfer.titular || '—'}\nRUT: ${transfer.rut || '—'}\nConcepto: Pedido ${orderId}\n\nDespues de transferir, subi el comprobante desde tu cuenta o responde este mail con la imagen.`;
 
 	return { subject, html, text };
 }
@@ -217,10 +227,28 @@ Deno.serve(async req => {
 			});
 		}
 
+		// Cotización BCU para mostrar el equivalente en UYU. Si falla, mandamos
+		// el mail sin UYU (mejor eso que romper el envío del comprobante).
+		let totalUyu: number | null = null;
+		try {
+			const fxRes = await fetch(`${SUPABASE_URL}/functions/v1/get-fx-rate`, {
+				headers: { apikey: ANON, Authorization: `Bearer ${ANON}` },
+			});
+			if (fxRes.ok) {
+				const fx = await fxRes.json();
+				if (fx?.rate > 0) {
+					totalUyu = Math.round(Number(order.total_amount) * Number(fx.rate));
+				}
+			}
+		} catch (fxErr) {
+			console.warn('fx fetch failed:', fxErr);
+		}
+
 		const { subject, html, text } = renderEmail({
 			orderId: order.id,
 			customerName: customer.full_name || '',
 			totalUsd: Number(order.total_amount),
+			totalUyu,
 			transfer,
 			items,
 		});

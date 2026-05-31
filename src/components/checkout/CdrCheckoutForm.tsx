@@ -152,32 +152,35 @@ export const CdrCheckoutForm = () => {
 				if (!it.externalCode) continue;
 				qtyMap[it.externalCode] = (qtyMap[it.externalCode] ?? 0) + it.quantity;
 			}
-			let stockWarning: string | null = null;
+			// El edge function ya combina SOAP CDR + fallback a variants.stock,
+			// así que confiamos en su resultado. Si "ok" es false, bloqueamos
+			// con el detalle de los códigos sin stock.
 			try {
 				const stockRes = await checkCdrStock(codes, qtyMap);
 				if (!stockRes.ok) {
 					const all = [...stockRes.insufficient, ...stockRes.missing];
-					const allItemsFlagged = all.length >= codes.length && codes.length > 0;
 					console.warn('[checkout] CDR stock check no-ok:', stockRes);
-					if (allItemsFlagged) {
-						// Todos los items reportan sin stock: probablemente el WS está
-						// devolviendo basura. Continuamos y dejamos que el equipo valide.
-						stockWarning =
-							'No pudimos confirmar el stock online. Te confirmamos disponibilidad por WhatsApp en minutos.';
-					} else {
-						toast.error(`Sin stock para: ${all.join(', ')}`);
-						setSubmitting(false);
-						return;
-					}
+					// Mapeamos códigos → nombres para que el toast sea útil al cliente.
+					const namesByCode = new Map(
+						cartItems
+							.filter(i => i.externalCode)
+							.map(i => [i.externalCode!, i.name])
+					);
+					const names = all.map(c => namesByCode.get(c) ?? c);
+					toast.error(`Sin stock: ${names.join(', ')}`);
+					setSubmitting(false);
+					return;
 				}
 			} catch (stockErr) {
+				// El edge function devolvió 5xx (red caída, etc.). En este caso no
+				// pudimos validar nada — bloqueamos para evitar oversell y pedimos
+				// reintentar.
 				console.warn('[checkout] CDR stock check failed:', stockErr);
-				stockWarning =
-					'No pudimos confirmar el stock online. Te confirmamos disponibilidad por WhatsApp en minutos.';
-			}
-
-			if (stockWarning) {
-				toast(stockWarning, { icon: 'ℹ️', duration: 5000 });
+				toast.error(
+					'No pudimos verificar disponibilidad. Reintentá en unos segundos.'
+				);
+				setSubmitting(false);
+				return;
 			}
 
 			if (method === 'mercadopago') {
@@ -211,61 +214,35 @@ export const CdrCheckoutForm = () => {
 				return;
 			}
 
-			// Método manual: creamos la orden con payment_method=transfer/deposit y estado pending.
-			// Re-usamos lógica creando la orden vía cliente Supabase (tabla pública).
-			const { data: userData } = await supabase.auth.getUser();
-			if (!userData.user) throw new Error('no autenticado');
-			const { data: customer } = await supabase
-				.from('customers')
-				.select('id')
-				.eq('user_id', userData.user.id)
-				.single();
-			if (!customer) throw new Error('no se encontró el customer');
-
-			const { data: addrRow, error: addrErr } = await supabase
-				.from('addresses')
-				.insert({
+			// Método manual: creamos la orden vía RPC place_cdr_order, que valida
+			// stock, crea address+order+items y RESERVA el stock de forma atómica.
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const { data: orderIdData, error: rpcErr } = await (supabase as any).rpc('place_cdr_order', {
+				p_items: cartItems.map(i => ({
+					variant_id: i.variantId,
+					quantity: i.quantity,
+					price: i.price,
+				})),
+				p_total: grandTotalUsd,
+				p_address: {
 					address_line1: form.line1,
 					address_line2: form.line2 || null,
 					city: form.city,
 					state: form.state,
 					postal_code: form.postalCode,
 					country: form.country,
-					customer_id: customer.id,
-				})
-				.select()
-				.single();
-			if (addrErr) throw new Error(addrErr.message);
-
-			const { data: orderRow, error: orderErr } = await supabase
-				.from('orders')
-				.insert({
-					customer_id: customer.id,
-					address_id: addrRow.id,
-					total_amount: grandTotalUsd,
-					status: 'pago_pendiente',
-					payment_method: method,
-					payment_status: 'pending',
-					shipping_zone: shipping.zone,
-					shipping_barrio: shipping.barrio,
-					shipping_department: shipping.department,
-					shipping_cost_usd: shipping.cost_usd,
-				} as any)
-				.select()
-				.single();
-			if (orderErr) throw new Error(orderErr.message);
-
-			await supabase.from('order_items').insert(
-				cartItems.map(i => ({
-					order_id: orderRow.id,
-					variant_id: i.variantId,
-					price: i.price,
-					quantity: i.quantity,
-				}))
-			);
+				},
+				p_payment_method: method,
+				p_shipping_zone: shipping.zone,
+				p_shipping_barrio: shipping.barrio,
+				p_shipping_department: shipping.department,
+				p_shipping_cost_usd: shipping.cost_usd,
+			});
+			if (rpcErr) throw new Error(rpcErr.message);
+			const orderId = orderIdData as number;
 
 			if (proofFile) {
-				await uploadPaymentProof(orderRow.id, proofFile);
+				await uploadPaymentProof(orderId, proofFile);
 			}
 
 			// Si es transferencia, mandamos el mail con datos bancarios al comprador.
@@ -273,7 +250,7 @@ export const CdrCheckoutForm = () => {
 			// en /thank-you.
 			if (method === 'transfer') {
 				try {
-					await sendTransferEmail(orderRow.id);
+					await sendTransferEmail(orderId);
 				} catch (mailErr) {
 					console.warn('No se pudo enviar mail de transferencia:', mailErr);
 				}
@@ -281,7 +258,7 @@ export const CdrCheckoutForm = () => {
 
 			cleanCart();
 			toast.success('Pedido registrado. Te avisamos cuando confirmemos el pago.');
-			navigate(`/checkout/${orderRow.id}/thank-you?status=pending`);
+			navigate(`/checkout/${orderId}/thank-you?status=pending`);
 		} catch (err) {
 			toast.error((err as Error).message);
 		} finally {

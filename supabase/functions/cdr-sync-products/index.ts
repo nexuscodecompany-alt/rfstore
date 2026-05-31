@@ -80,8 +80,16 @@ async function updateExistingProductStock(externalCode: string, p: CdrProduct, c
 	const stockNum = typeof p.stock === 'number' ? p.stock : Number(p.stock) || 0;
 	const priceUsd = Number(p.precio) || 0;
 	await supabase.from('products').update({ price_usd: priceUsd, last_synced_at: new Date().toISOString() }).eq('id', existing.id);
+
+	// Stock efectivo = stock de CDR - cantidades ya reservadas por órdenes
+	// activas (pago_pendiente, pagado, Cotización). Sin esto, el sync pisaría
+	// nuestras reservas y permitiría oversell.
+	const { data: reservedData } = await supabase.rpc('reserved_quantity_for_product', { p_external_code: externalCode });
+	const reserved = Number(reservedData) || 0;
+	const effectiveStock = Math.max(0, stockNum - reserved);
+
 	const { data: existingVar } = await supabase.from('variants').select('id').eq('product_id', existing.id).maybeSingle();
-	if (existingVar) await supabase.from('variants').update({ price: priceUsd, stock: stockNum }).eq('id', existingVar.id);
+	if (existingVar) await supabase.from('variants').update({ price: priceUsd, stock: effectiveStock }).eq('id', existingVar.id);
 	counters.updated++;
 }
 

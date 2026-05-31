@@ -57,7 +57,7 @@ export const Banner = () => {
 					{[
 						{ k: '+10', l: 'Años en el rubro' },
 						{ k: '+500', l: 'Clientes felices' },
-						{ k: '24/7', l: 'Soporte técnico' },
+						{ k: 'Lun–Vie', l: 'Soporte 8 a 18 hs' },
 						{ k: '100%', l: 'Productos garantidos' },
 					].map(item => (
 						<div key={item.l} className='text-center'>

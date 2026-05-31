@@ -103,7 +103,7 @@ export const AboutPage = () => {
 												type='text'
 												name='name'
 												required
-												placeholder='Ej: RF Tecnología SRL'
+												placeholder='RF Store'
 												className='input-base pl-10'
 											/>
 										</div>
@@ -213,11 +213,7 @@ export const AboutPage = () => {
 							<ul className='space-y-1.5 text-sm text-ink-600'>
 								<li className='flex items-center justify-between'>
 									<span>Lunes a Viernes</span>
-									<span className='font-semibold text-ink-900'>8:00 — 20:00</span>
-								</li>
-								<li className='flex items-center justify-between'>
-									<span>Sábados</span>
-									<span className='font-semibold text-ink-900'>10:00 — 17:00</span>
+									<span className='font-semibold text-ink-900'>8:00 — 18:00</span>
 								</li>
 							</ul>
 						</div>

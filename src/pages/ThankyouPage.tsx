@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useOrder, useUser } from '../hooks';
+import { useOrder, useUser, useUsdUyuRate } from '../hooks';
 import { Loader } from '../components/shared/Loader';
 import { CiCircleCheck } from 'react-icons/ci';
 import { formatPrice } from '../helpers';
@@ -20,6 +20,7 @@ export const ThankyouPage = () => {
 	const { data, isLoading, isError } = useOrder(Number(id));
 	const { isLoading: isLoadingSession } = useUser();
 	const [transferInfo, setTransferInfo] = useState<TransferInfo | null>(null);
+	const { data: fx } = useUsdUyuRate();
 
 	const navigate = useNavigate();
 
@@ -48,6 +49,8 @@ export const ThankyouPage = () => {
 	if (isLoading || !data || isLoadingSession) return <Loader />;
 
 	const userName = data.customer.full_name || '';
+	const totalUyu = fx ? Math.round(data.totalAmount * fx.rate) : null;
+	const formatUyu = (n: number) => `UYU ${n.toLocaleString('es-UY')}`;
 
 	return (
 		<div className='flex flex-col h-screen'>
@@ -108,11 +111,18 @@ export const ThankyouPage = () => {
 									{transferInfo?.rut || '—'}
 								</span>
 							</div>
-							<div className='flex justify-between border-b border-emerald-100 pb-2'>
+							<div className='flex justify-between items-start border-b border-emerald-100 pb-2'>
 								<span className='text-emerald-800'>Monto</span>
-								<span className='font-bold text-ink-900'>
-									{formatPrice(data.totalAmount)}
-								</span>
+								<div className='text-right'>
+									<p className='font-bold text-ink-900'>
+										{formatPrice(data.totalAmount)}
+									</p>
+									{totalUyu !== null && (
+										<p className='text-xs text-emerald-800'>
+											≈ {formatUyu(totalUyu)} (al BCU de hoy)
+										</p>
+									)}
+								</div>
 							</div>
 							<div className='flex justify-between'>
 								<span className='text-emerald-800'>Concepto</span>
@@ -122,8 +132,8 @@ export const ThankyouPage = () => {
 							</div>
 						</div>
 						<p className='text-xs text-emerald-800 leading-relaxed pt-2'>
-							Hacé la transferencia por el equivalente al dólar venta del BROU
-							del día. Una vez recibida, despachamos tu pedido y te avisamos.
+							Una vez recibida la transferencia, despachamos tu pedido y te
+							avisamos.
 						</p>
 					</div>
 				)}
@@ -133,44 +143,70 @@ export const ThankyouPage = () => {
 
 					<div className='flex flex-col gap-5'>
 						<ul className='space-y-3'>
-							{data.orderItems.map((item, index) => (
-								<li
-									key={index}
-									className='flex items-center justify-between gap-3'
-								>
-									<div className='flex'>
-										<img
-											src={item.productImage}
-											alt={item.productName}
-											className='object-contain w-16 h-16'
-										/>
-									</div>
-
-									<div className='flex-1 space-y-2'>
-										<div className='flex justify-between'>
-											<p className='font-semibold'>
-												{item.productName}
-											</p>
-											<p className='mt-1 text-sm font-medium text-gray-600'>
-												{formatPrice(item.price)} x {item.quantity}
-											</p>
+							{data.orderItems.map((item, index) => {
+								const hasStorage =
+									item.storage &&
+									item.storage.trim() !== '' &&
+									item.storage.trim() !== '-';
+								const hasColor =
+									item.color_name &&
+									item.color_name.trim() !== '' &&
+									item.color_name.trim().toLowerCase() !== 'unico' &&
+									item.color_name.trim().toLowerCase() !== 'único';
+								const variantLabel = [
+									hasStorage ? item.storage : null,
+									hasColor ? item.color_name : null,
+								]
+									.filter(Boolean)
+									.join(' / ');
+								return (
+									<li
+										key={index}
+										className='flex items-center justify-between gap-3'
+									>
+										<div className='flex'>
+											<img
+												src={item.productImage}
+												alt={item.productName}
+												className='object-contain w-16 h-16'
+											/>
 										</div>
 
-										<div className='flex gap-3'>
-											<p className='text-[13px] text-gray-600'>
-												{item.storage} / {item.color_name}
-											</p>
+										<div className='flex-1 space-y-2'>
+											<div className='flex justify-between'>
+												<p className='font-semibold'>
+													{item.productName}
+												</p>
+												<p className='mt-1 text-sm font-medium text-gray-600'>
+													{formatPrice(item.price)} x {item.quantity}
+												</p>
+											</div>
+
+											{variantLabel && (
+												<div className='flex gap-3'>
+													<p className='text-[13px] text-gray-600'>
+														{variantLabel}
+													</p>
+												</div>
+											)}
 										</div>
-									</div>
-								</li>
-							))}
+									</li>
+								);
+							})}
 						</ul>
 
-						<div className='flex justify-between'>
+						<div className='flex justify-between items-start'>
 							<span className='font-semibold'>Total:</span>
-							<span className='font-semibold'>
-								{formatPrice(data.totalAmount)}
-							</span>
+							<div className='text-right'>
+								<p className='font-semibold'>
+									{formatPrice(data.totalAmount)}
+								</p>
+								{totalUyu !== null && (
+									<p className='text-xs text-gray-500'>
+										≈ {formatUyu(totalUyu)} (al BCU de hoy)
+									</p>
+								)}
+							</div>
 						</div>
 					</div>
 				</div>

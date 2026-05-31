@@ -25,7 +25,9 @@ async function fetchPayment(paymentId: string): Promise<any> {
 }
 
 async function processApproved(orderId: number, paymentId: string): Promise<void> {
-	// Idempotencia: si ya está paid no hacemos nada
+	// Idempotencia: si ya está paid no hacemos nada.
+	// NOTA: el stock se decrementa al crear la orden (en mp-create-preference),
+	// por lo que acá solo marcamos como pagado.
 	const { data: existing } = await supabase
 		.from('orders')
 		.select('id, payment_status')
@@ -42,34 +44,23 @@ async function processApproved(orderId: number, paymentId: string): Promise<void
 			mp_payment_id: paymentId,
 		})
 		.eq('id', orderId);
-
-	// Descontar stock local en variants (las variantes CDR locales)
-	const { data: items } = await supabase
-		.from('order_items')
-		.select('variant_id, quantity')
-		.eq('order_id', orderId);
-
-	for (const it of items ?? []) {
-		const { data: v } = await supabase
-			.from('variants')
-			.select('stock')
-			.eq('id', it.variant_id)
-			.single();
-		if (!v) continue;
-		const newStock = Math.max(0, v.stock - it.quantity);
-		await supabase.from('variants').update({ stock: newStock }).eq('id', it.variant_id);
-	}
 }
 
 async function processRejected(orderId: number, paymentId: string): Promise<void> {
+	// Guardar el mp_payment_id antes de liberar (release_order_stock cambia el status)
 	await supabase
 		.from('orders')
-		.update({
-			payment_status: 'rejected',
-			status: 'rechazado',
-			mp_payment_id: paymentId,
-		})
+		.update({ mp_payment_id: paymentId })
 		.eq('id', orderId);
+	// Liberar stock (idempotente: si ya estaba rechazada/expirada no toca nada)
+	try {
+		await supabase.rpc('release_order_stock', {
+			p_order_id: orderId,
+			p_new_status: 'rechazado',
+		});
+	} catch (e) {
+		console.warn('release_order_stock failed:', e);
+	}
 }
 
 Deno.serve(async req => {

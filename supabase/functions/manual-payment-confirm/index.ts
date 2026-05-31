@@ -54,6 +54,8 @@ Deno.serve(async req => {
 		}
 
 		if (body.action === 'approve') {
+			// El stock ya se decrementó al crear la orden (place_cdr_order).
+			// Acá solo marcamos pagada.
 			await supabaseAdmin
 				.from('orders')
 				.update({
@@ -62,29 +64,21 @@ Deno.serve(async req => {
 					paid_at: new Date().toISOString(),
 				})
 				.eq('id', body.order_id);
-
-			// descuento de stock
-			const { data: items } = await supabaseAdmin
-				.from('order_items')
-				.select('variant_id, quantity')
-				.eq('order_id', body.order_id);
-			for (const it of items ?? []) {
-				const { data: v } = await supabaseAdmin
-					.from('variants')
-					.select('stock')
-					.eq('id', it.variant_id)
-					.single();
-				if (!v) continue;
-				await supabaseAdmin
-					.from('variants')
-					.update({ stock: Math.max(0, v.stock - it.quantity) })
-					.eq('id', it.variant_id);
-			}
 		} else {
-			await supabaseAdmin
-				.from('orders')
-				.update({ payment_status: 'rejected', status: 'rechazado' })
-				.eq('id', body.order_id);
+			// Rechazar: liberar stock (release_order_stock es idempotente)
+			try {
+				await supabaseAdmin.rpc('release_order_stock', {
+					p_order_id: body.order_id,
+					p_new_status: 'rechazado',
+				});
+			} catch (e) {
+				console.warn('release_order_stock failed:', e);
+				// Igual marcamos la orden como rechazada aunque falle el release
+				await supabaseAdmin
+					.from('orders')
+					.update({ payment_status: 'rejected', status: 'rechazado' })
+					.eq('id', body.order_id);
+			}
 		}
 
 		return new Response(JSON.stringify({ ok: true }), {

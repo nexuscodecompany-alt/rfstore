@@ -78,17 +78,45 @@ Deno.serve(async req => {
 			}
 		}
 
-		// 2. Validar stock en tiempo real contra CDR
+		// 2. Validar stock con estrategia híbrida (SOAP CDR + fallback a DB local).
+		//    El WS get_stock de CDR está intermitente, así que confiamos en la
+		//    cache cuando no responde para algún código.
 		const codes = body.items.map(i => i.external_code);
 		const qtyMap: Record<string, number> = {};
 		for (const it of body.items) {
 			qtyMap[it.external_code] = (qtyMap[it.external_code] ?? 0) + it.quantity;
 		}
-		const stocks = await fetchGetStock(CDR_EMAIL, CDR_TOKEN, codes);
+		const soapMap = new Map<string, number>();
+		try {
+			const soapStocks = await fetchGetStock(CDR_EMAIL, CDR_TOKEN, codes);
+			for (const s of soapStocks) {
+				if (s.stock === -999) continue;
+				soapMap.set(s.codigo, s.stock);
+			}
+		} catch (e) {
+			console.warn('[mp-create-preference] SOAP stock failed:', e);
+		}
+		const missingFromSoap = codes.filter(c => !soapMap.has(c));
+		const dbStockMap = new Map<string, number>();
+		if (missingFromSoap.length > 0) {
+			const { data: prods } = await supabaseAdmin
+				.from('products')
+				.select('external_code, variants(stock)')
+				.in('external_code', missingFromSoap);
+			for (const p of prods ?? []) {
+				const pr = p as unknown as { external_code: string; variants: { stock: number }[] };
+				const total = (pr.variants ?? []).reduce(
+					(acc, v) => acc + (Number(v.stock) || 0),
+					0
+				);
+				dbStockMap.set(pr.external_code, total);
+			}
+		}
 		const insufficient: string[] = [];
-		for (const s of stocks) {
-			const needed = qtyMap[s.codigo] ?? 0;
-			if (s.stock === -999 || s.stock < needed) insufficient.push(s.codigo);
+		for (const code of codes) {
+			const stock = soapMap.get(code) ?? dbStockMap.get(code) ?? -1;
+			const needed = qtyMap[code] ?? 0;
+			if (stock < needed) insufficient.push(code);
 		}
 		if (insufficient.length > 0) {
 			return new Response(
@@ -185,6 +213,21 @@ Deno.serve(async req => {
 		);
 		if (itemsErr) throw new Error(`order_items: ${itemsErr.message}`);
 
+		// 7.b. Reservar stock (decrementar). Si MP rechaza más tarde,
+		//      mp-webhook llama release_order_stock para devolverlo.
+		for (const l of lineTotals) {
+			const { data: v } = await supabaseAdmin
+				.from('variants')
+				.select('stock')
+				.eq('id', l.variant_id)
+				.single();
+			if (!v) continue;
+			await supabaseAdmin
+				.from('variants')
+				.update({ stock: Math.max(0, Number(v.stock) - l.quantity) })
+				.eq('id', l.variant_id);
+		}
+
 		// 8. Crear preference en MercadoPago
 		const preferenceBody = {
 			items: lineTotals.map(l => ({
@@ -219,7 +262,15 @@ Deno.serve(async req => {
 
 		if (!mpResp.ok) {
 			const errText = await mpResp.text();
-			// rollback orden
+			// rollback orden + devolver stock reservado
+			try {
+				await supabaseAdmin.rpc('release_order_stock', {
+					p_order_id: orderRow.id,
+					p_new_status: 'cancelado',
+				});
+			} catch (relErr) {
+				console.warn('release_order_stock on rollback failed:', relErr);
+			}
 			await supabaseAdmin.from('orders').delete().eq('id', orderRow.id);
 			throw new Error(`MP API ${mpResp.status}: ${errText.slice(0, 500)}`);
 		}

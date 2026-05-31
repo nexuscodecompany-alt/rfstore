@@ -16,8 +16,8 @@ const features = [
 	},
 	{
 		icon: FaHammer,
-		title: 'Soporte 24/7',
-		desc: 'Asistencia técnica especializada cuando la necesites',
+		title: 'Soporte Lun a Vie',
+		desc: 'Asistencia técnica de 8:00 a 18:00 hs',
 	},
 	{
 		icon: BiWorld,
