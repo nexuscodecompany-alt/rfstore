@@ -1,8 +1,8 @@
 // deno-lint-ignore-file no-explicit-any
 // send-transfer-email
 // Manda al COMPRADOR (cuenta logueada) el email con los datos bancarios para
-// que haga la transferencia. Se invoca después de crear la orden por
-// transferencia. Manda copia BCC al admin si ADMIN_EMAIL está seteado.
+// que haga la transferencia. Se invoca despu\u00e9s de crear la orden por
+// transferencia. Manda copia BCC al admin si ADMIN_EMAIL est\u00e1 seteado.
 //
 // Requiere env vars en Supabase:
 //   RESEND_API_KEY      - API key de resend.com (re_xxxxxxxx)
@@ -46,11 +46,11 @@ function renderEmail(opts: {
 	items: Array<{ name: string; quantity: number; price: number }>;
 }): { subject: string; html: string; text: string } {
 	const { orderId, customerName, totalUsd, totalUyu, transfer, items } = opts;
-	const subject = `Datos para tu transferencia — Pedido #${orderId} — RF Store`;
+	const subject = `Datos para tu transferencia \u2014 Pedido #${orderId} \u2014 RF Store`;
 	const safeName = escapeHtml(customerName || 'Cliente');
 	const totalUsdLabel = `USD ${totalUsd.toFixed(0)}`;
 	const totalUyuLabel = totalUyu !== null
-		? `≈ UYU ${totalUyu.toLocaleString('es-UY')} (al BCU de hoy)`
+		? `\u2248 UYU ${totalUyu.toLocaleString('es-UY')} (al BCU de hoy)`
 		: '';
 	const montoLine = totalUyu !== null
 		? `${totalUsdLabel} <span style="color:#666;font-weight:400;">${totalUyuLabel}</span>`
@@ -66,7 +66,7 @@ function renderEmail(opts: {
 		.join('');
 
 	const bank = (label: string, value?: string) =>
-		`<tr><td style="padding:6px 12px;color:#666;">${label}</td><td style="padding:6px 12px;font-weight:600;color:#111;">${escapeHtml(value || '—')}</td></tr>`;
+		`<tr><td style="padding:6px 12px;color:#666;">${label}</td><td style="padding:6px 12px;font-weight:600;color:#111;">${escapeHtml(value || '\u2014')}</td></tr>`;
 
 	const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
@@ -76,7 +76,7 @@ function renderEmail(opts: {
             <h1 style="margin:0;font-size:20px;">RF Store</h1>
           </td></tr>
           <tr><td style="padding:32px;">
-            <p style="margin:0 0 8px;font-size:16px;">¡Gracias por tu compra, ${safeName}!</p>
+            <p style="margin:0 0 8px;font-size:16px;">\u00a1Gracias por tu compra, ${safeName}!</p>
             <p style="margin:0 0 24px;color:#555;line-height:1.5;">Recibimos tu pedido <b>#${orderId}</b>. Te dejamos los datos para que hagas la <b>transferencia bancaria</b>. Una vez recibida, vas a poder ver el estado actualizado en tu cuenta y te avisaremos por mail.</p>
 
             <h2 style="margin:0 0 12px;font-size:14px;text-transform:uppercase;color:#111;letter-spacing:0.5px;">Datos para transferir</h2>
@@ -96,19 +96,19 @@ function renderEmail(opts: {
             </table>
 
             <h2 style="margin:0 0 12px;font-size:14px;text-transform:uppercase;color:#111;letter-spacing:0.5px;">Siguiente paso</h2>
-            <p style="margin:0 0 8px;color:#444;line-height:1.6;">1. Hacé la transferencia desde tu banco a la cuenta indicada.</p>
-            <p style="margin:0 0 8px;color:#444;line-height:1.6;">2. Subi el comprobante desde la página de tu pedido o respondé este mail con la imagen adjunta.</p>
+            <p style="margin:0 0 8px;color:#444;line-height:1.6;">1. Hac\u00e9 la transferencia desde tu banco a la cuenta indicada.</p>
+            <p style="margin:0 0 8px;color:#444;line-height:1.6;">2. Subi el comprobante desde la p\u00e1gina de tu pedido o respond\u00e9 este mail con la imagen adjunta.</p>
             <p style="margin:0 0 24px;color:#444;line-height:1.6;">3. En cuanto verifiquemos el pago, despachamos tu pedido y te avisamos.</p>
           </td></tr>
-          <tr><td style="padding:20px 32px;background:#f4f4f5;color:#666;font-size:12px;text-align:center;">RF Store — RUT 220006580014<br/>Si tenes dudas, respondé este mail.</td></tr>
+          <tr><td style="padding:20px 32px;background:#f4f4f5;color:#666;font-size:12px;text-align:center;">RF Store \u2014 RUT 220006580014<br/>Si tenes dudas, respond\u00e9 este mail.</td></tr>
         </table>
       </td></tr>
     </table></body></html>`;
 
 	const totalTextLine = totalUyu !== null
-		? `${totalUsdLabel} (≈ UYU ${totalUyu.toLocaleString('es-UY')} al BCU de hoy)`
+		? `${totalUsdLabel} (\u2248 UYU ${totalUyu.toLocaleString('es-UY')} al BCU de hoy)`
 		: totalUsdLabel;
-	const text = `Gracias por tu compra, ${customerName || 'Cliente'}!\n\nPedido #${orderId} — Total: ${totalTextLine}\n\nDatos para transferir:\nBanco: ${transfer.banco || '—'}\nCuenta: ${transfer.cuenta || '—'}\nTitular: ${transfer.titular || '—'}\nRUT: ${transfer.rut || '—'}\nConcepto: Pedido ${orderId}\n\nDespues de transferir, subi el comprobante desde tu cuenta o responde este mail con la imagen.`;
+	const text = `Gracias por tu compra, ${customerName || 'Cliente'}!\n\nPedido #${orderId} \u2014 Total: ${totalTextLine}\n\nDatos para transferir:\nBanco: ${transfer.banco || '\u2014'}\nCuenta: ${transfer.cuenta || '\u2014'}\nTitular: ${transfer.titular || '\u2014'}\nRUT: ${transfer.rut || '\u2014'}\nConcepto: Pedido ${orderId}\n\nDespues de transferir, subi el comprobante desde tu cuenta o responde este mail con la imagen.`;
 
 	return { subject, html, text };
 }
@@ -163,19 +163,47 @@ Deno.serve(async req => {
 			});
 		}
 
-		const { data: userData, error: userErr } = await supabaseUser.auth.getUser();
-		if (userErr || !userData.user) {
-			return new Response(JSON.stringify({ error: 'no autenticado' }), {
-				status: 401,
-				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-			});
+		// Bypass para reenv\u00edo admin: si llaman con SERVICE_ROLE_KEY como bearer,
+		// saltamos la validaci\u00f3n de user/customer (la orden se identifica solo por id).
+		const isServiceRoleCall = authHeader === `Bearer ${SERVICE_ROLE}`;
+		let customer: { id: string; full_name: string | null; email: string | null } | null = null;
+		let userEmail: string | null = null;
+
+		if (isServiceRoleCall) {
+			const { data: ord } = await supabaseAdmin
+				.from('orders')
+				.select('customer_id')
+				.eq('id', orderId)
+				.single();
+			if (!ord) {
+				return new Response(JSON.stringify({ error: 'orden no encontrada' }), {
+					status: 404,
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				});
+			}
+			const { data: c } = await supabaseAdmin
+				.from('customers')
+				.select('id, full_name, email')
+				.eq('id', ord.customer_id)
+				.single();
+			customer = c as any;
+		} else {
+			const { data: userData, error: userErr } = await supabaseUser.auth.getUser();
+			if (userErr || !userData.user) {
+				return new Response(JSON.stringify({ error: 'no autenticado' }), {
+					status: 401,
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				});
+			}
+			userEmail = userData.user.email ?? null;
+			const { data: c } = await supabaseAdmin
+				.from('customers')
+				.select('id, full_name, email')
+				.eq('user_id', userData.user.id)
+				.single();
+			customer = c as any;
 		}
 
-		const { data: customer } = await supabaseAdmin
-			.from('customers')
-			.select('id, full_name, email')
-			.eq('user_id', userData.user.id)
-			.single();
 		if (!customer) {
 			return new Response(JSON.stringify({ error: 'cliente no encontrado' }), {
 				status: 400,
@@ -183,12 +211,12 @@ Deno.serve(async req => {
 			});
 		}
 
-		const { data: order, error: orderErr } = await supabaseAdmin
+		let orderQ = supabaseAdmin
 			.from('orders')
 			.select('id, total_amount, payment_method, customer_id')
-			.eq('id', orderId)
-			.eq('customer_id', customer.id)
-			.single();
+			.eq('id', orderId);
+		if (!isServiceRoleCall) orderQ = orderQ.eq('customer_id', customer.id);
+		const { data: order, error: orderErr } = await orderQ.single();
 		if (orderErr || !order) {
 			return new Response(JSON.stringify({ error: 'orden no encontrada' }), {
 				status: 404,
@@ -219,7 +247,7 @@ Deno.serve(async req => {
 			.maybeSingle();
 		const transfer = (settings?.value as any) ?? {};
 
-		const toEmail = customer.email || userData.user.email;
+		const toEmail = customer.email || userEmail;
 		if (!toEmail) {
 			return new Response(JSON.stringify({ error: 'cliente sin email' }), {
 				status: 400,
@@ -227,8 +255,8 @@ Deno.serve(async req => {
 			});
 		}
 
-		// Cotización BCU para mostrar el equivalente en UYU. Si falla, mandamos
-		// el mail sin UYU (mejor eso que romper el envío del comprobante).
+		// Cotizaci\u00f3n BCU para mostrar el equivalente en UYU. Si falla, mandamos
+		// el mail sin UYU (mejor eso que romper el env\u00edo del comprobante).
 		let totalUyu: number | null = null;
 		try {
 			const fxRes = await fetch(`${SUPABASE_URL}/functions/v1/get-fx-rate`, {
