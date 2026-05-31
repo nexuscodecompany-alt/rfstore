@@ -132,6 +132,14 @@ export const Navbar = () => {
 										)}
 									</div>
 									<Link
+										to='/account/perfil'
+										onClick={() => setProfileOpen(false)}
+										className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 hover:bg-brand-50 transition-colors'
+									>
+										<HiOutlineUser size={18} />
+										Mi perfil
+									</Link>
+									<Link
 										to='/account/pedidos'
 										onClick={() => setProfileOpen(false)}
 										className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 hover:bg-brand-50 transition-colors'

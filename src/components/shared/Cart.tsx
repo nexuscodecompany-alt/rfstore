@@ -49,6 +49,7 @@ export const Cart = () => {
 					<div className='mt-4 p-7'>
 						<Link
 							to='/checkout'
+							onClick={closeSheet}
 							className='w-full bg-black text-white py-3.5 rounded-full flex items-center justify-center gap-3'
 						>
 							<RiSecurePaymentLine size={24} />

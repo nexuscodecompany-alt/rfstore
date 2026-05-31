@@ -11,6 +11,7 @@ import {
     DashboardBlogPage,
     RegisterPage,
     OrdersUserPage,
+    AccountProfilePage,
     DashboardPostFormPage,
     CheckoutPage,
     ThankyouPage,
@@ -88,7 +89,11 @@ export const router = createBrowserRouter([
                 children: [
                     {
                         index: true,
-                        element: <Navigate to='/account/pedidos' replace />,
+                        element: <Navigate to='/account/perfil' replace />,
+                    },
+                    {
+                        path: 'perfil',
+                        element: <AccountProfilePage />,
                     },
                     {
                         path: 'pedidos',
