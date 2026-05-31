@@ -341,7 +341,6 @@ export const CdrCheckoutForm = () => {
 					onChange={e => setForm({ ...form, phone: e.target.value })}
 					required
 					minLength={8}
-					pattern='[0-9 +()-]{8,}'
 				/>
 			</section>
 
