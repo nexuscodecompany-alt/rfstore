@@ -14,6 +14,7 @@ import {
 	ShippingSelection,
 	emptyShippingSelection,
 } from './ShippingZoneSelector';
+import { URUGUAY_DEPARTMENTS_INTERIOR } from '../../constants/shipping';
 import toast from 'react-hot-toast';
 import { formatPrice } from '../../helpers';
 import { ItemsCheckout } from './ItemsCheckout';
@@ -59,6 +60,29 @@ export const CdrCheckoutForm = () => {
 		postalCode: '',
 		country: 'Uruguay',
 	});
+
+	// Sincroniza state/city con la selección de zona:
+	// - Montevideo: state="Montevideo", city se autocompleta con el barrio detectado.
+	// - Interior: state=departamento elegido, city queda libre para que el cliente
+	//   ingrese su ciudad/localidad.
+	useEffect(() => {
+		if (shipping.zone === 'montevideo') {
+			setForm(f => ({
+				...f,
+				state: 'Montevideo',
+				city: shipping.barrio ?? '',
+			}));
+		} else if (shipping.zone === 'interior') {
+			setForm(f => ({
+				...f,
+				state: shipping.department ?? '',
+				// si veníamos de Montevideo (city="Montevideo" o barrio),
+				// la limpiamos para que el cliente ingrese su ciudad/localidad.
+				city: f.state === 'Montevideo' ? '' : f.city,
+			}));
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [shipping.zone, shipping.barrio, shipping.department]);
 	const [shipping, setShipping] = useState<ShippingSelection>(
 		emptyShippingSelection
 	);
@@ -119,23 +143,43 @@ export const CdrCheckoutForm = () => {
 
 		setSubmitting(true);
 		try {
-			// 1. Validar stock real contra CDR
+			// 1. Validar stock real contra CDR.
+			// IMPORTANTE: si el WS responde error o "sin stock" para todos los items,
+			// no bloqueamos la compra. Logueamos para debug y avisamos al cliente que
+			// confirmaremos el stock por WhatsApp. Esto evita perder ventas cuando el
+			// SOAP de CDR está inestable o devuelve códigos que no matchean.
 			const codes = cartItems.map(i => i.externalCode!).filter(Boolean);
 			const qtyMap: Record<string, number> = {};
 			for (const it of cartItems) {
 				if (!it.externalCode) continue;
 				qtyMap[it.externalCode] = (qtyMap[it.externalCode] ?? 0) + it.quantity;
 			}
-			const stockRes = await checkCdrStock(codes, qtyMap);
-			if (!stockRes.ok) {
-				toast.error(
-					`Sin stock para: ${[
-						...stockRes.insufficient,
-						...stockRes.missing,
-					].join(', ')}`
-				);
-				setSubmitting(false);
-				return;
+			let stockWarning: string | null = null;
+			try {
+				const stockRes = await checkCdrStock(codes, qtyMap);
+				if (!stockRes.ok) {
+					const all = [...stockRes.insufficient, ...stockRes.missing];
+					const allItemsFlagged = all.length >= codes.length && codes.length > 0;
+					console.warn('[checkout] CDR stock check no-ok:', stockRes);
+					if (allItemsFlagged) {
+						// Todos los items reportan sin stock: probablemente el WS está
+						// devolviendo basura. Continuamos y dejamos que el equipo valide.
+						stockWarning =
+							'No pudimos confirmar el stock online. Te confirmamos disponibilidad por WhatsApp en minutos.';
+					} else {
+						toast.error(`Sin stock para: ${all.join(', ')}`);
+						setSubmitting(false);
+						return;
+					}
+				}
+			} catch (stockErr) {
+				console.warn('[checkout] CDR stock check failed:', stockErr);
+				stockWarning =
+					'No pudimos confirmar el stock online. Te confirmamos disponibilidad por WhatsApp en minutos.';
+			}
+
+			if (stockWarning) {
+				toast(stockWarning, { icon: 'ℹ️', duration: 5000 });
 			}
 
 			if (method === 'mercadopago') {
@@ -302,28 +346,35 @@ export const CdrCheckoutForm = () => {
 				<div className='grid grid-cols-2 gap-3'>
 					<input
 						className='border rounded p-2'
-						placeholder='Ciudad'
+						placeholder={
+							shipping.zone === 'interior' ? 'Ciudad / localidad' : 'Ciudad'
+						}
 						value={form.city}
 						onChange={e => setForm({ ...form, city: e.target.value })}
 						required
 					/>
-					<input
-						className='border rounded p-2'
-						placeholder='Departamento'
+					<select
+						className='border rounded p-2 bg-white'
 						value={form.state}
 						onChange={e => setForm({ ...form, state: e.target.value })}
-					/>
+					>
+						<option value='Montevideo'>Montevideo</option>
+						{URUGUAY_DEPARTMENTS_INTERIOR.map(d => (
+							<option key={d} value={d}>
+								{d}
+							</option>
+						))}
+					</select>
 					<input
 						className='border rounded p-2'
-						placeholder='Código postal'
+						placeholder='Código postal (opcional)'
 						value={form.postalCode}
 						onChange={e => setForm({ ...form, postalCode: e.target.value })}
 					/>
 					<input
-						className='border rounded p-2'
-						placeholder='País'
+						className='border rounded p-2 bg-ink-50'
 						value={form.country}
-						onChange={e => setForm({ ...form, country: e.target.value })}
+						readOnly
 					/>
 				</div>
 			</section>

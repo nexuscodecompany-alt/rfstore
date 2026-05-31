@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { HiOutlineMapPin, HiOutlineTruck, HiOutlineCheckCircle } from 'react-icons/hi2';
+import { HiOutlineMapPin, HiOutlineTruck, HiOutlineCheckCircle, HiOutlineChevronDown } from 'react-icons/hi2';
 import { useShippingRates, useUsdUyuRate } from '../../hooks';
 import {
 	URUGUAY_DEPARTMENTS_INTERIOR,
+	MONTEVIDEO_ZONES,
 	findZoneByBarrio,
 	searchBarrios,
 	DEFAULT_SHIPPING_RATES,
@@ -34,7 +35,15 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 		ReturnType<typeof searchBarrios>
 	>([]);
 	const [showSuggestions, setShowSuggestions] = useState(false);
+	const [showZoneList, setShowZoneList] = useState(false);
 	const containerRef = useRef<HTMLDivElement | null>(null);
+
+	// Agrupar barrios por tier para la lista de zonas
+	const zonesByTier = {
+		centro: MONTEVIDEO_ZONES.filter(z => z.tier === 'centro').flatMap(z => z.barrios),
+		periferia: MONTEVIDEO_ZONES.filter(z => z.tier === 'periferia').flatMap(z => z.barrios),
+		costa: MONTEVIDEO_ZONES.filter(z => z.tier === 'costa').flatMap(z => z.barrios),
+	};
 
 	// Recalcular costo cuando cambian rates o fxRate o el barrio detectado
 	useEffect(() => {
@@ -185,6 +194,43 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 							</span>
 						</div>
 					)}
+
+					{/* Lista de zonas con costo */}
+					<div className='mt-3 border border-ink-200 rounded-md overflow-hidden'>
+						<button
+							type='button'
+							onClick={() => setShowZoneList(s => !s)}
+							className='w-full flex items-center justify-between px-3 py-2 bg-ink-50 text-xs font-semibold text-ink-700 hover:bg-ink-100'
+						>
+							<span>Ver zonas y costos de envío en Montevideo</span>
+							<HiOutlineChevronDown
+								size={16}
+								className={`transition-transform ${showZoneList ? 'rotate-180' : ''}`}
+							/>
+						</button>
+						{showZoneList && (
+							<div className='p-3 space-y-3 text-xs bg-white'>
+								<ZoneRow
+									title='Centro'
+									cost={rates.montevideo.centro}
+									barrios={zonesByTier.centro}
+									onPick={handlePickBarrio}
+								/>
+								<ZoneRow
+									title='Periferia'
+									cost={rates.montevideo.periferia}
+									barrios={zonesByTier.periferia}
+									onPick={handlePickBarrio}
+								/>
+								<ZoneRow
+									title='Costa'
+									cost={rates.montevideo.costa}
+									barrios={zonesByTier.costa}
+									onPick={handlePickBarrio}
+								/>
+							</div>
+						)}
+					</div>
 				</div>
 			)}
 
@@ -229,3 +275,48 @@ export const emptyShippingSelection = (): ShippingSelection => ({
 	cost_uyu: 0,
 	cost_usd: 0,
 });
+
+interface ZoneRowProps {
+	title: string;
+	cost: number;
+	barrios: string[];
+	onPick: (barrio: string) => void;
+}
+
+const ZoneRow = ({ title, cost, barrios, onPick }: ZoneRowProps) => {
+	const [expanded, setExpanded] = useState(false);
+	const preview = barrios.slice(0, 6).join(', ');
+	const hasMore = barrios.length > 6;
+	return (
+		<div className='border-b border-ink-100 pb-2 last:border-0'>
+			<div className='flex items-center justify-between mb-1'>
+				<span className='font-semibold text-ink-700'>{title}</span>
+				<span className='font-semibold text-brand-700'>UYU {cost}</span>
+			</div>
+			<p className='text-ink-500 leading-relaxed'>
+				{expanded ? barrios.join(', ') : preview}
+				{hasMore && (
+					<button
+						type='button'
+						className='ml-1 text-brand-600 underline'
+						onClick={() => setExpanded(e => !e)}
+					>
+						{expanded ? 'ver menos' : `+${barrios.length - 6} más`}
+					</button>
+				)}
+			</p>
+			<div className='mt-1 flex flex-wrap gap-1'>
+				{barrios.slice(0, expanded ? barrios.length : 4).map(b => (
+					<button
+						key={b}
+						type='button'
+						onClick={() => onPick(b)}
+						className='px-2 py-0.5 text-[10px] rounded-full border border-ink-200 hover:border-brand-400 hover:bg-brand-50'
+					>
+						{b}
+					</button>
+				))}
+			</div>
+		</div>
+	);
+};
