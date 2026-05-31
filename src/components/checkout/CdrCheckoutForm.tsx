@@ -60,6 +60,12 @@ export const CdrCheckoutForm = () => {
 		postalCode: '',
 		country: 'Uruguay',
 	});
+	const [shipping, setShipping] = useState<ShippingSelection>(
+		emptyShippingSelection
+	);
+	const shippingCostUsd = shipping.cost_usd;
+	const grandTotalUsd = totalAmount + shippingCostUsd;
+	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
 
 	// Sincroniza state/city con la selección de zona:
 	// - Montevideo: state="Montevideo", city se autocompleta con el barrio detectado.
@@ -76,19 +82,11 @@ export const CdrCheckoutForm = () => {
 			setForm(f => ({
 				...f,
 				state: shipping.department ?? '',
-				// si veníamos de Montevideo (city="Montevideo" o barrio),
-				// la limpiamos para que el cliente ingrese su ciudad/localidad.
 				city: f.state === 'Montevideo' ? '' : f.city,
 			}));
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [shipping.zone, shipping.barrio, shipping.department]);
-	const [shipping, setShipping] = useState<ShippingSelection>(
-		emptyShippingSelection
-	);
-	const shippingCostUsd = shipping.cost_usd;
-	const grandTotalUsd = totalAmount + shippingCostUsd;
-	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
 
 	useEffect(() => {
 		if (session?.user?.email) setForm(f => ({ ...f, email: session.user.email ?? '' }));
