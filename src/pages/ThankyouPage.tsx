@@ -6,12 +6,16 @@ import { formatPrice } from '../helpers';
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase/client';
 import { getAppSettings } from '../actions';
+import { useCartStore } from '../store/cart.store';
 
 interface TransferInfo {
 	banco?: string;
-	cuenta?: string;
 	titular?: string;
 	rut?: string;
+	moneda?: string;
+	cuenta_santander?: string;
+	sucursal_santander?: string;
+	cuenta_externa?: string;
 }
 
 export const ThankyouPage = () => {
@@ -21,8 +25,16 @@ export const ThankyouPage = () => {
 	const { isLoading: isLoadingSession } = useUser();
 	const [transferInfo, setTransferInfo] = useState<TransferInfo | null>(null);
 	const { data: fx } = useUsdUyuRate();
+	const cleanCart = useCartStore(s => s.cleanCart);
 
 	const navigate = useNavigate();
+
+	// Limpiamos el carrito recién cuando el cliente llega a la confirmación.
+	// Antes lo limpiábamos antes del redirect a MP, lo que causaba un flash
+	// momentáneo de "carrito vacío".
+	useEffect(() => {
+		cleanCart();
+	}, [cleanCart]);
 
 	useEffect(() => {
 		supabase.auth.onAuthStateChange(async (event, session) => {
@@ -86,51 +98,13 @@ export const ThankyouPage = () => {
 								Te mandamos también un mail
 							</span>
 						</div>
-						<div className='grid grid-cols-1 gap-2 text-sm'>
-							<div className='flex justify-between border-b border-emerald-100 pb-2'>
-								<span className='text-emerald-800'>Banco</span>
-								<span className='font-semibold text-ink-900'>
-									{transferInfo?.banco || '—'}
-								</span>
-							</div>
-							<div className='flex justify-between border-b border-emerald-100 pb-2'>
-								<span className='text-emerald-800'>Cuenta</span>
-								<span className='font-semibold text-ink-900'>
-									{transferInfo?.cuenta || '—'}
-								</span>
-							</div>
-							<div className='flex justify-between border-b border-emerald-100 pb-2'>
-								<span className='text-emerald-800'>Titular</span>
-								<span className='font-semibold text-ink-900'>
-									{transferInfo?.titular || '—'}
-								</span>
-							</div>
-							<div className='flex justify-between border-b border-emerald-100 pb-2'>
-								<span className='text-emerald-800'>RUT</span>
-								<span className='font-semibold text-ink-900'>
-									{transferInfo?.rut || '—'}
-								</span>
-							</div>
-							<div className='flex justify-between items-start border-b border-emerald-100 pb-2'>
-								<span className='text-emerald-800'>Monto</span>
-								<div className='text-right'>
-									<p className='font-bold text-ink-900'>
-										{formatPrice(data.totalAmount)}
-									</p>
-									{totalUyu !== null && (
-										<p className='text-xs text-emerald-800'>
-											≈ {formatUyu(totalUyu)} (al BCU de hoy)
-										</p>
-									)}
-								</div>
-							</div>
-							<div className='flex justify-between'>
-								<span className='text-emerald-800'>Concepto</span>
-								<span className='font-semibold text-ink-900'>
-									Pedido {data.id}
-								</span>
-							</div>
-						</div>
+						<TransferDetails
+							info={transferInfo}
+							orderId={data.id}
+							totalAmount={data.totalAmount}
+							totalUyu={totalUyu}
+							formatUyu={formatUyu}
+						/>
 						<p className='text-xs text-emerald-800 leading-relaxed pt-2'>
 							Una vez recibida la transferencia, despachamos tu pedido y te
 							avisamos.
@@ -224,6 +198,76 @@ export const ThankyouPage = () => {
 					</Link>
 				</div>
 			</main>
+		</div>
+	);
+};
+
+interface TransferDetailsProps {
+	info: TransferInfo | null;
+	orderId: number;
+	totalAmount: number;
+	totalUyu: number | null;
+	formatUyu: (n: number) => string;
+}
+
+const TransferDetails = ({ info, orderId, totalAmount, totalUyu, formatUyu }: TransferDetailsProps) => {
+	const Row = ({ label, value }: { label: string; value?: string }) => {
+		if (!value || !value.trim()) return null;
+		return (
+			<div className='flex justify-between border-b border-emerald-100 pb-2'>
+				<span className='text-emerald-800'>{label}</span>
+				<span className='font-semibold text-ink-900'>{value}</span>
+			</div>
+		);
+	};
+
+	const hasSantander =
+		!!info?.cuenta_santander?.trim() || !!info?.sucursal_santander?.trim();
+	const hasExterna = !!info?.cuenta_externa?.trim();
+
+	return (
+		<div className='grid grid-cols-1 gap-2 text-sm'>
+			<Row label='Banco' value={info?.banco} />
+			<Row label='Titular' value={info?.titular} />
+			<Row label='RUT' value={info?.rut} />
+			<Row label='Moneda' value={info?.moneda} />
+
+			{hasSantander && (
+				<div className='mt-2 border border-emerald-200 rounded-md p-3 bg-white/40'>
+					<p className='text-xs font-semibold uppercase tracking-wider text-emerald-800 mb-2'>
+						Transferencias dentro de Santander
+					</p>
+					<div className='space-y-2'>
+						<Row label='Cuenta' value={info?.cuenta_santander} />
+						<Row label='Sucursal' value={info?.sucursal_santander} />
+					</div>
+				</div>
+			)}
+
+			{hasExterna && (
+				<div className='mt-2 border border-emerald-200 rounded-md p-3 bg-white/40'>
+					<p className='text-xs font-semibold uppercase tracking-wider text-emerald-800 mb-2'>
+						Transferencias desde otros bancos
+					</p>
+					<Row label='Cuenta' value={info?.cuenta_externa} />
+				</div>
+			)}
+
+			<div className='flex justify-between items-start border-b border-emerald-100 pb-2 mt-2'>
+				<span className='text-emerald-800'>Monto</span>
+				<div className='text-right'>
+					<p className='font-bold text-ink-900'>{formatPrice(totalAmount)}</p>
+					{totalUyu !== null && (
+						<p className='text-xs text-emerald-800'>
+							≈ {formatUyu(totalUyu)} (al BCU de hoy)
+						</p>
+					)}
+				</div>
+			</div>
+			<div className='flex justify-between'>
+				<span className='text-emerald-800'>Concepto</span>
+				<span className='font-semibold text-ink-900'>Pedido {orderId}</span>
+			</div>
 		</div>
 	);
 };

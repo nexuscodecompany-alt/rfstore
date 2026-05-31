@@ -19,15 +19,19 @@ import toast from 'react-hot-toast';
 import { formatPrice } from '../../helpers';
 import { ItemsCheckout } from './ItemsCheckout';
 import { useNavigate } from 'react-router-dom';
+import { ImSpinner2 } from 'react-icons/im';
 import { supabase } from '../../supabase/client';
 
 type Method = 'mercadopago' | 'transfer' | 'deposit';
 
 interface TransferInfo {
 	banco?: string;
-	cuenta?: string;
 	titular?: string;
 	rut?: string;
+	moneda?: string;
+	cuenta_santander?: string;
+	sucursal_santander?: string;
+	cuenta_externa?: string;
 }
 interface DepositInfo {
 	abitab?: string;
@@ -38,7 +42,6 @@ interface DepositInfo {
 export const CdrCheckoutForm = () => {
 	const navigate = useNavigate();
 	const { session } = useUser();
-	const cleanCart = useCartStore(s => s.cleanCart);
 	const cartItems = useCartStore(s => s.items);
 	const totalAmount = useCartStore(s => s.totalAmount);
 
@@ -68,7 +71,7 @@ export const CdrCheckoutForm = () => {
 	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
 
 	// Sincroniza state/city con la selección de zona:
-	// - Montevideo: state="Montevideo", city se autocompleta con el barrio detectado.
+	// - Montevideo: city y state fijos en "Montevideo" (el barrio va en shipping_barrio).
 	// - Interior: state=departamento elegido, city queda libre para que el cliente
 	//   ingrese su ciudad/localidad.
 	useEffect(() => {
@@ -76,7 +79,7 @@ export const CdrCheckoutForm = () => {
 			setForm(f => ({
 				...f,
 				state: 'Montevideo',
-				city: shipping.barrio ?? '',
+				city: 'Montevideo',
 			}));
 		} else if (shipping.zone === 'interior') {
 			setForm(f => ({
@@ -88,9 +91,32 @@ export const CdrCheckoutForm = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [shipping.zone, shipping.barrio, shipping.department]);
 
+	// Prefill datos del cliente desde la tabla customers (persistente entre
+	// compras): nombre, teléfono y email se cargan al loguearse.
 	useEffect(() => {
-		if (session?.user?.email) setForm(f => ({ ...f, email: session.user.email ?? '' }));
-	}, [session?.user?.email]);
+		if (!session?.user?.id) return;
+		(async () => {
+			try {
+				const { data } = await supabase
+					.from('customers')
+					.select('full_name, phone, email')
+					.eq('user_id', session.user.id)
+					.maybeSingle();
+				if (data) {
+					setForm(f => ({
+						...f,
+						fullName: data.full_name ?? f.fullName,
+						phone: data.phone ?? f.phone,
+						email: data.email ?? session.user.email ?? f.email,
+					}));
+				} else if (session.user.email) {
+					setForm(f => ({ ...f, email: session.user.email ?? '' }));
+				}
+			} catch (e) {
+				console.warn('prefill customer:', e);
+			}
+		})();
+	}, [session?.user?.id, session?.user?.email]);
 
 	useEffect(() => {
 		(async () => {
@@ -141,6 +167,21 @@ export const CdrCheckoutForm = () => {
 
 		setSubmitting(true);
 		try {
+			// Persistir los datos del cliente en customers para próximas compras.
+			if (session?.user?.id) {
+				try {
+					await supabase
+						.from('customers')
+						.update({
+							full_name: form.fullName,
+							phone: form.phone,
+							email: form.email,
+						})
+						.eq('user_id', session.user.id);
+				} catch (e) {
+					console.warn('persist customer:', e);
+				}
+			}
 			// 1. Validar stock real contra CDR.
 			// IMPORTANTE: si el WS responde error o "sin stock" para todos los items,
 			// no bloqueamos la compra. Logueamos para debug y avisamos al cliente que
@@ -208,8 +249,10 @@ export const CdrCheckoutForm = () => {
 					shipping_department: shipping.department ?? undefined,
 					shipping_cost_usd: shipping.cost_usd,
 				});
-				cleanCart();
-				// Redirect a MP. En PROD usar init_point; en dev se puede usar sandbox.
+				// NO limpiamos el carrito acá. Si limpiáramos antes del redirect,
+				// la CheckoutPage re-renderizaría mostrando "carrito vacío" por una
+				// fracción de segundo. El carrito se limpia en ThankyouPage cuando
+				// el usuario vuelva exitosamente desde MP.
 				window.location.href = res.init_point;
 				return;
 			}
@@ -256,7 +299,8 @@ export const CdrCheckoutForm = () => {
 				}
 			}
 
-			cleanCart();
+			// El cleanCart sucede en ThankyouPage al montar; así evitamos el
+			// flash de "carrito vacío" durante el navigate.
 			toast.success('Pedido registrado. Te avisamos cuando confirmemos el pago.');
 			navigate(`/checkout/${orderId}/thank-you?status=pending`);
 		} catch (err) {
@@ -267,9 +311,11 @@ export const CdrCheckoutForm = () => {
 	};
 
 	return (
-		<form className='flex flex-col gap-6' onSubmit={onSubmit}>
-			<section className='space-y-3'>
-				<h3 className='text-lg font-semibold'>Datos de contacto</h3>
+		<>
+			{submitting && <CheckoutSubmittingOverlay method={method} />}
+			<form className='flex flex-col gap-6' onSubmit={onSubmit}>
+				<section className='space-y-3'>
+					<h3 className='text-lg font-semibold'>Datos de contacto</h3>
 				<input
 					className='border rounded p-2 w-full invalid:border-rose-400'
 					placeholder='Nombre completo *'
@@ -319,27 +365,47 @@ export const CdrCheckoutForm = () => {
 					onChange={e => setForm({ ...form, line2: e.target.value })}
 				/>
 				<div className='grid grid-cols-2 gap-3'>
-					<input
-						className='border rounded p-2'
-						placeholder={
-							shipping.zone === 'interior' ? 'Ciudad / localidad' : 'Ciudad'
-						}
-						value={form.city}
-						onChange={e => setForm({ ...form, city: e.target.value })}
-						required
-					/>
-					<select
-						className='border rounded p-2 bg-white'
-						value={form.state}
-						onChange={e => setForm({ ...form, state: e.target.value })}
-					>
-						<option value='Montevideo'>Montevideo</option>
-						{URUGUAY_DEPARTMENTS_INTERIOR.map(d => (
-							<option key={d} value={d}>
-								{d}
-							</option>
-						))}
-					</select>
+					{shipping.zone === 'montevideo' ? (
+						// En Montevideo la ciudad es fija (Montevideo).
+						<input
+							className='border rounded p-2 bg-ink-50'
+							value='Montevideo'
+							readOnly
+							aria-label='Ciudad'
+						/>
+					) : (
+						<input
+							className='border rounded p-2'
+							placeholder='Ciudad / localidad'
+							value={form.city}
+							onChange={e => setForm({ ...form, city: e.target.value })}
+							required
+						/>
+					)}
+					{shipping.zone === 'montevideo' ? (
+						// El "departamento" es Montevideo y queda fijo para que matchee
+						// con la ciudad. No mostramos el select porque sería redundante.
+						<input
+							className='border rounded p-2 bg-ink-50'
+							value='Montevideo'
+							readOnly
+							aria-label='Departamento'
+						/>
+					) : (
+						<select
+							className='border rounded p-2 bg-white'
+							value={form.state}
+							onChange={e => setForm({ ...form, state: e.target.value })}
+							required
+						>
+							<option value=''>Departamento…</option>
+							{URUGUAY_DEPARTMENTS_INTERIOR.map(d => (
+								<option key={d} value={d}>
+									{d}
+								</option>
+							))}
+						</select>
+					)}
 					<input
 						className='border rounded p-2'
 						placeholder='Código postal (opcional)'
@@ -390,19 +456,40 @@ export const CdrCheckoutForm = () => {
 				</div>
 
 				{method === 'transfer' && (
-					<div className='bg-gray-50 p-3 rounded text-sm space-y-1'>
-						<p>
-							<strong>Banco:</strong> {transferInfo.banco || '(configurar)'}
-						</p>
-						<p>
-							<strong>Cuenta:</strong> {transferInfo.cuenta || '(configurar)'}
-						</p>
-						<p>
-							<strong>Titular:</strong> {transferInfo.titular || '(configurar)'}
-						</p>
-						<p>
-							<strong>RUT:</strong> {transferInfo.rut || '(configurar)'}
-						</p>
+					<div className='bg-gray-50 p-3 rounded text-sm space-y-2'>
+						{transferInfo.banco && (
+							<p><strong>Banco:</strong> {transferInfo.banco}</p>
+						)}
+						{transferInfo.titular && (
+							<p><strong>Titular:</strong> {transferInfo.titular}</p>
+						)}
+						{transferInfo.rut && (
+							<p><strong>RUT:</strong> {transferInfo.rut}</p>
+						)}
+						{transferInfo.moneda && (
+							<p><strong>Moneda:</strong> {transferInfo.moneda}</p>
+						)}
+						{(transferInfo.cuenta_santander || transferInfo.sucursal_santander) && (
+							<div className='border-t border-gray-200 pt-2 mt-2'>
+								<p className='font-semibold text-xs uppercase text-gray-600 mb-1'>
+									Dentro de Santander
+								</p>
+								{transferInfo.cuenta_santander && (
+									<p><strong>Cuenta:</strong> {transferInfo.cuenta_santander}</p>
+								)}
+								{transferInfo.sucursal_santander && (
+									<p><strong>Sucursal:</strong> {transferInfo.sucursal_santander}</p>
+								)}
+							</div>
+						)}
+						{transferInfo.cuenta_externa && (
+							<div className='border-t border-gray-200 pt-2 mt-2'>
+								<p className='font-semibold text-xs uppercase text-gray-600 mb-1'>
+									Desde otros bancos
+								</p>
+								<p><strong>Cuenta:</strong> {transferInfo.cuenta_externa}</p>
+							</div>
+						)}
 						<p className='pt-2'>Subí tu comprobante:</p>
 						<input
 							type='file'
@@ -482,6 +569,29 @@ export const CdrCheckoutForm = () => {
 					? 'Pagar con MercadoPago'
 					: 'Confirmar pedido'}
 			</button>
-		</form>
+			</form>
+		</>
+	);
+};
+
+const CheckoutSubmittingOverlay = ({ method }: { method: Method }) => {
+	const message =
+		method === 'mercadopago'
+			? 'Te estamos redirigiendo a Mercado Pago…'
+			: 'Procesando tu pedido…';
+	const sub =
+		method === 'mercadopago'
+			? 'No cierres ni recargues esta ventana.'
+			: 'Estamos confirmando los datos. Esto demora unos segundos.';
+	return (
+		<div className='fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center animate-fade-in'>
+			<div className='bg-white rounded-2xl shadow-2xl px-8 py-7 max-w-sm w-[90%] flex flex-col items-center gap-4'>
+				<ImSpinner2 className='w-10 h-10 animate-spin text-brand-600' />
+				<p className='text-base font-semibold text-ink-900 text-center'>
+					{message}
+				</p>
+				<p className='text-xs text-ink-500 text-center leading-relaxed'>{sub}</p>
+			</div>
+		</div>
 	);
 };

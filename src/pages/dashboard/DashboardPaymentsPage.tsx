@@ -11,9 +11,12 @@ import { useEffect, useState } from 'react';
 
 interface TransferInfo {
 	banco: string;
-	cuenta: string;
 	titular: string;
 	rut: string;
+	moneda: string;
+	cuenta_santander: string;
+	sucursal_santander: string;
+	cuenta_externa: string;
 }
 interface DepositInfo {
 	abitab: string;
@@ -35,9 +38,12 @@ export const DashboardPaymentsPage = () => {
 
 	const [transfer, setTransfer] = useState<TransferInfo>({
 		banco: '',
-		cuenta: '',
 		titular: '',
 		rut: '',
+		moneda: 'USD',
+		cuenta_santander: '',
+		sucursal_santander: '',
+		cuenta_externa: '',
 	});
 	const [deposit, setDeposit] = useState<DepositInfo>({
 		abitab: '',
@@ -88,34 +94,79 @@ export const DashboardPaymentsPage = () => {
 		<div className='flex flex-col gap-8'>
 			<h1 className='text-xl font-bold'>Pagos</h1>
 
-			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
+			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-5'>
 				<h2 className='font-semibold'>Datos para transferencia bancaria</h2>
-				<div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
-					<input
-						className='border rounded px-3 py-2'
-						placeholder='Banco'
-						value={transfer.banco}
-						onChange={e => setTransfer({ ...transfer, banco: e.target.value })}
-					/>
-					<input
-						className='border rounded px-3 py-2'
-						placeholder='Número de cuenta'
-						value={transfer.cuenta}
-						onChange={e => setTransfer({ ...transfer, cuenta: e.target.value })}
-					/>
-					<input
-						className='border rounded px-3 py-2'
-						placeholder='Titular'
-						value={transfer.titular}
-						onChange={e => setTransfer({ ...transfer, titular: e.target.value })}
-					/>
-					<input
-						className='border rounded px-3 py-2'
-						placeholder='RUT'
-						value={transfer.rut}
-						onChange={e => setTransfer({ ...transfer, rut: e.target.value })}
-					/>
+				<p className='text-xs text-gray-500'>
+					Los campos que dejes vacíos no se muestran al cliente (ni en la página
+					ni en el mail).
+				</p>
+
+				<div className='space-y-3'>
+					<h3 className='text-xs font-semibold uppercase tracking-wider text-gray-600'>
+						Datos generales
+					</h3>
+					<div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+						<input
+							className='border rounded px-3 py-2'
+							placeholder='Banco'
+							value={transfer.banco}
+							onChange={e => setTransfer({ ...transfer, banco: e.target.value })}
+						/>
+						<input
+							className='border rounded px-3 py-2'
+							placeholder='Titular'
+							value={transfer.titular}
+							onChange={e => setTransfer({ ...transfer, titular: e.target.value })}
+						/>
+						<input
+							className='border rounded px-3 py-2'
+							placeholder='RUT'
+							value={transfer.rut}
+							onChange={e => setTransfer({ ...transfer, rut: e.target.value })}
+						/>
+						<input
+							className='border rounded px-3 py-2'
+							placeholder='Moneda (ej. USD)'
+							value={transfer.moneda}
+							onChange={e => setTransfer({ ...transfer, moneda: e.target.value })}
+						/>
+					</div>
 				</div>
+
+				<div className='space-y-3'>
+					<h3 className='text-xs font-semibold uppercase tracking-wider text-gray-600'>
+						Transferencias dentro de Santander
+					</h3>
+					<div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+						<input
+							className='border rounded px-3 py-2'
+							placeholder='Cuenta (ej. 5101278354)'
+							value={transfer.cuenta_santander}
+							onChange={e => setTransfer({ ...transfer, cuenta_santander: e.target.value })}
+						/>
+						<input
+							className='border rounded px-3 py-2'
+							placeholder='Sucursal (ej. 84 - Biarritz)'
+							value={transfer.sucursal_santander}
+							onChange={e => setTransfer({ ...transfer, sucursal_santander: e.target.value })}
+						/>
+					</div>
+				</div>
+
+				<div className='space-y-3'>
+					<h3 className='text-xs font-semibold uppercase tracking-wider text-gray-600'>
+						Transferencias desde otros bancos
+					</h3>
+					<div className='grid grid-cols-1 md:grid-cols-2 gap-3'>
+						<input
+							className='border rounded px-3 py-2'
+							placeholder='Cuenta (ej. 0084005101278354)'
+							value={transfer.cuenta_externa}
+							onChange={e => setTransfer({ ...transfer, cuenta_externa: e.target.value })}
+						/>
+					</div>
+				</div>
+
 				<button
 					className='px-4 py-2 bg-stone-800 text-white rounded-md'
 					onClick={() => saveTransfer()}

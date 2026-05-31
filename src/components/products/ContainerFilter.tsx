@@ -187,22 +187,21 @@ export const ContainerFilter = ({
 					}
 				/>
 
-				<div className='h-px bg-ink-100' />
-
-				{/* 2. Subcategorías */}
-				<CheckboxBlock
-					title='Subcategorías'
-					options={visibleSubcategories.map(s => ({ id: s.id, name: s.name }))}
-					selected={selectedSubcategories}
-					onToggle={id =>
-						toggle(selectedSubcategories, setSelectedSubcategories, id)
-					}
-					emptyHint={
-						selectedCategories.length > 0
-							? 'Esta categoría no tiene subcategorías.'
-							: 'Elegí una categoría para ver sus subcategorías.'
-					}
-				/>
+				{/* 2. Subcategorías — sólo si hay categorías filtradas */}
+				{selectedCategories.length > 0 && (
+					<>
+						<div className='h-px bg-ink-100' />
+						<CheckboxBlock
+							title='Subcategorías'
+							options={visibleSubcategories.map(s => ({ id: s.id, name: s.name }))}
+							selected={selectedSubcategories}
+							onToggle={id =>
+								toggle(selectedSubcategories, setSelectedSubcategories, id)
+							}
+							emptyHint='Esta categoría no tiene subcategorías.'
+						/>
+					</>
+				)}
 
 				<div className='h-px bg-ink-100' />
 

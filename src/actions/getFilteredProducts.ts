@@ -54,9 +54,12 @@ if (newArrivalsOnly) {
 } else if (sortOrder === 'desc') {
   baseQuery = baseQuery.order('price', { ascending: false });
 } else {
-  // Por defecto: primero los productos de CDR ('cdr' < 'local'), luego los más nuevos.
+  // Por defecto: priorizamos los productos "interesantes" (iPhone, MacBook,
+  // monitores, gaming, etc.) usando la columna `featured_score` de la vista.
+  // Desempate por precio descendente (los flagship arriba) y luego por fecha.
   baseQuery = baseQuery
-    .order('source', { ascending: true })
+    .order('featured_score', { ascending: false, nullsFirst: false })
+    .order('price', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false });
 }
 

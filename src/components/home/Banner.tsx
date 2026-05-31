@@ -53,11 +53,10 @@ export const Banner = () => {
 				</div>
 
 				{/* TRUST STRIP */}
-				<div className='mt-14 grid grid-cols-2 md:grid-cols-4 gap-x-8 gap-y-6 max-w-3xl w-full animate-fade-in-up [animation-delay:320ms]'>
+				<div className='mt-14 grid grid-cols-2 md:grid-cols-3 gap-x-8 gap-y-6 max-w-3xl w-full animate-fade-in-up [animation-delay:320ms]'>
 					{[
 						{ k: '+10', l: 'Años en el rubro' },
 						{ k: '+500', l: 'Clientes felices' },
-						{ k: 'Lun–Vie', l: 'Soporte 8 a 18 hs' },
 						{ k: '100%', l: 'Productos garantidos' },
 					].map(item => (
 						<div key={item.l} className='text-center'>

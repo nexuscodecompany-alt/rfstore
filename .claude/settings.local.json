@@ -49,7 +49,11 @@
       "PowerShell($body = '{\"codes\":[\"CEL2247\"],\"qty\":{\"CEL2247\":1}}'; $headers = @{ 'Authorization'='Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ3anB0b2Nua3FlZGFrZGlib3N1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ4Njg1ODgsImV4cCI6MjA3MDQ0NDU4OH0.TtTahIvd8ahTzDqAgH62EAPGMRBCkM-fD5OjmGwYpcw'; 'Content-Type'='application/json' }; try { Invoke-RestMethod -Method Post -Uri 'https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-check-stock' -Headers $headers -Body $body -TimeoutSec 30 | ConvertTo-Json } catch { Write-Host \"ERROR: $\\($_.Exception.Message\\)\"; if \\($_.Exception.Response\\) { $s = New-Object IO.StreamReader\\($_.Exception.Response.GetResponseStream\\(\\)\\); Write-Host $s.ReadToEnd\\(\\) } })",
       "Bash(echo \"exit=$?\")",
       "Read(//tmp/**)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(nslookup -type=TXT rfstore.uy 8.8.8.8)",
+      "Bash(nslookup -type=TXT resend._domainkey.rfstore.uy 8.8.8.8)",
+      "Bash(nslookup -type=TXT send.rfstore.uy 8.8.8.8)",
+      "Bash(nslookup -type=MX send.rfstore.uy 8.8.8.8)"
     ]
   }
 }

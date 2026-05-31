@@ -5,6 +5,7 @@ import { ImSpinner2 } from "react-icons/im";
 import toast from "react-hot-toast";
 import { ItemsCheckout } from "./ItemsCheckout";
 import { formatPrice } from "../../helpers";
+import { supabase } from "../../supabase/client";
 
 const FORMSPREE_ID = "mvgqddop";
 
@@ -21,12 +22,28 @@ export const FormCheckout = () => {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // Pre-llenar el email del usuario logueado
+  // Prefill datos del cliente desde customers (persistente entre compras).
   useEffect(() => {
-    if (session?.user?.email) {
-      setEmail(session.user.email);
-    }
-  }, [session?.user?.email]);
+    if (!session?.user?.id) return;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('customers')
+          .select('phone, email')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+        if (data) {
+          if (data.email) setEmail(data.email);
+          else if (session.user.email) setEmail(session.user.email);
+          if (data.phone) setPhone(data.phone);
+        } else if (session.user.email) {
+          setEmail(session.user.email);
+        }
+      } catch (e) {
+        console.warn('prefill customer:', e);
+      }
+    })();
+  }, [session?.user?.id, session?.user?.email]);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -46,7 +63,19 @@ export const FormCheckout = () => {
       .join("\n");
 
     setSubmitting(true);
-    
+
+    // Persistir email/teléfono en customers para próximas compras.
+    if (session?.user?.id) {
+      try {
+        await supabase
+          .from('customers')
+          .update({ email, phone })
+          .eq('user_id', session.user.id);
+      } catch (e) {
+        console.warn('persist customer:', e);
+      }
+    }
+
     try {
       // Enviar datos de contacto a Formspree
       const response = await fetch(`https://formspree.io/f/${FORMSPREE_ID}`, {

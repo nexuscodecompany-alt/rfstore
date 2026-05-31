@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useGlobalStore } from '../../store/global.store';
 import { Cart } from './Cart';
 import { Search } from './Search';
@@ -6,13 +7,22 @@ import { Search } from './Search';
 export const Sheet = () => {
 	const sheetContent = useGlobalStore(state => state.sheetContent);
 	const closeSheet = useGlobalStore(state => state.closeSheet);
+	const location = useLocation();
+	const initialPathRef = useRef(location.pathname);
 
 	const sheetRef = useRef<HTMLDivElement | null>(null);
+
+	// Si cambia la ruta mientras el sheet está abierto (ej. el usuario clickea
+	// "Comprar" y lo redirige a /login), cerramos automáticamente.
+	useEffect(() => {
+		if (location.pathname !== initialPathRef.current) {
+			closeSheet();
+		}
+	}, [location.pathname, closeSheet]);
 
 	useEffect(() => {
 		document.body.style.overflow = 'hidden';
 
-		// Función para manejar clics fuera del Sheet
 		const handleOutsideClick = (event: MouseEvent) => {
 			if (
 				sheetRef.current &&
@@ -22,7 +32,6 @@ export const Sheet = () => {
 			}
 		};
 
-		// Agregar event Listener
 		document.addEventListener('mousedown', handleOutsideClick);
 
 		return () => {

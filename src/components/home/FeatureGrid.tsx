@@ -1,6 +1,4 @@
 import { BiWorld } from 'react-icons/bi';
-import { FaHammer } from 'react-icons/fa6';
-import { HiMiniReceiptRefund } from 'react-icons/hi2';
 import { MdLocalShipping } from 'react-icons/md';
 
 const features = [
@@ -8,16 +6,6 @@ const features = [
 		icon: MdLocalShipping,
 		title: 'Envío gratis en Montevideo',
 		desc: 'En todos nuestros productos sin costo adicional',
-	},
-	{
-		icon: HiMiniReceiptRefund,
-		title: 'Devoluciones',
-		desc: 'Devolvé el equipo dentro de 72 horas sin complicaciones',
-	},
-	{
-		icon: FaHammer,
-		title: 'Soporte Lun a Vie',
-		desc: 'Asistencia técnica de 8:00 a 18:00 hs',
 	},
 	{
 		icon: BiWorld,
@@ -28,7 +16,7 @@ const features = [
 
 export const FeatureGrid = () => {
 	return (
-		<div className='grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 my-16'>
+		<div className='grid grid-cols-1 sm:grid-cols-2 gap-4 my-16 max-w-2xl mx-auto'>
 			{features.map(({ icon: Icon, title, desc }) => (
 				<div
 					key={title}
