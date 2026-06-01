@@ -52,7 +52,6 @@ export const Search = () => {
           <ul>
             {searchResults.map(product => {
               const variants = (product as any).variants ?? [];
-              const v0 = variants[0]; // accesos seguros
               const minCost = variants.length
                 ? Math.min(...variants.map((v: any) => Number(v.price) || 0))
                 : Number((product as any).price) || 0;
@@ -75,10 +74,6 @@ export const Search = () => {
                     <div className="flex flex-col gap-1">
                       <p className="text-sm font-semibold group-hover:underline">
                         {(product as any).name}
-                      </p>
-
-                      <p className="text-[13px] text-gray-600">
-                        {v0 ? `${v0.storage} / ${v0.color_name}` : '—'}
                       </p>
 
                       <p className="text-sm font-medium text-gray-600">

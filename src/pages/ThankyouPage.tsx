@@ -117,56 +117,31 @@ export const ThankyouPage = () => {
 
 					<div className='flex flex-col gap-5'>
 						<ul className='space-y-3'>
-							{data.orderItems.map((item, index) => {
-								const hasStorage =
-									item.storage &&
-									item.storage.trim() !== '' &&
-									item.storage.trim() !== '-';
-								const hasColor =
-									item.color_name &&
-									item.color_name.trim() !== '' &&
-									item.color_name.trim().toLowerCase() !== 'unico' &&
-									item.color_name.trim().toLowerCase() !== 'único';
-								const variantLabel = [
-									hasStorage ? item.storage : null,
-									hasColor ? item.color_name : null,
-								]
-									.filter(Boolean)
-									.join(' / ');
-								return (
-									<li
-										key={index}
-										className='flex items-center justify-between gap-3'
-									>
-										<div className='flex'>
-											<img
-												src={item.productImage}
-												alt={item.productName}
-												className='object-contain w-16 h-16'
-											/>
-										</div>
+							{data.orderItems.map((item, index) => (
+								<li
+									key={index}
+									className='flex items-center justify-between gap-3'
+								>
+									<div className='flex'>
+										<img
+											src={item.productImage}
+											alt={item.productName}
+											className='object-contain w-16 h-16'
+										/>
+									</div>
 
-										<div className='flex-1 space-y-2'>
-											<div className='flex justify-between'>
-												<p className='font-semibold'>
-													{item.productName}
-												</p>
-												<p className='mt-1 text-sm font-medium text-gray-600'>
-													{formatPrice(item.price)} x {item.quantity}
-												</p>
-											</div>
-
-											{variantLabel && (
-												<div className='flex gap-3'>
-													<p className='text-[13px] text-gray-600'>
-														{variantLabel}
-													</p>
-												</div>
-											)}
+									<div className='flex-1 space-y-2'>
+										<div className='flex justify-between'>
+											<p className='font-semibold'>
+												{item.productName}
+											</p>
+											<p className='mt-1 text-sm font-medium text-gray-600'>
+												{formatPrice(item.price)} x {item.quantity}
+											</p>
 										</div>
-									</li>
-								);
-							})}
+									</div>
+								</li>
+							))}
 						</ul>
 
 						<div className='flex justify-between items-start'>

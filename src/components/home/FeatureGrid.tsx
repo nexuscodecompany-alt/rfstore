@@ -4,8 +4,8 @@ import { MdLocalShipping } from 'react-icons/md';
 const features = [
 	{
 		icon: MdLocalShipping,
-		title: 'Envío gratis en Montevideo',
-		desc: 'En todos nuestros productos sin costo adicional',
+		title: 'Envíos a todo el país',
+		desc: 'Envío gratis en Montevideo en compras desde USD 100. Resto del país a coordinar.',
 	},
 	{
 		icon: BiWorld,

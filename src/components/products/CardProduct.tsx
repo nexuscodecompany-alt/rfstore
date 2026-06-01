@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { FiPlus } from 'react-icons/fi';
 import { FaWhatsapp } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
@@ -20,7 +19,6 @@ interface Props {
 	name: string;
 	price: number;
 	slug: string;
-	colors: { name: string; color: string }[];
 	variants: VariantProduct[];
 	brandName?: string;
 	categoryName?: string;
@@ -33,27 +31,18 @@ export const CardProduct = ({
 	name,
 	price,
 	slug,
-	colors,
 	variants,
 	brandName,
 	categoryName,
 	source,
 	externalCode,
 }: Props) => {
-	const [activeColor, setActiveColor] = useState<{
-		name: string;
-		color: string;
-	}>(colors[0]);
-
 	const addItem = useCartStore(state => state.addItem);
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
 	const pricing = usePricingConfig();
 
-	const selectedVariant = variants.find(
-		variant => variant.color === activeColor.color
-	);
+	const selectedVariant = variants[0];
 
-	// Precio de venta final (margen + IVA). "Desde" = mínimo entre variantes.
 	const displayPrice = variants.length
 		? Math.min(...variants.map(v => salePrice(v.price, pricing)))
 		: salePrice(price, pricing);
@@ -72,12 +61,13 @@ export const CardProduct = ({
 				productId: slug,
 				name,
 				image: img,
-				color: activeColor.name,
-				storage: selectedVariant.storage,
+				color: '',
+				storage: '',
 				price: salePrice(selectedVariant.price, pricing),
 				quantity: 1,
 				source: source ?? 'local',
 				externalCode: externalCode ?? null,
+				stock: selectedVariant.stock,
 			});
 			toast.success('Producto añadido al carrito', {
 				position: 'bottom-right',
@@ -142,31 +132,6 @@ export const CardProduct = ({
 						IVA incluido
 					</span>
 				</div>
-
-				{colors.length > 0 && (
-					<div className='flex items-center gap-2 pt-2 border-t border-ink-100'>
-						<span className='text-[10px] font-medium text-ink-500'>Color:</span>
-						<div className='flex gap-1.5'>
-							{colors.map(color => (
-								<button
-									key={color.color}
-									type='button'
-									aria-label={color.name}
-									onClick={e => {
-										e.preventDefault();
-										setActiveColor(color);
-									}}
-									className={`relative w-4 h-4 rounded-full transition-all ${
-										activeColor.color === color.color
-											? 'ring-2 ring-offset-1 ring-brand-600'
-											: 'ring-1 ring-ink-200 hover:ring-ink-400'
-									}`}
-									style={{ backgroundColor: color.color }}
-								/>
-							))}
-						</div>
-					</div>
-				)}
 
 				{/* CTA: agregar al carrito si es CDR, WhatsApp si no */}
 				<div className='mt-auto pt-3'>

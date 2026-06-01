@@ -257,7 +257,6 @@ export const CellPhonesPage = () => {
 									key={product.id}
 									name={product.name}
 									price={product.price}
-									colors={product.colors}
 									img={product.images[0]}
 									slug={product.slug}
 									variants={product.variants}

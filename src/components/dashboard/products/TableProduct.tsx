@@ -19,7 +19,6 @@ const tableHeaders = [
   'Origen',
   'Marca',
   'Categoría',
-  'Variante',
   'Precio',
   'Stock',
   'Estado',
@@ -29,9 +28,6 @@ const tableHeaders = [
 
 export const TableProduct = () => {
   const [openMenuIndex, setOpenMenuIndex] = useState<number | null>(null);
-  const [selectedVariants, setSelectedVariants] = useState<{
-    [key: string]: number;
-  }>({});
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [inputValue, setInputValue] = useState('');
@@ -83,18 +79,11 @@ export const TableProduct = () => {
     setOpenMenuIndex(openMenuIndex === index ? null : index);
   };
 
-  const handleVariantChange = (productId: string, variantIndex: number) => {
-    setSelectedVariants({
-      ...selectedVariants,
-      [productId]: variantIndex,
-    });
-  };
-
   const handleDeleteProduct = (id: string, name: string) => {
     setOpenMenuIndex(null);
     if (
       !window.confirm(
-        `¿Eliminar "${name}"? Esta acción borra el producto, sus variantes e imágenes, y los items de órdenes históricas que lo referencian.`
+        `¿Eliminar "${name}"? Esta acción borra el producto, sus imágenes y los items de órdenes históricas que lo referencian.`
       )
     ) {
       return;
@@ -245,9 +234,7 @@ export const TableProduct = () => {
           </thead>
           <tbody>
             {products.map((product, index) => {
-              const selectedVariantIndex = selectedVariants[product.id] ?? 0;
-              const selectedVariant =
-                product.variants[selectedVariantIndex] || {};
+              const selectedVariant = product.variants[0] || {};
 
               return (
                 <tr key={index}>
@@ -297,21 +284,6 @@ export const TableProduct = () => {
                         Sin categoría
                       </span>
                     )}
-                  </td>
-                  <td className="p-4 font-medium tracking-tighter">
-                    <select
-                      className="border border-gray-300 rounded-md p-1 w-full"
-                      onChange={(e) =>
-                        handleVariantChange(product.id, Number(e.target.value))
-                      }
-                      value={selectedVariantIndex}
-                    >
-                      {product.variants.map((variant, variantIndex) => (
-                        <option key={variant.id} value={variantIndex}>
-                          {variant.color_name} - {variant.storage}
-                        </option>
-                      ))}
-                    </select>
                   </td>
                   <CellTableProduct
                     content={formatPrice(selectedVariant?.price)}

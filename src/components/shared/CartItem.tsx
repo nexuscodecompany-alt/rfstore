@@ -47,13 +47,6 @@ export const CartItem = ({ item }: Props) => {
 		}
 	};
 
-	const hasStorage = item.storage && item.storage.trim() !== '' && item.storage.trim() !== '-';
-	const hasColor =
-		item.color && item.color.trim() !== '' && item.color.trim().toLowerCase() !== 'unico' && item.color.trim().toLowerCase() !== 'único';
-	const variantLabel = [hasStorage ? item.storage : null, hasColor ? item.color : null]
-		.filter(Boolean)
-		.join(' / ');
-
 	return (
 		<li className='flex justify-between items-center gap-5'>
 			<div className='flex'>
@@ -71,12 +64,6 @@ export const CartItem = ({ item }: Props) => {
 						{formatPrice(item.price)}
 					</p>
 				</div>
-
-				{variantLabel && (
-					<div className='flex gap-3'>
-						<p className='text-[13px] text-gray-600'>{variantLabel}</p>
-					</div>
-				)}
 
 				<div className='flex gap-4'>
 					<div className='flex items-center gap-5 px-2 py-1 border border-slate-200 w-fit rounded-full'>

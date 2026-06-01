@@ -41,7 +41,7 @@ const initialState: ProductFormValues = {
   description: {} as JSONContent,
   images: [],
   variants: [
-    { price: 0, stock: 0, storage: "", color: "#000000", colorName: "Negro" },
+    { price: 0, stock: 0, storage: "", color: "#000000", colorName: "Único" },
   ],
 };
 
@@ -139,15 +139,22 @@ export const FormProduct = ({ titleForm }: Props) => {
         // Si tu uploader usa URLs existentes como string[]
         images: (product.images ?? []) as string[],
 
-        // Normalizamos variantes al shape del form (colorName)
-        variants: (product.variants ?? []).map((v) => ({
-          id: (v as any).id ?? undefined,
-          stock: Number((v as any).stock ?? 0),
-          price: Number((v as any).price ?? 0),
-          storage: (v as any).storage ?? "",
-          color: (v as any).color ?? "#000000",
-          colorName: (v as any).color_name ?? (v as any).colorName ?? "",
-        })),
+        // Ya no usamos variantes: tomamos solo la primera fila (precio + stock).
+        // Si el producto venía con varias, las demás quedan ignoradas a nivel UI
+        // (el modelo las mantiene en DB hasta que se reescriba el producto).
+        variants: (() => {
+          const v0 = (product.variants ?? [])[0] as any;
+          return [
+            {
+              id: v0?.id ?? undefined,
+              stock: Number(v0?.stock ?? 0),
+              price: Number(v0?.price ?? 0),
+              storage: v0?.storage ?? "",
+              color: v0?.color ?? "#000000",
+              colorName: v0?.color_name ?? v0?.colorName ?? "Único",
+            },
+          ];
+        })(),
       };
 
       // Actualizamos el form y el store
@@ -323,7 +330,7 @@ export const FormProduct = ({ titleForm }: Props) => {
         </SectionFormProduct>
 
         <SectionFormProduct
-          titleSection="Variantes del Producto"
+          titleSection="Precio y stock"
           className="lg:col-span-2 h-fit"
         >
           <VariantsInput

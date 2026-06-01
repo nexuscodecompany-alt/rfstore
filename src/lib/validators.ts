@@ -92,25 +92,22 @@ export const productSchema = z.object({
 		value => !isContentEmpty(value),
 		{ message: 'La descripción no puede estar vacía' }
 	),
+	// Las variantes se eliminaron del UI: cada producto tiene un único set de
+	// precio + stock. Internamente seguimos guardándolo en la tabla `variants`
+	// con placeholders en color/storage/color_name para no romper el modelo de
+	// datos existente (order_items, place_order, sync CDR, reserva de stock).
 	variants: z
 		.array(
 			z.object({
 				id: z.string().optional(),
-				stock: z.number(),
+				stock: z.number().min(0, 'El stock no puede ser negativo'),
 				price: z.number().min(0.01, 'El precio debe ser mayor a 0'),
-				storage: z.string().min(1, 'El almacenamiento es requerido'),
-				color: z
-					.string()
-					.regex(
-						/^(#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})|(rgb|hsl)a?\(\s*([0-9]{1,3}\s*,\s*){2}[0-9]{1,3}\s*(,\s*(0|1|0?\.\d+))?\s*\))$/,
-						'El color debe ser un valor válido en formato hexadecimal, RGB o HSL'
-					),
-				colorName: z
-					.string()
-					.min(1, 'El nombre del color es obligatorio'),
+				storage: z.string().optional().default(''),
+				color: z.string().optional().default('#000000'),
+				colorName: z.string().optional().default('Único'),
 			})
 		)
-		.min(1, 'Debe haber al menos una variante'),
+		.length(1, 'Debe haber un único precio + stock'),
 	images: z.array(z.any()).min(1, 'Debe haber al menos una imagen'),
 });
 

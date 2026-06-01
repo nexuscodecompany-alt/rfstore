@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useCartStore } from '../../store/cart.store';
+import { useCheckoutShippingStore } from '../../store/checkoutShipping.store';
 import {
 	createMpPreference,
 	getAppSettings,
@@ -21,6 +22,10 @@ import { ItemsCheckout } from './ItemsCheckout';
 import { useNavigate } from 'react-router-dom';
 import { ImSpinner2 } from 'react-icons/im';
 import { supabase } from '../../supabase/client';
+
+// Mismo umbral que en FormCheckout (cotización): envío gratis en Montevideo
+// con compras desde USD 100.
+const FREE_SHIPPING_MIN_USD = 100;
 
 type Method = 'mercadopago' | 'transfer' | 'deposit';
 
@@ -66,9 +71,36 @@ export const CdrCheckoutForm = () => {
 	const [shipping, setShipping] = useState<ShippingSelection>(
 		emptyShippingSelection
 	);
-	const shippingCostUsd = shipping.cost_usd;
+
+	// Regla: dentro de Montevideo, envío gratis a partir de USD 100. Aplicamos
+	// override sobre el costo calculado por zona (centro/periferia/costa).
+	const qualifiesForFreeMvd =
+		shipping.zone === 'montevideo' && totalAmount >= FREE_SHIPPING_MIN_USD;
+	const shippingCostUsd = qualifiesForFreeMvd ? 0 : shipping.cost_usd;
 	const grandTotalUsd = totalAmount + shippingCostUsd;
 	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
+
+	// Sincronizamos el label con el resumen lateral.
+	const setShippingLabel = useCheckoutShippingStore(s => s.setShippingLabel);
+	const resetShippingLabel = useCheckoutShippingStore(s => s.reset);
+	useEffect(() => {
+		let label = 'A coordinar';
+		if (shipping.zone === 'montevideo') {
+			if (qualifiesForFreeMvd) label = 'Gratis';
+			else if (shipping.barrio) label = formatPrice(shipping.cost_usd);
+		} else if (shipping.zone === 'interior') {
+			label = 'Pago en agencia';
+		}
+		setShippingLabel(label);
+		return () => resetShippingLabel();
+	}, [
+		shipping.zone,
+		shipping.barrio,
+		shipping.cost_usd,
+		qualifiesForFreeMvd,
+		setShippingLabel,
+		resetShippingLabel,
+	]);
 
 	// Sincroniza state/city con la selección de zona:
 	// - Montevideo: city y state fijos en "Montevideo" (el barrio va en shipping_barrio).
@@ -534,6 +566,8 @@ export const CdrCheckoutForm = () => {
 					<span>
 						{shipping.zone === 'interior'
 							? 'Pago en agencia'
+							: qualifiesForFreeMvd
+							? 'Gratis'
 							: shippingCostUsd > 0
 							? formatPrice(shippingCostUsd)
 							: shipping.barrio
@@ -541,6 +575,12 @@ export const CdrCheckoutForm = () => {
 							: '—'}
 					</span>
 				</div>
+				{shipping.zone === 'montevideo' && !qualifiesForFreeMvd && totalAmount < FREE_SHIPPING_MIN_USD && (
+					<p className='text-[11px] text-amber-700'>
+						Sumá USD {(FREE_SHIPPING_MIN_USD - totalAmount).toFixed(0)} más para
+						obtener envío gratis dentro de Montevideo.
+					</p>
+				)}
 				<div className='flex items-center justify-between gap-3 pt-2 border-t border-ink-100'>
 					<p className='text-sm font-semibold text-gray-700'>Total a pagar</p>
 					<div className='text-right'>
