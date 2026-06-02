@@ -12,6 +12,9 @@ import {
 	getPublishableCelulares,
 	getMlPublishedItems,
 	publishMlItem,
+	getQueueStats,
+	enqueuePublishBatch,
+	triggerPublishQueueNow,
 	type DryRunResult,
 	type PublishResult,
 	type PublishableProduct,
@@ -215,6 +218,9 @@ export const DashboardMercadoLibrePage = () => {
 				</button>
 			</section>
 
+			{/* --- BATCH MASIVO --- */}
+			{credential && <BatchSection />}
+
 			{/* --- PUBLICADOS --- */}
 			{credential && <PublishedSection />}
 
@@ -392,6 +398,113 @@ const PublishSection = () => {
 				</div>
 			)}
 		</section>
+	);
+};
+
+const BatchSection = () => {
+	const queryClient = useQueryClient();
+	const { data: stats } = useQuery({
+		queryKey: ['ml_queue_stats'],
+		queryFn: getQueueStats,
+		refetchInterval: 5000,
+	});
+
+	const { mutate: enqueueSmartphones, isPending: enqSmartph } = useMutation({
+		mutationFn: () => enqueuePublishBatch('%smartphone%', ['Apple']),
+		onSuccess: n => {
+			toast.success(`${n} smartphones encolados`);
+			queryClient.invalidateQueries({ queryKey: ['ml_queue_stats'] });
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
+
+	const { mutate: enqueueAll, isPending: enqAll } = useMutation({
+		mutationFn: () => enqueuePublishBatch(null, ['Apple']),
+		onSuccess: n => {
+			toast.success(`${n} productos encolados (todo CDR sin Apple)`);
+			queryClient.invalidateQueries({ queryKey: ['ml_queue_stats'] });
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
+
+	const { mutate: triggerNow } = useMutation({
+		mutationFn: triggerPublishQueueNow,
+		onSuccess: () => toast.success('Procesador disparado manualmente'),
+	});
+
+	return (
+		<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-4'>
+			<div className='flex items-center justify-between'>
+				<div>
+					<h2 className='font-semibold'>Publicación masiva en cola</h2>
+					<p className='text-xs text-gray-500 mt-1'>
+						La cola se procesa automáticamente cada 1 min (5 productos por tick, ~30s).
+					</p>
+				</div>
+			</div>
+
+			{stats && (
+				<div className='grid grid-cols-2 md:grid-cols-4 gap-3'>
+					<StatCard label='Pendientes' value={stats.pending} color='amber' />
+					<StatCard label='Procesando' value={stats.processing} color='blue' />
+					<StatCard label='Completados' value={stats.done} color='emerald' />
+					<StatCard label='Con error' value={stats.error} color='red' />
+				</div>
+			)}
+
+			<div className='flex flex-wrap gap-2'>
+				<button
+					onClick={() => enqueueSmartphones()}
+					disabled={enqSmartph}
+					className='px-3 py-2 text-sm bg-yellow-400 hover:bg-yellow-500 text-stone-900 font-semibold rounded disabled:opacity-50'
+				>
+					Encolar smartphones (sin Apple)
+				</button>
+				<button
+					onClick={() => {
+						if (confirm('Esto va a encolar TODOS los productos CDR publicables (~1900 productos). Confirmá.')) {
+							enqueueAll();
+						}
+					}}
+					disabled={enqAll}
+					className='px-3 py-2 text-sm border border-stone-800 rounded disabled:opacity-50'
+				>
+					Encolar TODO el catálogo CDR
+				</button>
+				<button
+					onClick={() => triggerNow()}
+					className='px-3 py-2 text-sm text-brand-700 hover:text-brand-900 underline'
+				>
+					Disparar procesador ahora
+				</button>
+			</div>
+
+			{stats?.last_run && (
+				<div className='text-xs text-gray-500'>
+					Último tick: {new Date(stats.last_run.at).toLocaleTimeString('es-UY')} · {stats.last_run.taken} tomados · {(stats.last_run.succeeded ?? stats.last_run.ok ?? 0)} OK · {stats.last_run.failed} fallaron · {stats.last_run.elapsed_s}s
+				</div>
+			)}
+			{stats?.stock_monitor && (
+				<div className='text-xs text-gray-500'>
+					Stock monitor: último run {stats.stock_monitor.at ? new Date(stats.stock_monitor.at).toLocaleTimeString('es-UY') : '—'} · {stats.stock_monitor.items_checked ?? 0} chequeados · {stats.stock_monitor.deltas_found ?? 0} cambios CDR · {stats.stock_monitor.stock_updates ?? 0} sincronizados
+				</div>
+			)}
+		</section>
+	);
+};
+
+const StatCard = ({ label, value, color }: { label: string; value: number; color: 'amber' | 'blue' | 'emerald' | 'red' }) => {
+	const c: Record<string, string> = {
+		amber: 'bg-amber-50 border-amber-200 text-amber-800',
+		blue: 'bg-blue-50 border-blue-200 text-blue-800',
+		emerald: 'bg-emerald-50 border-emerald-200 text-emerald-800',
+		red: 'bg-red-50 border-red-200 text-red-800',
+	};
+	return (
+		<div className={`p-3 rounded border ${c[color]}`}>
+			<p className='text-2xl font-bold'>{value}</p>
+			<p className='text-xs'>{label}</p>
+		</div>
 	);
 };
 

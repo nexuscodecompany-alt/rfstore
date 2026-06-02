@@ -256,6 +256,54 @@ export interface MlPublishedItem {
 	product_image: string | null;
 }
 
+// --------- Batch / Queue ---------
+export interface QueueStats {
+	pending: number;
+	processing: number;
+	done: number;
+	error: number;
+	last_run?: { taken: number; succeeded?: number; ok?: number; failed: number; elapsed_s: number; at: string } | null;
+	stock_monitor?: { items_checked?: number; deltas_found?: number; stock_updates?: number; elapsed_s?: number; at?: string } | null;
+}
+
+export const getQueueStats = async (): Promise<QueueStats> => {
+	const { data: rows } = await supabase.from('ml_sync_queue').select('status, operation');
+	const stats: QueueStats = { pending: 0, processing: 0, done: 0, error: 0 };
+	for (const r of rows ?? []) {
+		const s = (r as { status: string; operation: string }).status;
+		if (s === 'pending') stats.pending++;
+		else if (s === 'processing') stats.processing++;
+		else if (s === 'done') stats.done++;
+		else if (s === 'error') stats.error++;
+	}
+	const { data: settings } = await supabase
+		.from('app_settings')
+		.select('key, value')
+		.in('key', ['ml_batch_last_run', 'ml_stock_monitor_last_run']);
+	const map = new Map((settings ?? []).map(r => [r.key, r.value]));
+	stats.last_run = (map.get('ml_batch_last_run') as QueueStats['last_run']) ?? null;
+	stats.stock_monitor = (map.get('ml_stock_monitor_last_run') as QueueStats['stock_monitor']) ?? null;
+	return stats;
+};
+
+export const enqueuePublishBatch = async (subcategoryNameLike: string | null = '%smartphone%', skipBrands: string[] = ['Apple']): Promise<number> => {
+	// Cast porque la funcion RPC fue creada via SQL y los types no se regeneraron
+	const { data, error } = await (supabase.rpc as unknown as (fn: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: { message: string } | null }>)(
+		'enqueue_ml_publish_batch',
+		{ p_subcat_name: subcategoryNameLike, p_skip_brands: skipBrands }
+	);
+	if (error) throw new Error(error.message);
+	return Number(data) || 0;
+};
+
+export const triggerPublishQueueNow = async (): Promise<void> => {
+	const { data: { session } } = await supabase.auth.getSession();
+	await fetch(`${SUPABASE_URL}/functions/v1/ml-process-publish-queue`, {
+		method: 'POST',
+		headers: { apikey: SUPABASE_ANON, Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON}` },
+	});
+};
+
 export const getMlPublishedItems = async (): Promise<MlPublishedItem[]> => {
 	const { data, error } = await supabase
 		.from('ml_item_mapping')
