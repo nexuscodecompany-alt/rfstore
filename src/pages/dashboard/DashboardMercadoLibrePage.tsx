@@ -9,6 +9,11 @@ import {
 	getMlSettings,
 	getMlStats,
 	updateMlSetting,
+	getPublishableCelulares,
+	publishMlItem,
+	type DryRunResult,
+	type PublishResult,
+	type PublishableProduct,
 } from '../../actions/ml';
 
 const formatDate = (iso: string): string => {
@@ -208,12 +213,13 @@ export const DashboardMercadoLibrePage = () => {
 				</button>
 			</section>
 
+			{/* --- PUBLICACIÓN --- */}
+			{credential && <PublishSection />}
+
 			{/* --- INFO --- */}
 			<section className='p-5 bg-blue-50 border border-blue-200 rounded-lg space-y-2 text-sm text-blue-900'>
 				<p className='font-semibold'>Próximos pasos</p>
 				<ul className='list-disc list-inside space-y-1'>
-					<li>Fase 2 — Parser de garantía desde descripción CDR</li>
-					<li>Fase 3 — Publicación masiva de Celulares</li>
 					<li>Fase 4 — Sync stock 3-way en tiempo real</li>
 					<li>Fase 5 — Webhook ML + ingest de órdenes</li>
 				</ul>
@@ -221,6 +227,171 @@ export const DashboardMercadoLibrePage = () => {
 		</div>
 	);
 };
+
+const PublishSection = () => {
+	const queryClient = useQueryClient();
+	const [preview, setPreview] = useState<DryRunResult | null>(null);
+	const [lastResult, setLastResult] = useState<PublishResult | null>(null);
+
+	const { data: items = [], isLoading } = useQuery({
+		queryKey: ['ml_publishable_celulares'],
+		queryFn: getPublishableCelulares,
+	});
+
+	const { mutate: dryRun, isPending: dryRunning } = useMutation({
+		mutationFn: ({ product_id, variant_id }: { product_id: string; variant_id: string }) =>
+			publishMlItem(product_id, variant_id, true) as Promise<DryRunResult>,
+		onSuccess: data => {
+			setPreview(data);
+			toast.success('Preview generado — revisá abajo qué se va a publicar');
+		},
+		onError: (e: Error) => toast.error(`Dry run falló: ${e.message}`),
+	});
+
+	const { mutate: publish, isPending: publishing } = useMutation({
+		mutationFn: ({ product_id, variant_id }: { product_id: string; variant_id: string }) =>
+			publishMlItem(product_id, variant_id, false) as Promise<PublishResult>,
+		onSuccess: data => {
+			setLastResult(data);
+			if (data.ok) {
+				toast.success(`Publicado en ML: ${data.ml_item_id}`);
+				queryClient.invalidateQueries({ queryKey: ['ml_publishable_celulares'] });
+				queryClient.invalidateQueries({ queryKey: ['ml_stats'] });
+			} else {
+				toast.error(`ML rechazó: ${data.error ?? 'ver detalle abajo'}`);
+			}
+		},
+		onError: (e: Error) => toast.error(`Publicación falló: ${e.message}`),
+	});
+
+	return (
+		<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-4'>
+			<div>
+				<h2 className='font-semibold'>Publicar en Mercado Libre — Celulares</h2>
+				<p className='text-xs text-gray-500 mt-1'>
+					Solo productos con stock mayor al umbral. Hacé "Vista previa" para ver el payload sin publicar.
+				</p>
+			</div>
+
+			{isLoading ? (
+				<p className='text-sm text-gray-500'>Cargando candidatos…</p>
+			) : items.length === 0 ? (
+				<p className='text-sm text-gray-500'>No hay celulares publicables con el umbral actual.</p>
+			) : (
+				<div className='overflow-auto max-h-[500px] border border-gray-100 rounded'>
+					<table className='min-w-full text-sm'>
+						<thead className='bg-gray-50 text-left sticky top-0'>
+							<tr>
+								<th className='p-2'>Imagen</th>
+								<th className='p-2'>Código</th>
+								<th className='p-2'>Nombre</th>
+								<th className='p-2 text-right'>Stock</th>
+								<th className='p-2 text-right'>Costo USD</th>
+								<th className='p-2'>Estado</th>
+								<th className='p-2'></th>
+							</tr>
+						</thead>
+						<tbody>
+							{items.map((p: PublishableProduct) => (
+								<tr key={p.id} className='border-t'>
+									<td className='p-2'>
+										{p.images?.[0] && (
+											<img src={p.images[0]} alt={p.name} className='w-12 h-12 object-cover rounded' />
+										)}
+									</td>
+									<td className='p-2 font-mono text-xs'>{p.external_code}</td>
+									<td className='p-2'>{p.name}</td>
+									<td className='p-2 text-right'>{p.stock}</td>
+									<td className='p-2 text-right'>${p.price_usd}</td>
+									<td className='p-2'>
+										{p.already_published ? (
+											<span className='text-emerald-700 text-xs font-semibold'>✓ Publicado</span>
+										) : (
+											<span className='text-gray-400 text-xs'>—</span>
+										)}
+									</td>
+									<td className='p-2 whitespace-nowrap'>
+										{p.already_published ? (
+											p.ml_item_id && (
+												<a
+													href={`https://articulo.mercadolibre.com.uy/${p.ml_item_id.replace('MLU', 'MLU-')}`}
+													target='_blank'
+													rel='noreferrer'
+													className='text-xs text-brand-700 hover:underline'
+												>
+													Ver en ML →
+												</a>
+											)
+										) : (
+											<div className='flex gap-1'>
+												<button
+													onClick={() => dryRun({ product_id: p.id, variant_id: p.variant_id })}
+													disabled={dryRunning || publishing}
+													className='px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50'
+												>
+													Vista previa
+												</button>
+												<button
+													onClick={() => publish({ product_id: p.id, variant_id: p.variant_id })}
+													disabled={dryRunning || publishing}
+													className='px-2 py-1 text-xs bg-yellow-400 hover:bg-yellow-500 text-stone-900 font-semibold rounded disabled:opacity-50'
+												>
+													Publicar
+												</button>
+											</div>
+										)}
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			)}
+
+			{preview && (
+				<div className='p-3 bg-gray-50 border border-gray-200 rounded space-y-2'>
+					<div className='flex items-center justify-between'>
+						<p className='text-sm font-semibold'>Vista previa del payload</p>
+						<button onClick={() => setPreview(null)} className='text-xs text-gray-500 hover:text-gray-900'>
+							Cerrar
+						</button>
+					</div>
+					<div className='grid grid-cols-2 md:grid-cols-4 gap-2 text-xs'>
+						<MetaCard label='FX rate USD→UYU' value={preview.meta.fxRate} />
+						<MetaCard label='Costo USD' value={preview.meta.costUsd} />
+						<MetaCard label='Precio ML (UYU)' value={preview.meta.priceUyu} />
+						<MetaCard label='Categoría ML' value={preview.meta.predictedCategory} />
+						<MetaCard label='Garantía' value={`${preview.meta.warranty.months}m ${preview.meta.warranty.type} (${preview.meta.warranty.source})`} />
+						<MetaCard label='GTIN' value={preview.meta.featuresExtracted.gtin ?? '—'} />
+						<MetaCard label='Modelo' value={preview.meta.featuresExtracted.model ?? '—'} />
+					</div>
+					<details className='text-xs'>
+						<summary className='cursor-pointer text-gray-600 font-medium'>Payload JSON completo</summary>
+						<pre className='mt-2 p-2 bg-white border rounded overflow-auto max-h-96'>{JSON.stringify(preview.payload, null, 2)}</pre>
+					</details>
+				</div>
+			)}
+
+			{lastResult && !lastResult.ok && (
+				<div className='p-3 bg-red-50 border border-red-200 rounded space-y-1'>
+					<p className='text-sm font-semibold text-red-800'>ML rechazó la publicación</p>
+					<p className='text-xs text-red-700'>{lastResult.error}</p>
+					<details className='text-xs'>
+						<summary className='cursor-pointer text-red-700 font-medium'>Detalle</summary>
+						<pre className='mt-2 p-2 bg-white border rounded overflow-auto max-h-96'>{JSON.stringify(lastResult.detail, null, 2)}</pre>
+					</details>
+				</div>
+			)}
+		</section>
+	);
+};
+
+const MetaCard = ({ label, value }: { label: string; value: unknown }) => (
+	<div className='p-2 bg-white border border-gray-100 rounded'>
+		<p className='text-[10px] uppercase text-gray-400'>{label}</p>
+		<p className='font-mono text-xs'>{String(value)}</p>
+	</div>
+);
 
 const Stat = ({
 	label,

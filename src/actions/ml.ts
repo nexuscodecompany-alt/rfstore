@@ -120,6 +120,111 @@ export const updateMlSetting = async <K extends keyof typeof SETTING_KEYS>(
 };
 
 // --------- Stats ---------
+// --------- Publicación ---------
+const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_API_KEY;
+
+async function invokeMlFn<T>(name: string, body: unknown): Promise<T> {
+	const { data: { session } } = await supabase.auth.getSession();
+	const headers: Record<string, string> = {
+		'Content-Type': 'application/json',
+		apikey: SUPABASE_ANON,
+	};
+	headers.Authorization = `Bearer ${session?.access_token ?? SUPABASE_ANON}`;
+	const res = await fetch(`${SUPABASE_URL}/functions/v1/${name}`, {
+		method: 'POST',
+		headers,
+		body: JSON.stringify(body),
+	});
+	const json = await res.json().catch(() => ({}));
+	if (!res.ok) throw new Error(json.error || json.detail || `Error ${res.status} en ${name}`);
+	return json as T;
+}
+
+export interface PublishResult {
+	ok: boolean;
+	ml_item_id?: string;
+	permalink?: string;
+	category_id?: string;
+	price_uyu?: number;
+	stock?: number;
+	error?: string;
+	detail?: unknown;
+	payload_sent?: unknown;
+}
+
+export interface DryRunResult {
+	ok: boolean;
+	dry_run: true;
+	payload: unknown;
+	meta: {
+		fxRate: number;
+		costUsd: number;
+		priceUyu: number;
+		warranty: { months: number; type: string; source: string };
+		featuresExtracted: { gtin?: string; model?: string; nro_parte?: string };
+		predictedCategory: string;
+	};
+}
+
+export const publishMlItem = (product_id: string, variant_id: string, dry_run = false) =>
+	invokeMlFn<PublishResult | DryRunResult>('ml-publish-item', { product_id, variant_id, dry_run });
+
+export interface PublishableProduct {
+	id: string;
+	name: string;
+	slug: string;
+	external_code: string;
+	price_usd: number | null;
+	images: string[];
+	variant_id: string;
+	stock: number;
+	already_published: boolean;
+	ml_item_id: string | null;
+}
+
+export const getPublishableCelulares = async (): Promise<PublishableProduct[]> => {
+	const settings = await getMlSettings();
+	const threshold = settings.stock_threshold;
+	const catId = settings.celulares_category_id;
+	if (!catId) return [];
+
+	const { data, error } = await supabase
+		.from('products')
+		.select('id, name, slug, external_code, price_usd, images, active, source, category_id, variants(id, stock)')
+		.eq('category_id', catId)
+		.eq('active', true)
+		.eq('source', 'cdr');
+	if (error) throw new Error(error.message);
+
+	const { data: mappings } = await supabase
+		.from('ml_item_mapping')
+		.select('product_id, ml_item_id, status');
+	const publishedMap = new Map((mappings ?? []).map(m => [m.product_id, m]));
+
+	const rows: PublishableProduct[] = [];
+	for (const p of data ?? []) {
+		const variants = (p as { variants: { id: string; stock: number }[] }).variants ?? [];
+		const v = variants[0];
+		if (!v) continue;
+		if (Number(v.stock) <= threshold) continue;
+		const published = publishedMap.get(p.id);
+		rows.push({
+			id: p.id,
+			name: p.name,
+			slug: p.slug,
+			external_code: p.external_code ?? '',
+			price_usd: p.price_usd as number | null,
+			images: (p.images ?? []) as string[],
+			variant_id: v.id,
+			stock: Number(v.stock),
+			already_published: !!published && published.status === 'active',
+			ml_item_id: published?.ml_item_id ?? null,
+		});
+	}
+	rows.sort((a, b) => Number(a.already_published) - Number(b.already_published) || b.stock - a.stock);
+	return rows;
+};
+
 export interface MlStats {
 	published: number;
 	paused: number;
