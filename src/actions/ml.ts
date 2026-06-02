@@ -6,7 +6,8 @@ import { supabase } from '../supabase/client';
 // Esa Vercel API route llama a la Edge Function ml-oauth-exchange y nos rebota al dashboard.
 
 const ML_AUTH_BASE = 'https://auth.mercadolibre.com.uy/authorization';
-const SUPABASE_URL = import.meta.env.VITE_PROJECT_URL_SUPABASE as string;
+// Strip trailing slash de la env var para evitar `//functions` (rompe el match exacto del redirect_uri en ML)
+const SUPABASE_URL = (import.meta.env.VITE_PROJECT_URL_SUPABASE as string).replace(/\/+$/, '');
 // Callback handler en Supabase Edge Function (no en Vercel) — Vite SPA no expone /api routes.
 const ML_REDIRECT_URI = `${SUPABASE_URL}/functions/v1/ml-oauth-callback`;
 
