@@ -47,9 +47,14 @@ export const Banner = () => {
 						Ver Catálogo
 						<HiArrowRight />
 					</Link>
-					<Link to='/contacto' className='btn-ghost-dark px-6 py-3'>
+					<a
+						href={`https://wa.me/59894116299?text=${encodeURIComponent('Hola, me gustaría solicitar una cotización.')}`}
+						target='_blank'
+						rel='noopener noreferrer'
+						className='btn-ghost-dark px-6 py-3'
+					>
 						Solicitar cotización
-					</Link>
+					</a>
 				</div>
 
 				{/* TRUST STRIP */}

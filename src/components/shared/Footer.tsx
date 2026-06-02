@@ -79,7 +79,7 @@ export const Footer = () => {
 						</p>
 						<nav className='flex flex-col gap-2.5 text-sm text-white/60'>
 							<Link to='/tienda' className='hover:text-white transition-colors'>Productos</Link>
-							<Link to='/contacto' className='hover:text-white transition-colors'>Contacto</Link>
+							<Link to='/nosotros' className='hover:text-white transition-colors'>Contacto</Link>
 							<Link to='/blog' className='hover:text-white transition-colors'>Blog</Link>
 						</nav>
 					</div>

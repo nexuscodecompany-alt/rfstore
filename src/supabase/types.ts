@@ -7,8 +7,6 @@ export type Json =
   | Json[]
 
 export type Database = {
-  // Allows to automatically instantiate createClient with right options
-  // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
     PostgrestVersion: "13.0.4"
   }
@@ -58,6 +56,30 @@ export type Database = {
           },
         ]
       }
+      admin_notifications: {
+        Row: {
+          created_at: string
+          id: number
+          payload: Json
+          read_at: string | null
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          payload?: Json
+          read_at?: string | null
+          type: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          payload?: Json
+          read_at?: string | null
+          type?: string
+        }
+        Relationships: []
+      }
       app_settings: {
         Row: {
           key: string
@@ -79,16 +101,19 @@ export type Database = {
       brands: {
         Row: {
           created_at: string
+          hidden: boolean
           id: string
           name: string | null
         }
         Insert: {
           created_at?: string
+          hidden?: boolean
           id?: string
           name?: string | null
         }
         Update: {
           created_at?: string
+          hidden?: boolean
           id?: string
           name?: string | null
         }
@@ -157,6 +182,321 @@ export type Database = {
         }
         Relationships: []
       }
+      ml_attribute_defaults: {
+        Row: {
+          attribute_id: string
+          id: number
+          ml_category_id: string
+          value_number: number | null
+          value_text: string | null
+        }
+        Insert: {
+          attribute_id: string
+          id?: number
+          ml_category_id: string
+          value_number?: number | null
+          value_text?: string | null
+        }
+        Update: {
+          attribute_id?: string
+          id?: number
+          ml_category_id?: string
+          value_number?: number | null
+          value_text?: string | null
+        }
+        Relationships: []
+      }
+      ml_credentials: {
+        Row: {
+          access_token: string
+          created_at: string | null
+          expires_at: string
+          id: number
+          ml_nickname: string | null
+          ml_user_id: number
+          refresh_token: string
+          scope: string | null
+          token_type: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          access_token: string
+          created_at?: string | null
+          expires_at: string
+          id?: number
+          ml_nickname?: string | null
+          ml_user_id: number
+          refresh_token: string
+          scope?: string | null
+          token_type?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          access_token?: string
+          created_at?: string | null
+          expires_at?: string
+          id?: number
+          ml_nickname?: string | null
+          ml_user_id?: number
+          refresh_token?: string
+          scope?: string | null
+          token_type?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      ml_item_mapping: {
+        Row: {
+          created_at: string | null
+          id: number
+          last_error: string | null
+          last_known_price_uyu: number | null
+          last_known_stock: number | null
+          last_synced_at: string | null
+          ml_category_id: string
+          ml_item_id: string
+          ml_listing_type: string
+          permalink: string | null
+          product_id: string
+          status: string
+          updated_at: string | null
+          variant_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: number
+          last_error?: string | null
+          last_known_price_uyu?: number | null
+          last_known_stock?: number | null
+          last_synced_at?: string | null
+          ml_category_id: string
+          ml_item_id: string
+          ml_listing_type?: string
+          permalink?: string | null
+          product_id: string
+          status?: string
+          updated_at?: string | null
+          variant_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: number
+          last_error?: string | null
+          last_known_price_uyu?: number | null
+          last_known_stock?: number | null
+          last_synced_at?: string | null
+          ml_category_id?: string
+          ml_item_id?: string
+          ml_listing_type?: string
+          permalink?: string | null
+          product_id?: string
+          status?: string
+          updated_at?: string | null
+          variant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_item_mapping_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_item_mapping_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_product_overrides: {
+        Row: {
+          attributes_override: Json | null
+          brand: string | null
+          color: string | null
+          created_at: string | null
+          description_override: string | null
+          gtin: string | null
+          height_cm: number | null
+          id: number
+          internal_memory: string | null
+          length_cm: number | null
+          model: string | null
+          product_id: string
+          ram: string | null
+          title_override: string | null
+          updated_at: string | null
+          variant_id: string | null
+          warranty_months: number | null
+          warranty_type: string | null
+          weight_grams: number | null
+          width_cm: number | null
+        }
+        Insert: {
+          attributes_override?: Json | null
+          brand?: string | null
+          color?: string | null
+          created_at?: string | null
+          description_override?: string | null
+          gtin?: string | null
+          height_cm?: number | null
+          id?: number
+          internal_memory?: string | null
+          length_cm?: number | null
+          model?: string | null
+          product_id: string
+          ram?: string | null
+          title_override?: string | null
+          updated_at?: string | null
+          variant_id?: string | null
+          warranty_months?: number | null
+          warranty_type?: string | null
+          weight_grams?: number | null
+          width_cm?: number | null
+        }
+        Update: {
+          attributes_override?: Json | null
+          brand?: string | null
+          color?: string | null
+          created_at?: string | null
+          description_override?: string | null
+          gtin?: string | null
+          height_cm?: number | null
+          id?: number
+          internal_memory?: string | null
+          length_cm?: number | null
+          model?: string | null
+          product_id?: string
+          ram?: string | null
+          title_override?: string | null
+          updated_at?: string | null
+          variant_id?: string | null
+          warranty_months?: number | null
+          warranty_type?: string | null
+          weight_grams?: number | null
+          width_cm?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_product_overrides_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: true
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_product_overrides_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_sync_queue: {
+        Row: {
+          attempts: number
+          created_at: string | null
+          id: number
+          last_error: string | null
+          ml_item_id: string | null
+          operation: string
+          payload: Json | null
+          processed_at: string | null
+          product_id: string | null
+          scheduled_for: string | null
+          status: string
+          variant_id: string | null
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string | null
+          id?: number
+          last_error?: string | null
+          ml_item_id?: string | null
+          operation: string
+          payload?: Json | null
+          processed_at?: string | null
+          product_id?: string | null
+          scheduled_for?: string | null
+          status?: string
+          variant_id?: string | null
+        }
+        Update: {
+          attempts?: number
+          created_at?: string | null
+          id?: number
+          last_error?: string | null
+          ml_item_id?: string | null
+          operation?: string
+          payload?: Json | null
+          processed_at?: string | null
+          product_id?: string | null
+          scheduled_for?: string | null
+          status?: string
+          variant_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ml_sync_queue_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ml_sync_queue_variant_id_fkey"
+            columns: ["variant_id"]
+            isOneToOne: false
+            referencedRelation: "variants"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ml_webhook_events: {
+        Row: {
+          application_id: string | null
+          error: string | null
+          id: number
+          payload: Json | null
+          processed_at: string | null
+          processing_status: string
+          received_at: string | null
+          resource: string | null
+          sent_at: string | null
+          topic: string
+          user_id: string | null
+        }
+        Insert: {
+          application_id?: string | null
+          error?: string | null
+          id?: number
+          payload?: Json | null
+          processed_at?: string | null
+          processing_status?: string
+          received_at?: string | null
+          resource?: string | null
+          sent_at?: string | null
+          topic: string
+          user_id?: string | null
+        }
+        Update: {
+          application_id?: string | null
+          error?: string | null
+          id?: number
+          payload?: Json | null
+          processed_at?: string | null
+          processing_status?: string
+          received_at?: string | null
+          resource?: string | null
+          sent_at?: string | null
+          topic?: string
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       order_items: {
         Row: {
           created_at: string
@@ -211,6 +551,10 @@ export type Database = {
           payment_method: string | null
           payment_proof_url: string | null
           payment_status: string
+          shipping_barrio: string | null
+          shipping_cost_usd: number | null
+          shipping_department: string | null
+          shipping_zone: string | null
           status: string
           total_amount: number
         }
@@ -225,6 +569,10 @@ export type Database = {
           payment_method?: string | null
           payment_proof_url?: string | null
           payment_status?: string
+          shipping_barrio?: string | null
+          shipping_cost_usd?: number | null
+          shipping_department?: string | null
+          shipping_zone?: string | null
           status?: string
           total_amount: number
         }
@@ -239,6 +587,10 @@ export type Database = {
           payment_method?: string | null
           payment_proof_url?: string | null
           payment_status?: string
+          shipping_barrio?: string | null
+          shipping_cost_usd?: number | null
+          shipping_department?: string | null
+          shipping_zone?: string | null
           status?: string
           total_amount?: number
         }
@@ -330,7 +682,7 @@ export type Database = {
       products: {
         Row: {
           active: boolean
-          brand_id: string
+          brand_id: string | null
           category_id: string | null
           created_at: string
           description: Json
@@ -349,7 +701,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
-          brand_id: string
+          brand_id?: string | null
           category_id?: string | null
           created_at?: string
           description: Json
@@ -368,7 +720,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
-          brand_id?: string
+          brand_id?: string | null
           category_id?: string | null
           created_at?: string
           description?: Json
@@ -492,20 +844,6 @@ export type Database = {
             referencedRelation: "products"
             referencedColumns: ["id"]
           },
-          {
-            foreignKeyName: "variants_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products_with_price"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "variants_product_id_fkey"
-            columns: ["product_id"]
-            isOneToOne: false
-            referencedRelation: "products_with_price_v2"
-            referencedColumns: ["id"]
-          },
         ]
       }
     }
@@ -517,6 +855,7 @@ export type Database = {
           created_at: string | null
           description: Json | null
           external_code: string | null
+          featured_score: number | null
           features: string[] | null
           id: string | null
           images: string[] | null
@@ -525,36 +864,6 @@ export type Database = {
           slug: string | null
           source: string | null
           subcategory_id: string | null
-        }
-        Insert: {
-          brand_id?: string | null
-          category_id?: string | null
-          created_at?: string | null
-          description?: Json | null
-          external_code?: string | null
-          features?: string[] | null
-          id?: string | null
-          images?: string[] | null
-          name?: string | null
-          price?: never
-          slug?: string | null
-          source?: string | null
-          subcategory_id?: string | null
-        }
-        Update: {
-          brand_id?: string | null
-          category_id?: string | null
-          created_at?: string | null
-          description?: Json | null
-          external_code?: string | null
-          features?: string[] | null
-          id?: string | null
-          images?: string[] | null
-          name?: string | null
-          price?: never
-          slug?: string | null
-          source?: string | null
-          subcategory_id?: string | null
         }
         Relationships: [
           {
@@ -636,6 +945,8 @@ export type Database = {
       }
     }
     Functions: {
+      cdr_sync_newonly_tick: { Args: Record<string, never>; Returns: undefined }
+      cdr_sync_tick: { Args: Record<string, never>; Returns: undefined }
       dashboard_overview: {
         Args: { p_from: string; p_to: string }
         Returns: Json
@@ -670,7 +981,33 @@ export type Database = {
           units: number
         }[]
       }
-      is_admin: { Args: never; Returns: boolean }
+      expire_pending_orders_tick: { Args: Record<string, never>; Returns: undefined }
+      is_admin: { Args: Record<string, never>; Returns: boolean }
+      place_cdr_order: {
+        Args: {
+          p_address: Json
+          p_items: Json
+          p_payment_method: string
+          p_shipping_barrio: string
+          p_shipping_cost_usd: number
+          p_shipping_department: string
+          p_shipping_zone: string
+          p_total: number
+        }
+        Returns: number
+      }
+      place_order: {
+        Args: { p_address: Json; p_items: Json; p_total: number }
+        Returns: number
+      }
+      release_order_stock: {
+        Args: { p_new_status: string; p_order_id: number }
+        Returns: boolean
+      }
+      reserved_quantity_for_product: {
+        Args: { p_external_code: string }
+        Returns: number
+      }
       rf_sale_price: { Args: { cost: number }; Returns: number }
       unaccent: { Args: { "": string }; Returns: string }
     }
@@ -682,126 +1019,3 @@ export type Database = {
     }
   }
 }
-
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
-
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
-
-export type Tables<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-        DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
-    }
-    ? R
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])
-    ? (DefaultSchema["Tables"] &
-        DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
-      }
-      ? R
-      : never
-    : never
-
-export type TablesInsert<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
-    }
-    ? I
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
-      }
-      ? I
-      : never
-    : never
-
-export type TablesUpdate<
-  DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
-> = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
-    }
-    ? U
-    : never
-  : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
-    ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
-      }
-      ? U
-      : never
-    : never
-
-export type Enums<
-  DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
-> = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
-  : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
-    ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
-
-export type CompositeTypes<
-  PublicCompositeTypeNameOrOptions extends
-    | keyof DefaultSchema["CompositeTypes"]
-    | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
-  }
-    ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
-> = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
-}
-  ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
-  : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
-    ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
-
-export const Constants = {
-  public: {
-    Enums: {},
-  },
-} as const

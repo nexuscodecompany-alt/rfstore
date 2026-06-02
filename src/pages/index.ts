@@ -32,3 +32,4 @@ export * from './dashboard/DashboardPricingPage';
 export * from './dashboard/DashboardHomeSectionsPage';
 export * from './dashboard/DashboardLegalPage';
 export * from './dashboard/DashboardShippingPage';
+export * from './dashboard/DashboardMercadoLibrePage';
