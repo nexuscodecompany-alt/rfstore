@@ -10,10 +10,12 @@ import {
 	getMlStats,
 	updateMlSetting,
 	getPublishableCelulares,
+	getMlPublishedItems,
 	publishMlItem,
 	type DryRunResult,
 	type PublishResult,
 	type PublishableProduct,
+	type MlPublishedItem,
 } from '../../actions/ml';
 
 const formatDate = (iso: string): string => {
@@ -213,6 +215,9 @@ export const DashboardMercadoLibrePage = () => {
 				</button>
 			</section>
 
+			{/* --- PUBLICADOS --- */}
+			{credential && <PublishedSection />}
+
 			{/* --- PUBLICACIÓN --- */}
 			{credential && <PublishSection />}
 
@@ -384,6 +389,106 @@ const PublishSection = () => {
 						<summary className='cursor-pointer text-red-700 font-medium'>Detalle</summary>
 						<pre className='mt-2 p-2 bg-white border rounded overflow-auto max-h-96'>{JSON.stringify(lastResult.detail, null, 2)}</pre>
 					</details>
+				</div>
+			)}
+		</section>
+	);
+};
+
+const statusBadge = (status: MlPublishedItem['status']) => {
+	const map: Record<string, string> = {
+		active: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+		paused: 'bg-amber-100 text-amber-800 border-amber-200',
+		closed: 'bg-gray-100 text-gray-700 border-gray-200',
+		error: 'bg-red-100 text-red-800 border-red-200',
+		draft: 'bg-blue-100 text-blue-800 border-blue-200',
+	};
+	return (
+		<span className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold border ${map[status] ?? ''}`}>
+			{status}
+		</span>
+	);
+};
+
+const PublishedSection = () => {
+	const { data: items = [], isLoading } = useQuery({
+		queryKey: ['ml_published_items'],
+		queryFn: getMlPublishedItems,
+	});
+
+	return (
+		<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
+			<div className='flex items-center justify-between'>
+				<div>
+					<h2 className='font-semibold'>Publicados en Mercado Libre</h2>
+					<p className='text-xs text-gray-500 mt-1'>
+						Productos sincronizados con ML. El stock se actualiza automáticamente cuando se sincroniza con CDR.
+					</p>
+				</div>
+				<span className='text-xs text-gray-500'>{items.length} ítems</span>
+			</div>
+
+			{isLoading ? (
+				<p className='text-sm text-gray-500'>Cargando…</p>
+			) : items.length === 0 ? (
+				<p className='text-sm text-gray-500'>Todavía no publicaste ningún producto.</p>
+			) : (
+				<div className='overflow-auto max-h-[500px] border border-gray-100 rounded'>
+					<table className='min-w-full text-sm'>
+						<thead className='bg-gray-50 text-left sticky top-0'>
+							<tr>
+								<th className='p-2'>Imagen</th>
+								<th className='p-2'>Producto</th>
+								<th className='p-2'>ML Item</th>
+								<th className='p-2'>Categoría ML</th>
+								<th className='p-2'>Estado</th>
+								<th className='p-2 text-right'>Stock</th>
+								<th className='p-2 text-right'>Precio UYU</th>
+								<th className='p-2'>Última sync</th>
+								<th className='p-2'></th>
+							</tr>
+						</thead>
+						<tbody>
+							{items.map(it => (
+								<tr key={it.id} className='border-t'>
+									<td className='p-2'>
+										{it.product_image && (
+											<img src={it.product_image} alt={it.product_name} className='w-12 h-12 object-cover rounded' />
+										)}
+									</td>
+									<td className='p-2'>
+										<p className='line-clamp-2'>{it.product_name}</p>
+										<p className='font-mono text-[10px] text-gray-400'>{it.product_external_code}</p>
+									</td>
+									<td className='p-2 font-mono text-xs'>{it.ml_item_id}</td>
+									<td className='p-2 font-mono text-xs'>{it.ml_category_id}</td>
+									<td className='p-2'>
+										{statusBadge(it.status)}
+										{it.last_error && (
+											<p className='text-[10px] text-red-700 mt-1 line-clamp-2' title={it.last_error}>{it.last_error}</p>
+										)}
+									</td>
+									<td className='p-2 text-right'>{it.last_known_stock ?? '—'}</td>
+									<td className='p-2 text-right'>${it.last_known_price_uyu?.toLocaleString('es-UY') ?? '—'}</td>
+									<td className='p-2 text-xs text-gray-500'>
+										{it.last_synced_at ? new Date(it.last_synced_at).toLocaleString('es-UY') : '—'}
+									</td>
+									<td className='p-2'>
+										{it.permalink ? (
+											<a
+												href={it.permalink}
+												target='_blank'
+												rel='noreferrer'
+												className='text-xs text-brand-700 hover:underline whitespace-nowrap'
+											>
+												Ver en ML →
+											</a>
+										) : null}
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
 				</div>
 			)}
 		</section>

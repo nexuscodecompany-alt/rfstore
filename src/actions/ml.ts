@@ -236,6 +236,52 @@ export const getPublishableCelulares = async (): Promise<PublishableProduct[]> =
 	return rows;
 };
 
+// --------- Publicados ---------
+export interface MlPublishedItem {
+	id: number;
+	ml_item_id: string;
+	ml_category_id: string;
+	ml_listing_type: string;
+	status: 'draft' | 'active' | 'paused' | 'closed' | 'error';
+	last_known_stock: number | null;
+	last_known_price_uyu: number | null;
+	last_synced_at: string | null;
+	last_error: string | null;
+	permalink: string | null;
+	created_at: string;
+	product_id: string;
+	product_name: string;
+	product_slug: string;
+	product_external_code: string;
+	product_image: string | null;
+}
+
+export const getMlPublishedItems = async (): Promise<MlPublishedItem[]> => {
+	const { data, error } = await supabase
+		.from('ml_item_mapping')
+		.select('id, ml_item_id, ml_category_id, ml_listing_type, status, last_known_stock, last_known_price_uyu, last_synced_at, last_error, permalink, created_at, product_id, products(name, slug, external_code, images)')
+		.order('created_at', { ascending: false });
+	if (error) throw new Error(error.message);
+	return (data ?? []).map((row: any) => ({
+		id: row.id,
+		ml_item_id: row.ml_item_id,
+		ml_category_id: row.ml_category_id,
+		ml_listing_type: row.ml_listing_type,
+		status: row.status,
+		last_known_stock: row.last_known_stock,
+		last_known_price_uyu: row.last_known_price_uyu,
+		last_synced_at: row.last_synced_at,
+		last_error: row.last_error,
+		permalink: row.permalink,
+		created_at: row.created_at,
+		product_id: row.product_id,
+		product_name: row.products?.name ?? '',
+		product_slug: row.products?.slug ?? '',
+		product_external_code: row.products?.external_code ?? '',
+		product_image: row.products?.images?.[0] ?? null,
+	}));
+};
+
 export interface MlStats {
 	published: number;
 	paused: number;
