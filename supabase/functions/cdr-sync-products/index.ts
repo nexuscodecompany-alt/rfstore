@@ -30,12 +30,12 @@ async function setSetting(key: string, value: any): Promise<void> {
 }
 
 async function downloadImage(productCode: string, idx: number, imgUrl: string): Promise<{ publicUrl: string; }> {
-	const storedPath = `${productCode}/${idx}.bin`;
+	// .jpg con content-type image/jpeg: ML rechaza descargas con extension .bin y/o content-type no estandar
+	const storedPath = `${productCode}/${idx}.jpg`;
 	const resp = await fetch(imgUrl);
 	if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-	const contentType = resp.headers.get('content-type') || 'image/jpeg';
 	const bytes = new Uint8Array(await resp.arrayBuffer());
-	const { error: upErr } = await supabase.storage.from(IMAGE_BUCKET).upload(storedPath, bytes, { contentType, upsert: true });
+	const { error: upErr } = await supabase.storage.from(IMAGE_BUCKET).upload(storedPath, bytes, { contentType: 'image/jpeg', upsert: true });
 	if (upErr) throw new Error(upErr.message);
 	const { data } = supabase.storage.from(IMAGE_BUCKET).getPublicUrl(storedPath);
 	return { publicUrl: data.publicUrl };
