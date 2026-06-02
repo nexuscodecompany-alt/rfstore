@@ -6,6 +6,9 @@ import { supabase } from '../supabase/client';
 // Esa Vercel API route llama a la Edge Function ml-oauth-exchange y nos rebota al dashboard.
 
 const ML_AUTH_BASE = 'https://auth.mercadolibre.com.uy/authorization';
+const SUPABASE_URL = import.meta.env.VITE_PROJECT_URL_SUPABASE as string;
+// Callback handler en Supabase Edge Function (no en Vercel) — Vite SPA no expone /api routes.
+const ML_REDIRECT_URI = `${SUPABASE_URL}/functions/v1/ml-oauth-callback`;
 
 export const buildMlAuthUrl = async (): Promise<string> => {
 	const { data: appIdSetting } = await supabase
@@ -14,14 +17,12 @@ export const buildMlAuthUrl = async (): Promise<string> => {
 		.eq('key', 'ml_app_id')
 		.single();
 	const appId = (appIdSetting?.value as string) ?? '6693327643893490';
-	const redirectUri = `${window.location.origin}/api/ml/oauth/callback`;
-	// Generamos un state random y lo guardamos en sessionStorage
 	const state = crypto.randomUUID();
 	sessionStorage.setItem('ml_oauth_state', state);
 	const params = new URLSearchParams({
 		response_type: 'code',
 		client_id: appId,
-		redirect_uri: redirectUri,
+		redirect_uri: ML_REDIRECT_URI,
 		state,
 	});
 	return `${ML_AUTH_BASE}?${params.toString()}`;
