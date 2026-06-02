@@ -364,6 +364,10 @@ const PublishSection = () => {
 						<MetaCard label='Garantía' value={`${preview.meta.warranty.months}m ${preview.meta.warranty.type} (${preview.meta.warranty.source})`} />
 						<MetaCard label='GTIN' value={preview.meta.featuresExtracted.gtin ?? '—'} />
 						<MetaCard label='Modelo' value={preview.meta.featuresExtracted.model ?? '—'} />
+						<MetaCard label='Color' value={preview.meta.attrsFromText?.color ?? '—'} />
+						<MetaCard label='RAM' value={preview.meta.attrsFromText?.ram ?? '—'} />
+						<MetaCard label='Mem. interna' value={preview.meta.attrsFromText?.internal_memory ?? '—'} />
+						<MetaCard label='Dual SIM' value={preview.meta.attrsFromText?.is_dual_sim == null ? '—' : preview.meta.attrsFromText.is_dual_sim ? 'Sí' : 'No'} />
 					</div>
 					<details className='text-xs'>
 						<summary className='cursor-pointer text-gray-600 font-medium'>Payload JSON completo</summary>

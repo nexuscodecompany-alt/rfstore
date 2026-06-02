@@ -162,6 +162,7 @@ export interface DryRunResult {
 		priceUyu: number;
 		warranty: { months: number; type: string; source: string };
 		featuresExtracted: { gtin?: string; model?: string; nro_parte?: string };
+		attrsFromText?: { color?: string; ram?: string; internal_memory?: string; is_dual_sim?: boolean };
 		predictedCategory: string;
 	};
 }
@@ -188,12 +189,22 @@ export const getPublishableCelulares = async (): Promise<PublishableProduct[]> =
 	const catId = settings.celulares_category_id;
 	if (!catId) return [];
 
-	const { data, error } = await supabase
+	// Solo smartphones — excluimos cables, smartwatches, powerbanks
+	const { data: subcat } = await supabase
+		.from('subcategories')
+		.select('id')
+		.eq('category_id', catId)
+		.ilike('name', '%smartphone%')
+		.maybeSingle();
+
+	let query = supabase
 		.from('products')
-		.select('id, name, slug, external_code, price_usd, images, active, source, category_id, variants(id, stock)')
+		.select('id, name, slug, external_code, price_usd, images, active, source, category_id, subcategory_id, variants(id, stock)')
 		.eq('category_id', catId)
 		.eq('active', true)
 		.eq('source', 'cdr');
+	if (subcat?.id) query = query.eq('subcategory_id', subcat.id);
+	const { data, error } = await query;
 	if (error) throw new Error(error.message);
 
 	const { data: mappings } = await supabase
