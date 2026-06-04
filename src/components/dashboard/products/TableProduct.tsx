@@ -5,6 +5,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import {
   useAdminProducts,
   useDeleteProduct,
+  useMarkProductsSeen,
+  useNewProductsCount,
   useSetProductActive,
   useTaxonomiesAdmin,
 } from '../../../hooks';
@@ -43,6 +45,7 @@ export const TableProduct = () => {
   const [activeFilter, setActiveFilter] = useState<'' | 'active' | 'inactive'>(
     (searchParams.get('estado') as '' | 'active' | 'inactive') || ''
   );
+  const [newOnly, setNewOnly] = useState<boolean>(searchParams.get('nuevos') === '1');
 
   // Si vienen filtros por query string (ej desde /dashboard/cdr), persistirlos en estado
   useEffect(() => {
@@ -56,6 +59,8 @@ export const TableProduct = () => {
   const { brands, categories } = useTaxonomiesAdmin();
   const { data: rateData } = useUsdUyuRate();
   const fxRate = rateData?.rate ?? 40;
+  const newCount = useNewProductsCount();
+  const { mutate: markSeen, isPending: markingSeen } = useMarkProductsSeen();
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -74,7 +79,8 @@ export const TableProduct = () => {
     brandFilter,
     categoryFilter,
     sourceFilter,
-    activeFilter
+    activeFilter,
+    newOnly
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -187,7 +193,7 @@ export const TableProduct = () => {
             <option value="inactive">Solo inactivos (pendientes)</option>
           </select>
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter) && (
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly) && (
             <button
               type="button"
               onClick={() => {
@@ -195,12 +201,51 @@ export const TableProduct = () => {
                 setCategoryFilter('');
                 setSourceFilter('');
                 setActiveFilter('');
+                setNewOnly(false);
                 setSearchParams({}, { replace: true });
                 setPage(1);
               }}
               className="text-xs font-semibold text-brand-700 hover:text-brand-900"
             >
               Limpiar filtros
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setNewOnly(v => !v);
+              setPage(1);
+            }}
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+              newOnly
+                ? 'border-amber-300 bg-amber-50 text-amber-800'
+                : 'border-ink-200 bg-white text-ink-700 hover:bg-ink-50'
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${newCount > 0 ? 'bg-amber-500' : 'bg-ink-300'}`} />
+            Nuevos desde CDR
+            {newCount > 0 && (
+              <span className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                {newCount}
+              </span>
+            )}
+          </button>
+
+          {newCount > 0 && (
+            <button
+              type="button"
+              disabled={markingSeen}
+              onClick={() => {
+                if (window.confirm(`Marcar los ${newCount} productos nuevos como vistos?`)) {
+                  markSeen(undefined);
+                }
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-ink-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-700 transition-all hover:bg-ink-50 disabled:opacity-50"
+            >
+              Marcar todos como vistos
             </button>
           )}
         </div>
@@ -256,8 +301,15 @@ export const TableProduct = () => {
                     />
                   </td>
                   <td className="p-4 align-middle">
-                    <div className="text-sm font-medium text-ink-900">
-                      {product.name}
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-medium text-ink-900">
+                        {product.name}
+                      </div>
+                      {(product as any).seen_at === null && (
+                        <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 ring-1 ring-amber-300">
+                          Nuevo
+                        </span>
+                      )}
                     </div>
                     {product.external_code && (
                       <div className="text-xs text-ink-500">
@@ -340,6 +392,17 @@ export const TableProduct = () => {
                         >
                           {product.active ? 'Inactivar' : 'Activar'}
                         </button>
+                        {(product as any).seen_at === null && (
+                          <button
+                            className="block w-full text-left px-4 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                            onClick={() => {
+                              markSeen([product.id]);
+                              setOpenMenuIndex(null);
+                            }}
+                          >
+                            Marcar visto
+                          </button>
+                        )}
                         <button
                           className="block w-full text-left px-4 py-2 text-xs font-medium text-rose-600 hover:bg-rose-50"
                           onClick={() => handleDeleteProduct(product.id, product.name)}

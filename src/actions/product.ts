@@ -146,7 +146,8 @@ export const getAdminProducts = async (
     brandId = '',
     categoryId = '',
     source: '' | 'local' | 'cdr' = '',
-    activeFilter: '' | 'active' | 'inactive' = ''
+    activeFilter: '' | 'active' | 'inactive' = '',
+    newOnly = false
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
@@ -157,8 +158,6 @@ export const getAdminProducts = async (
         .select('*, variants(*), brand:brands(*), category:categories(*)', {
             count: 'exact',
         })
-        // Desempate por id (único) para que "siguiente" no repita ni saltee
-        // productos que comparten created_at (los lotes del sync de CDR).
         .order('created_at', { ascending: false })
         .order('id', { ascending: true });
 
@@ -169,20 +168,34 @@ export const getAdminProducts = async (
 
     if (brandId) query = query.eq('brand_id', brandId);
 
-    // 'none' = productos sin categoría (los CDR a recategorizar).
     if (categoryId === 'none') query = query.is('category_id', null);
     else if (categoryId) query = query.eq('category_id', categoryId);
 
-    // 'local' incluye filas con source NULL (cargas viejas previas al sync).
     if (source === 'local') query = query.or('source.eq.local,source.is.null');
     else if (source === 'cdr') query = query.eq('source', 'cdr');
 
     if (activeFilter === 'active') query = query.eq('active', true);
     else if (activeFilter === 'inactive') query = query.eq('active', false);
 
+    if (newOnly) query = query.is('seen_at', null);
+
     const { data: products, error, count } = await query.range(from, to);
     if (error) throw new Error(error.message);
     return { products: products ?? [], count: count ?? 0 };
+};
+
+export const getNewProductsCount = async (): Promise<number> => {
+    const { data, error } = await supabase.rpc('count_new_products');
+    if (error) throw new Error(error.message);
+    return Number(data ?? 0);
+};
+
+export const markProductsSeen = async (ids?: string[]): Promise<number> => {
+    const { data, error } = await supabase.rpc('mark_products_seen', {
+        p_ids: ids && ids.length > 0 ? ids : null,
+    });
+    if (error) throw new Error(error.message);
+    return Number(data ?? 0);
 };
 
 // Activa / inactiva un producto (para ocultarlo o mostrarlo en la web).

@@ -63,7 +63,9 @@
       "Bash(git status *)",
       "Bash(git check-ignore *)",
       "mcp__claude_ai_Vercel__get_deployment_build_logs",
-      "mcp__claude_ai_Vercel__web_fetch_vercel_url"
+      "mcp__claude_ai_Vercel__web_fetch_vercel_url",
+      "PowerShell(Invoke-WebRequest -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/ml-process-publish-queue\" -Method POST -ContentType \"application/json\" -Body \"{}\" -TimeoutSec 15 -UseBasicParsing | Select-Object -ExpandProperty Content)",
+      "Bash(dir src\\\\actions /B)"
     ]
   }
 }
