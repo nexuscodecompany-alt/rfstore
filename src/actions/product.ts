@@ -185,13 +185,13 @@ export const getAdminProducts = async (
 };
 
 export const getNewProductsCount = async (): Promise<number> => {
-    const { data, error } = await supabase.rpc('count_new_products');
+    const { data, error } = await (supabase.rpc as any)('count_new_products');
     if (error) throw new Error(error.message);
     return Number(data ?? 0);
 };
 
 export const markProductsSeen = async (ids?: string[]): Promise<number> => {
-    const { data, error } = await supabase.rpc('mark_products_seen', {
+    const { data, error } = await (supabase.rpc as any)('mark_products_seen', {
         p_ids: ids && ids.length > 0 ? ids : null,
     });
     if (error) throw new Error(error.message);
