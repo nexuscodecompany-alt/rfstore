@@ -183,58 +183,36 @@ export interface PublishableProduct {
 	ml_item_id: string | null;
 }
 
-export const getPublishableCelulares = async (): Promise<PublishableProduct[]> => {
-	const settings = await getMlSettings();
-	const threshold = settings.stock_threshold;
-	const catId = settings.celulares_category_id;
-	if (!catId) return [];
+export interface PublishablePendingRow extends PublishableProduct {
+	brand_name: string | null;
+	subcategory_name: string | null;
+	category_name: string | null;
+}
 
-	// Solo smartphones — excluimos cables, smartwatches, powerbanks
-	const { data: subcat } = await supabase
-		.from('subcategories')
-		.select('id')
-		.eq('category_id', catId)
-		.ilike('name', '%smartphone%')
-		.maybeSingle();
-
-	let query = supabase
-		.from('products')
-		.select('id, name, slug, external_code, price_usd, images, active, source, category_id, subcategory_id, variants(id, stock)')
-		.eq('category_id', catId)
-		.eq('active', true)
-		.eq('source', 'cdr');
-	if (subcat?.id) query = query.eq('subcategory_id', subcat.id);
-	const { data, error } = await query;
+// Nueva: TODOS los publicables pendientes de vincular (cumplen normas, no publicados aun).
+// Aplica filtros de whitelist + blacklist + ml_skip a nivel SQL.
+export const getPublishablePending = async (): Promise<PublishablePendingRow[]> => {
+	const { data, error } = await (supabase.rpc as unknown as (fn: string) => Promise<{ data: any[]; error: { message: string } | null }>)('get_ml_publishable_pending');
 	if (error) throw new Error(error.message);
-
-	const { data: mappings } = await supabase
-		.from('ml_item_mapping')
-		.select('product_id, ml_item_id, status');
-	const publishedMap = new Map((mappings ?? []).map(m => [m.product_id, m]));
-
-	const rows: PublishableProduct[] = [];
-	for (const p of data ?? []) {
-		const variants = (p as { variants: { id: string; stock: number }[] }).variants ?? [];
-		const v = variants[0];
-		if (!v) continue;
-		if (Number(v.stock) <= threshold) continue;
-		const published = publishedMap.get(p.id);
-		rows.push({
-			id: p.id,
-			name: p.name,
-			slug: p.slug,
-			external_code: p.external_code ?? '',
-			price_usd: p.price_usd as number | null,
-			images: (p.images ?? []) as string[],
-			variant_id: v.id,
-			stock: Number(v.stock),
-			already_published: !!published && published.status === 'active',
-			ml_item_id: published?.ml_item_id ?? null,
-		});
-	}
-	rows.sort((a, b) => Number(a.already_published) - Number(b.already_published) || b.stock - a.stock);
-	return rows;
+	return (data ?? []).map(r => ({
+		id: r.product_id,
+		name: r.product_name,
+		slug: r.product_slug,
+		external_code: r.p_external_code ?? '',
+		price_usd: r.p_price_usd as number | null,
+		images: (r.p_images ?? []) as string[],
+		variant_id: r.p_variant_id,
+		stock: Number(r.p_stock),
+		already_published: false,
+		ml_item_id: null,
+		brand_name: r.p_brand_name,
+		subcategory_name: r.p_subcategory_name,
+		category_name: r.p_category_name,
+	}));
 };
+
+// Backwards-compat (usado en tests / nombres viejos)
+export const getPublishableCelulares = getPublishablePending;
 
 // --------- Publicados ---------
 export interface MlPublishedItem {

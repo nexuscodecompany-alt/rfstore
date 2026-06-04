@@ -9,9 +9,10 @@ import {
   useTaxonomiesAdmin,
 } from '../../../hooks';
 import { Loader } from '../../shared/Loader';
-import { formatDate, formatPrice } from '../../../helpers';
+import { formatDate, formatPrice, salePrice, mlPrice, formatPriceCurrency } from '../../../helpers';
 import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
+import { useUsdUyuRate } from '../../../hooks/settings/useUsdUyuRate';
 
 const tableHeaders = [
   '',
@@ -19,10 +20,12 @@ const tableHeaders = [
   'Origen',
   'Marca',
   'Categoría',
-  'Precio',
+  'Costo CDR',
+  'Precio Web',
+  'Precio ML',
   'Stock',
   'Estado',
-  'Fecha de creación',
+  'Fecha',
   '',
 ];
 
@@ -51,6 +54,8 @@ export const TableProduct = () => {
   }, [searchParams]);
 
   const { brands, categories } = useTaxonomiesAdmin();
+  const { data: rateData } = useUsdUyuRate();
+  const fxRate = rateData?.rate ?? 40;
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -285,9 +290,7 @@ export const TableProduct = () => {
                       </span>
                     )}
                   </td>
-                  <CellTableProduct
-                    content={formatPrice(selectedVariant?.price)}
-                  />
+                  <PriceCellsForProduct product={product} fxRate={fxRate} />
                   <CellTableProduct
                     content={(selectedVariant.stock || 0).toString()}
                   />
@@ -357,5 +360,28 @@ export const TableProduct = () => {
         </>
       )}
     </div>
+  );
+};
+
+interface PriceCellsProps {
+  product: { price_usd?: number | null; markup_percent?: number | null };
+  fxRate: number;
+}
+const PriceCellsForProduct = ({ product, fxRate }: PriceCellsProps) => {
+  const cost = Number(product.price_usd ?? 0);
+  const web = salePrice(cost);
+  const ml = mlPrice(cost, fxRate);
+  return (
+    <>
+      <td className='p-4 align-middle text-xs font-medium tracking-tighter'>
+        {cost > 0 ? formatPrice(cost) : '—'}
+      </td>
+      <td className='p-4 align-middle text-xs font-medium tracking-tighter text-emerald-700'>
+        {cost > 0 ? formatPrice(web) : '—'}
+      </td>
+      <td className='p-4 align-middle text-xs font-medium tracking-tighter text-blue-700'>
+        {cost > 0 ? formatPriceCurrency(ml.price, ml.currency) : '—'}
+      </td>
+    </>
   );
 };

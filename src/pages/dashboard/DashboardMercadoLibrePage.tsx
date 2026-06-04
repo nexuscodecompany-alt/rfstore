@@ -9,7 +9,7 @@ import {
 	getMlSettings,
 	getMlStats,
 	updateMlSetting,
-	getPublishableCelulares,
+	getPublishablePending,
 	getMlPublishedItems,
 	publishMlItem,
 	getQueueStats,
@@ -17,7 +17,7 @@ import {
 	triggerPublishQueueNow,
 	type DryRunResult,
 	type PublishResult,
-	type PublishableProduct,
+	type PublishablePendingRow,
 	type MlPublishedItem,
 } from '../../actions/ml';
 
@@ -245,8 +245,8 @@ const PublishSection = () => {
 	const [lastResult, setLastResult] = useState<PublishResult | null>(null);
 
 	const { data: items = [], isLoading } = useQuery({
-		queryKey: ['ml_publishable_celulares'],
-		queryFn: getPublishableCelulares,
+		queryKey: ['ml_publishable_pending'],
+		queryFn: getPublishablePending,
 	});
 
 	const { mutate: dryRun, isPending: dryRunning } = useMutation({
@@ -266,8 +266,9 @@ const PublishSection = () => {
 			setLastResult(data);
 			if (data.ok) {
 				toast.success(`Publicado en ML: ${data.ml_item_id}`);
-				queryClient.invalidateQueries({ queryKey: ['ml_publishable_celulares'] });
+				queryClient.invalidateQueries({ queryKey: ['ml_publishable_pending'] });
 				queryClient.invalidateQueries({ queryKey: ['ml_stats'] });
+				queryClient.invalidateQueries({ queryKey: ['ml_published_items'] });
 			} else {
 				toast.error(`ML rechazó: ${data.error ?? 'ver detalle abajo'}`);
 			}
@@ -278,33 +279,34 @@ const PublishSection = () => {
 	return (
 		<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-4'>
 			<div>
-				<h2 className='font-semibold'>Publicar en Mercado Libre — Celulares</h2>
+				<h2 className='font-semibold'>Productos pendientes de vincular ({items.length})</h2>
 				<p className='text-xs text-gray-500 mt-1'>
-					Solo productos con stock mayor al umbral. Hacé "Vista previa" para ver el payload sin publicar.
+					Cumplen todas las normas ML pero aún no están publicados. Hacé "Vista previa" para revisar el payload antes de publicar.
 				</p>
 			</div>
 
 			{isLoading ? (
 				<p className='text-sm text-gray-500'>Cargando candidatos…</p>
 			) : items.length === 0 ? (
-				<p className='text-sm text-gray-500'>No hay celulares publicables con el umbral actual.</p>
+				<p className='text-sm text-gray-500'>No hay productos pendientes de vincular con los filtros actuales.</p>
 			) : (
-				<div className='overflow-auto max-h-[500px] border border-gray-100 rounded'>
+				<div className='overflow-auto max-h-[600px] border border-gray-100 rounded'>
 					<table className='min-w-full text-sm'>
 						<thead className='bg-gray-50 text-left sticky top-0'>
 							<tr>
 								<th className='p-2'>Imagen</th>
 								<th className='p-2'>Código</th>
 								<th className='p-2'>Nombre</th>
+								<th className='p-2'>Marca</th>
+								<th className='p-2'>Categoría</th>
 								<th className='p-2 text-right'>Stock</th>
 								<th className='p-2 text-right'>Costo USD</th>
-								<th className='p-2'>Estado</th>
 								<th className='p-2'></th>
 							</tr>
 						</thead>
 						<tbody>
-							{items.map((p: PublishableProduct) => (
-								<tr key={p.id} className='border-t'>
+							{items.map((p: PublishablePendingRow) => (
+								<tr key={p.id} className='border-t hover:bg-gray-50'>
 									<td className='p-2'>
 										{p.images?.[0] && (
 											<img src={p.images[0]} alt={p.name} className='w-12 h-12 object-cover rounded' />
@@ -312,45 +314,31 @@ const PublishSection = () => {
 									</td>
 									<td className='p-2 font-mono text-xs'>{p.external_code}</td>
 									<td className='p-2'>{p.name}</td>
+									<td className='p-2 text-xs'>{p.brand_name ?? '—'}</td>
+									<td className='p-2 text-xs text-gray-600'>
+										{p.subcategory_name ?? '—'}
+										<br />
+										<span className='text-gray-400'>{p.category_name ?? '—'}</span>
+									</td>
 									<td className='p-2 text-right'>{p.stock}</td>
 									<td className='p-2 text-right'>${p.price_usd}</td>
-									<td className='p-2'>
-										{p.already_published ? (
-											<span className='text-emerald-700 text-xs font-semibold'>✓ Publicado</span>
-										) : (
-											<span className='text-gray-400 text-xs'>—</span>
-										)}
-									</td>
 									<td className='p-2 whitespace-nowrap'>
-										{p.already_published ? (
-											p.ml_item_id && (
-												<a
-													href={`https://articulo.mercadolibre.com.uy/${p.ml_item_id.replace('MLU', 'MLU-')}`}
-													target='_blank'
-													rel='noreferrer'
-													className='text-xs text-brand-700 hover:underline'
-												>
-													Ver en ML →
-												</a>
-											)
-										) : (
-											<div className='flex gap-1'>
-												<button
-													onClick={() => dryRun({ product_id: p.id, variant_id: p.variant_id })}
-													disabled={dryRunning || publishing}
-													className='px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50'
-												>
-													Vista previa
-												</button>
-												<button
-													onClick={() => publish({ product_id: p.id, variant_id: p.variant_id })}
-													disabled={dryRunning || publishing}
-													className='px-2 py-1 text-xs bg-yellow-400 hover:bg-yellow-500 text-stone-900 font-semibold rounded disabled:opacity-50'
-												>
-													Publicar
-												</button>
-											</div>
-										)}
+										<div className='flex gap-1'>
+											<button
+												onClick={() => dryRun({ product_id: p.id, variant_id: p.variant_id })}
+												disabled={dryRunning || publishing}
+												className='px-2 py-1 text-xs border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50'
+											>
+												Vista previa
+											</button>
+											<button
+												onClick={() => publish({ product_id: p.id, variant_id: p.variant_id })}
+												disabled={dryRunning || publishing}
+												className='px-2 py-1 text-xs bg-yellow-400 hover:bg-yellow-500 text-stone-900 font-semibold rounded disabled:opacity-50'
+											>
+												Publicar
+											</button>
+										</div>
 									</td>
 								</tr>
 							))}

@@ -58,6 +58,33 @@ export const salePrice = (
 	return Math.ceil(final);
 };
 
+// Precio ML: 30% margen + IVA. Si costo > umbral USD => USD; sino UYU al BCU.
+export interface MlPriceResult {
+	price: number;
+	currency: 'USD' | 'UYU';
+}
+export const mlPrice = (
+	costUsd: number | null | undefined,
+	fxRate: number,
+	opts: { markupPercent?: number; ivaPercent?: number; usdThreshold?: number } = {}
+): MlPriceResult => {
+	const cost = Number(costUsd ?? 0);
+	if (!cost || cost <= 0 || !fxRate || fxRate <= 0) return { price: 0, currency: 'UYU' };
+	const markup = opts.markupPercent ?? 30;
+	const iva = opts.ivaPercent ?? 22;
+	const threshold = opts.usdThreshold ?? 100;
+	const withMarkupIva = cost * (1 + markup / 100) * (1 + iva / 100);
+	if (cost > threshold) return { price: Math.round(withMarkupIva * 100) / 100, currency: 'USD' };
+	return { price: Math.round(withMarkupIva * fxRate), currency: 'UYU' };
+};
+
+export const formatPriceCurrency = (price: number, currency: 'USD' | 'UYU'): string => {
+	if (currency === 'UYU') {
+		return `$ ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(price)}`;
+	}
+	return `USD ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.ceil(price))}`;
+};
+
 // Función para preparar los productos - (CELULARES)
 export const prepareProducts = (products: Product[]) => {
 	return products.map(product => {
