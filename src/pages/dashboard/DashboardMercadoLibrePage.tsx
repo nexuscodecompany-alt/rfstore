@@ -15,10 +15,15 @@ import {
 	getQueueStats,
 	enqueuePublishBatch,
 	triggerPublishQueueNow,
+	listMlUnlinkedItems,
+	searchRfProductsUnlinked,
+	linkMlItemToProduct,
 	type DryRunResult,
 	type PublishResult,
 	type PublishablePendingRow,
 	type MlPublishedItem,
+	type MlUnlinkedItem,
+	type RfProductCandidate,
 } from '../../actions/ml';
 
 const formatDate = (iso: string): string => {
@@ -220,6 +225,9 @@ export const DashboardMercadoLibrePage = () => {
 
 			{/* --- BATCH MASIVO --- */}
 			{credential && <BatchSection />}
+
+			{/* --- VINCULAR PUBLICACIONES ML EXISTENTES --- */}
+			{credential && <LinkExistingMlSection />}
 
 			{/* --- PUBLICADOS --- */}
 			{credential && <PublishedSection />}
@@ -492,6 +500,251 @@ const StatCard = ({ label, value, color }: { label: string; value: number; color
 		<div className={`p-3 rounded border ${c[color]}`}>
 			<p className='text-2xl font-bold'>{value}</p>
 			<p className='text-xs'>{label}</p>
+		</div>
+	);
+};
+
+const LinkExistingMlSection = () => {
+	const queryClient = useQueryClient();
+	const [statusFilter, setStatusFilter] = useState<'active' | 'paused' | 'closed' | 'all'>('active');
+	const [activeMlItem, setActiveMlItem] = useState<MlUnlinkedItem | null>(null);
+
+	const { data, isFetching, refetch } = useQuery({
+		queryKey: ['ml_unlinked_items', statusFilter],
+		queryFn: () => listMlUnlinkedItems(statusFilter),
+		enabled: false,
+	});
+
+	const linkMutation = useMutation({
+		mutationFn: linkMlItemToProduct,
+		onSuccess: () => {
+			toast.success('Vinculado. El stock empezará a sincronizarse.');
+			setActiveMlItem(null);
+			refetch();
+			queryClient.invalidateQueries({ queryKey: ['ml_published_items'] });
+			queryClient.invalidateQueries({ queryKey: ['ml_stats'] });
+		},
+		onError: (err: Error) => toast.error(err.message),
+	});
+
+	return (
+		<section className='p-5 bg-white border border-stone-200 rounded-lg space-y-4'>
+			<div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
+				<div>
+					<h2 className='text-lg font-semibold'>Vincular publicaciones manuales</h2>
+					<p className='text-xs text-stone-500'>
+						Importá publicaciones que ya tenés en ML y asociá cada una con un producto de RF Store para sincronizar stock.
+					</p>
+				</div>
+				<div className='flex items-center gap-2'>
+					<select
+						value={statusFilter}
+						onChange={e => setStatusFilter(e.target.value as 'active' | 'paused' | 'closed' | 'all')}
+						className='border rounded px-2 py-1.5 text-sm'
+					>
+						<option value='active'>Activas</option>
+						<option value='paused'>Pausadas</option>
+						<option value='closed'>Finalizadas</option>
+						<option value='all'>Todas</option>
+					</select>
+					<button
+						onClick={() => refetch()}
+						disabled={isFetching}
+						className='px-3 py-1.5 bg-stone-800 text-white rounded-md text-sm disabled:opacity-50'
+					>
+						{isFetching ? 'Cargando…' : 'Cargar de ML'}
+					</button>
+				</div>
+			</div>
+
+			{data && (
+				<div className='text-xs text-stone-600'>
+					<strong>{data.unlinked_count}</strong> sin vincular · {data.total_in_ml} totales en ML ({statusFilter})
+				</div>
+			)}
+
+			{!data && !isFetching && (
+				<p className='text-sm text-stone-500'>Aún no cargaste las publicaciones de ML. Hacé click en "Cargar de ML".</p>
+			)}
+
+			{data && data.items.length === 0 && (
+				<p className='text-sm text-emerald-700 bg-emerald-50 p-3 rounded-md'>
+					✓ Todas las publicaciones de ML ya están vinculadas a productos RF.
+				</p>
+			)}
+
+			{data && data.items.length > 0 && (
+				<div className='border border-stone-200 rounded-md overflow-hidden'>
+					<table className='w-full text-sm'>
+						<thead className='bg-stone-50 text-xs uppercase text-stone-600'>
+							<tr>
+								<th className='text-left p-2'>Producto en ML</th>
+								<th className='text-left p-2'>Marca/Modelo</th>
+								<th className='text-right p-2'>Precio</th>
+								<th className='text-right p-2'>Stock</th>
+								<th className='text-center p-2'>Estado</th>
+								<th className='text-center p-2'>Acción</th>
+							</tr>
+						</thead>
+						<tbody>
+							{data.items.map(item => (
+								<tr key={item.ml_item_id} className='border-t border-stone-100'>
+									<td className='p-2'>
+										<div className='flex items-center gap-2'>
+											{item.thumbnail && (
+												<img src={item.thumbnail} alt='' className='w-10 h-10 object-contain rounded border border-stone-200' />
+											)}
+											<div className='min-w-0'>
+												<a href={item.permalink} target='_blank' rel='noreferrer' className='text-blue-700 hover:underline font-medium block truncate max-w-xs'>
+													{item.title}
+												</a>
+												<span className='text-xs text-stone-500'>{item.ml_item_id}</span>
+											</div>
+										</div>
+									</td>
+									<td className='p-2 text-xs text-stone-600'>
+										{item.brand ?? '—'}
+										{item.model ? <><br /><span className='text-stone-400'>{item.model}</span></> : null}
+									</td>
+									<td className='p-2 text-right font-medium'>{item.currency} {item.price?.toLocaleString('es-UY')}</td>
+									<td className='p-2 text-right'>{item.stock}</td>
+									<td className='p-2 text-center'>
+										<span className='inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-stone-100 text-stone-700'>{item.status}</span>
+									</td>
+									<td className='p-2 text-center'>
+										<button
+											onClick={() => setActiveMlItem(item)}
+											className='px-3 py-1 bg-brand-600 text-white text-xs rounded hover:bg-brand-700'
+										>
+											Vincular
+										</button>
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</div>
+			)}
+
+			{activeMlItem && (
+				<LinkProductModal
+					mlItem={activeMlItem}
+					onClose={() => setActiveMlItem(null)}
+					onConfirm={(candidate) =>
+						linkMutation.mutate({
+							ml_item_id: activeMlItem.ml_item_id,
+							product_id: candidate.product_id,
+							variant_id: candidate.variant_id,
+							ml_category_id: activeMlItem.category_id,
+							permalink: activeMlItem.permalink,
+							current_stock: activeMlItem.stock,
+						})
+					}
+					isSaving={linkMutation.isPending}
+				/>
+			)}
+		</section>
+	);
+};
+
+const LinkProductModal = ({
+	mlItem,
+	onClose,
+	onConfirm,
+	isSaving,
+}: {
+	mlItem: MlUnlinkedItem;
+	onClose: () => void;
+	onConfirm: (candidate: RfProductCandidate) => void;
+	isSaving: boolean;
+}) => {
+	const [search, setSearch] = useState(mlItem.title.split(' ').slice(0, 4).join(' '));
+	const [selected, setSelected] = useState<RfProductCandidate | null>(null);
+
+	useEffect(() => { setSelected(null); }, [search]);
+
+	const { data: candidates = [], isLoading } = useQuery({
+		queryKey: ['rf_unlinked_search', search],
+		queryFn: () => searchRfProductsUnlinked(search),
+		enabled: search.trim().length >= 2,
+	});
+
+	return (
+		<div className='fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4'>
+			<div className='bg-white rounded-lg shadow-xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col'>
+				<div className='p-4 border-b border-stone-200 flex items-center justify-between'>
+					<div className='min-w-0'>
+						<h3 className='font-semibold text-sm'>Vincular con producto RF</h3>
+						<p className='text-xs text-stone-500 truncate'>{mlItem.title}</p>
+					</div>
+					<button onClick={onClose} className='text-stone-500 hover:text-stone-700 text-xl leading-none'>×</button>
+				</div>
+
+				<div className='p-4 border-b border-stone-200'>
+					<input
+						type='text'
+						value={search}
+						onChange={e => setSearch(e.target.value)}
+						placeholder='Buscar por nombre, código o marca…'
+						className='w-full border rounded px-3 py-2 text-sm'
+						autoFocus
+					/>
+				</div>
+
+				<div className='flex-1 overflow-y-auto p-2'>
+					{isLoading && <p className='text-sm text-stone-500 p-3'>Buscando…</p>}
+					{!isLoading && candidates.length === 0 && search.trim().length >= 2 && (
+						<p className='text-sm text-stone-500 p-3'>No se encontraron productos sin vincular para "{search}".</p>
+					)}
+					<ul className='space-y-1'>
+						{candidates.map(c => (
+							<li key={c.variant_id}>
+								<button
+									type='button'
+									onClick={() => setSelected(c)}
+									className={`w-full text-left flex items-center gap-3 p-2 rounded border transition ${
+										selected?.variant_id === c.variant_id
+											? 'border-brand-500 bg-brand-50'
+											: 'border-stone-200 hover:bg-stone-50'
+									}`}
+								>
+									{c.image_url && <img src={c.image_url} alt='' className='w-12 h-12 object-contain rounded border border-stone-200' />}
+									<div className='flex-1 min-w-0'>
+										<p className='text-sm font-medium truncate'>{c.product_name}</p>
+										<p className='text-xs text-stone-500'>
+											{c.brand_name ?? 'sin marca'} · {c.external_code ?? 's/código'} · stock {c.stock}
+										</p>
+									</div>
+									<p className='text-xs font-semibold whitespace-nowrap'>
+										{c.price_usd ? `USD ${Number(c.price_usd).toFixed(0)}` : ''}
+									</p>
+								</button>
+							</li>
+						))}
+					</ul>
+				</div>
+
+				<div className='p-3 border-t border-stone-200 flex items-center justify-between gap-2 bg-stone-50'>
+					<p className='text-xs text-stone-500'>
+						{selected ? `Vas a vincular con: ${selected.product_name}` : 'Elegí un producto de la lista'}
+					</p>
+					<div className='flex gap-2'>
+						<button
+							onClick={onClose}
+							className='px-3 py-1.5 border border-stone-300 rounded text-sm hover:bg-stone-100'
+						>
+							Cancelar
+						</button>
+						<button
+							onClick={() => selected && onConfirm(selected)}
+							disabled={!selected || isSaving}
+							className='px-4 py-1.5 bg-brand-600 text-white rounded text-sm hover:bg-brand-700 disabled:opacity-50'
+						>
+							{isSaving ? 'Vinculando…' : 'Vincular'}
+						</button>
+					</div>
+				</div>
+			</div>
 		</div>
 	);
 };

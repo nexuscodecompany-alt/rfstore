@@ -354,3 +354,89 @@ export const getMlStats = async (): Promise<MlStats> => {
 		publishable_celulares: publishable,
 	};
 };
+
+// --------- Vinculación manual: publicaciones ML existentes ↔ productos RF ---------
+export interface MlUnlinkedItem {
+	ml_item_id: string;
+	title: string;
+	price: number;
+	currency: string;
+	stock: number;
+	thumbnail: string | null;
+	permalink: string;
+	status: string;
+	category_id: string;
+	brand: string | null;
+	model: string | null;
+}
+
+export interface MlListResponse {
+	ok: boolean;
+	total_in_ml: number;
+	unlinked_count: number;
+	items: MlUnlinkedItem[];
+	error?: string;
+}
+
+export const listMlUnlinkedItems = async (status: 'active' | 'paused' | 'closed' | 'all' = 'active'): Promise<MlListResponse> => {
+	const { data: { session } } = await supabase.auth.getSession();
+	const resp = await fetch(`${SUPABASE_URL}/functions/v1/ml-list-my-items`, {
+		method: 'POST',
+		headers: {
+			apikey: SUPABASE_ANON,
+			Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON}`,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ status }),
+	});
+	const data = await resp.json();
+	if (!resp.ok || !data.ok) throw new Error(data?.error ?? `http_${resp.status}`);
+	return data;
+};
+
+export interface RfProductCandidate {
+	product_id: string;
+	product_name: string;
+	product_slug: string;
+	external_code: string | null;
+	price_usd: number | null;
+	image_url: string | null;
+	variant_id: string;
+	stock: number;
+	brand_name: string | null;
+	category_name: string | null;
+}
+
+export const searchRfProductsUnlinked = async (search: string, limit = 30): Promise<RfProductCandidate[]> => {
+	const { data, error } = await (supabase.rpc as any)('search_rf_products_unlinked', {
+		p_search: search.trim(),
+		p_limit: limit,
+	});
+	if (error) throw new Error(error.message);
+	return (data ?? []) as RfProductCandidate[];
+};
+
+export const linkMlItemToProduct = async (params: {
+	ml_item_id: string;
+	product_id: string;
+	variant_id: string;
+	ml_category_id?: string;
+	permalink?: string;
+	current_stock?: number;
+}): Promise<string> => {
+	const { data, error } = await (supabase.rpc as any)('link_ml_item_to_product', {
+		p_ml_item_id: params.ml_item_id,
+		p_product_id: params.product_id,
+		p_variant_id: params.variant_id,
+		p_ml_category_id: params.ml_category_id ?? null,
+		p_permalink: params.permalink ?? null,
+		p_current_stock: params.current_stock ?? null,
+	});
+	if (error) throw new Error(error.message);
+	return String(data);
+};
+
+export const unlinkMlItem = async (ml_item_id: string): Promise<void> => {
+	const { error } = await (supabase.rpc as any)('unlink_ml_item', { p_ml_item_id: ml_item_id });
+	if (error) throw new Error(error.message);
+};

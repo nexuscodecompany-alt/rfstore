@@ -69,7 +69,10 @@
       "PowerShell(Invoke-WebRequest -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-fix-image-extensions\" -Method POST -ContentType \"application/json\" -Body \"{}\" -TimeoutSec 10 -UseBasicParsing | Select-Object -ExpandProperty Content)",
       "PowerShell(1..3 | ForEach-Object { Invoke-WebRequest -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-fix-image-extensions\" -Method POST -ContentType \"application/json\" -Body \"{}\" -TimeoutSec 10 -UseBasicParsing | Select-Object -ExpandProperty Content })",
       "PowerShell(.\\\\migrate-images.ps1)",
-      "PowerShell(.\\\\publish-loop.ps1)"
+      "PowerShell(.\\\\publish-loop.ps1)",
+      "PowerShell(.\\\\publish-loop2.ps1)",
+      "PowerShell(.\\\\check-attrs.ps1 MLU14407)",
+      "PowerShell(.\\\\monitor-loop.ps1)"
     ]
   }
 }
