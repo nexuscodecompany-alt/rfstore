@@ -17,6 +17,10 @@ const ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
 const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const FROM_EMAIL = Deno.env.get('FROM_EMAIL') ?? 'pedidos@rfstore.uy';
 const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? '';
+const SALES_EMAIL = 'ventas@rfstore.uy';
+const SALES_WHATSAPP_LABEL = '094 116 299';
+const SALES_WHATSAPP_LINK = '59894116299';
+const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://rfstore.uy';
 
 const corsHeaders = {
 	'Access-Control-Allow-Origin': '*',
@@ -95,10 +99,14 @@ function renderEmail(opts: {
               <tr><td colspan="2" style="border-top:1px solid #e5e7eb;padding-top:12px;text-align:right;font-size:16px;font-weight:700;">Total: ${totalUsdLabel}${totalUyu !== null ? ` <span style="font-weight:400;font-size:12px;color:#666;">${totalUyuLabel}</span>` : ''}</td></tr>
             </table>
 
-            <h2 style="margin:0 0 12px;font-size:14px;text-transform:uppercase;color:#111;letter-spacing:0.5px;">Siguiente paso</h2>
-            <p style="margin:0 0 8px;color:#444;line-height:1.6;">1. Hac\u00e9 la transferencia desde tu banco a la cuenta indicada.</p>
-            <p style="margin:0 0 8px;color:#444;line-height:1.6;">2. Subi el comprobante desde la p\u00e1gina de tu pedido o respond\u00e9 este mail con la imagen adjunta.</p>
-            <p style="margin:0 0 24px;color:#444;line-height:1.6;">3. En cuanto verifiquemos el pago, despachamos tu pedido y te avisamos.</p>
+            <h2 style="margin:0 0 12px;font-size:14px;text-transform:uppercase;color:#111;letter-spacing:0.5px;">C\u00f3mo nos hac\u00e9s llegar el comprobante</h2>
+            <p style="margin:0 0 8px;color:#444;line-height:1.6;">Elig\u00ed la opci\u00f3n que m\u00e1s te convenga:</p>
+            <ul style="margin:0 0 16px;padding-left:18px;color:#444;line-height:1.7;">
+              <li>Subiendo el archivo desde la p\u00e1gina de tu pedido: <a href="${SITE_URL}/checkout/${orderId}/thank-you?status=pending" style="color:#0a7a4a;">ver mi pedido</a></li>
+              <li>Por mail a <a href="mailto:${SALES_EMAIL}?subject=Comprobante Pedido %23${orderId}" style="color:#0a7a4a;">${SALES_EMAIL}</a></li>
+              <li>Por WhatsApp al <a href="https://wa.me/${SALES_WHATSAPP_LINK}?text=Comprobante%20Pedido%20%23${orderId}" style="color:#0a7a4a;">${SALES_WHATSAPP_LABEL}</a></li>
+            </ul>
+            <p style="margin:0 0 24px;color:#444;line-height:1.6;">En cuanto verifiquemos el pago, despachamos tu pedido y te avisamos.</p>
           </td></tr>
           <tr><td style="padding:20px 32px;background:#f4f4f5;color:#666;font-size:12px;text-align:center;">RF Store \u2014 RUT 220006580014<br/>Si tenes dudas, respond\u00e9 este mail.</td></tr>
         </table>
@@ -108,7 +116,7 @@ function renderEmail(opts: {
 	const totalTextLine = totalUyu !== null
 		? `${totalUsdLabel} (\u2248 UYU ${totalUyu.toLocaleString('es-UY')} al BCU de hoy)`
 		: totalUsdLabel;
-	const text = `Gracias por tu compra, ${customerName || 'Cliente'}!\n\nPedido #${orderId} \u2014 Total: ${totalTextLine}\n\nDatos para transferir:\nBanco: ${transfer.banco || '\u2014'}\nCuenta: ${transfer.cuenta || '\u2014'}\nTitular: ${transfer.titular || '\u2014'}\nRUT: ${transfer.rut || '\u2014'}\nConcepto: Pedido ${orderId}\n\nDespues de transferir, subi el comprobante desde tu cuenta o responde este mail con la imagen.`;
+	const text = `Gracias por tu compra, ${customerName || 'Cliente'}!\n\nPedido #${orderId} \u2014 Total: ${totalTextLine}\n\nDatos para transferir:\nBanco: ${transfer.banco || '\u2014'}\nCuenta: ${transfer.cuenta || '\u2014'}\nTitular: ${transfer.titular || '\u2014'}\nRUT: ${transfer.rut || '\u2014'}\nConcepto: Pedido ${orderId}\n\nDespues de transferir, mandanos el comprobante por:\n- Web: ${SITE_URL}/checkout/${orderId}/thank-you?status=pending\n- Mail: ${SALES_EMAIL}\n- WhatsApp: ${SALES_WHATSAPP_LABEL}`;
 
 	return { subject, html, text };
 }

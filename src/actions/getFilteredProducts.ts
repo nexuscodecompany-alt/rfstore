@@ -12,12 +12,10 @@ type Args = {
   page: number;
   searchTerm?: string;
   sortOrder?: 'asc' | 'desc';
-  // "Recién llegados": productos CDR creados en los últimos 14 días,
-  // ordenados por fecha desc. Cuando está activo, ignora sortOrder.
+  // "Recién llegados": productos CDR todavía sin categorizar (los que llegan
+  // por sync y el admin aún no asignó categoría). Cuando está activo, ignora sortOrder.
   newArrivalsOnly?: boolean;
 };
-
-const NEW_ARRIVAL_DAYS = 14;
 
 export async function getFilteredProducts({
   brands,
@@ -42,12 +40,12 @@ let baseQuery = supabase
   )
   .range(from, to);
 
-// Recién llegados: prioridad sobre sortOrder.
+// Recién llegados: productos CDR sin categorizar (los que llegan por sync y el
+// admin todavía no asignó categoría). Prioridad sobre sortOrder.
 if (newArrivalsOnly) {
-  const since = new Date(Date.now() - NEW_ARRIVAL_DAYS * 24 * 60 * 60 * 1000).toISOString();
   baseQuery = baseQuery
     .eq('source', 'cdr')
-    .gte('created_at', since)
+    .is('category_id', null)
     .order('created_at', { ascending: false });
 } else if (sortOrder === 'asc') {
   baseQuery = baseQuery.order('price', { ascending: true });

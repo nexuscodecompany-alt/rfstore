@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { HiOutlineSearch } from 'react-icons/hi';
 import { IoMdClose } from 'react-icons/io';
 import { useGlobalStore } from '../../store/global.store';
@@ -7,48 +7,78 @@ import { searchProducts } from '../../actions';
 import { useNavigate } from 'react-router-dom';
 import { usePricingConfig } from '../../hooks';
 
-// 1) Tipo del resultado según el action
 type SearchResult = Awaited<ReturnType<typeof searchProducts>>;
+type Status = 'idle' | 'searching' | 'results' | 'empty';
 
 export const Search = () => {
   const [searchTerm, setSearchTerm] = useState('');
-  // 2) Estado con el tipo correcto (no Product[])
   const [searchResults, setSearchResults] = useState<SearchResult>([]);
+  const [status, setStatus] = useState<Status>('idle');
 
   const closeSheet = useGlobalStore(state => state.closeSheet);
   const navigate = useNavigate();
   const pricing = usePricingConfig();
 
-  const handleSearch = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
     const term = searchTerm.trim();
-    if (!term) return;
-
-    const products = await searchProducts(term);
-    setSearchResults(products); // ✅ ahora coincide el tipo
-  };
+    if (term.length < 2) {
+      setSearchResults([]);
+      setStatus('idle');
+      return;
+    }
+    setStatus('searching');
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const products = await searchProducts(term);
+        if (cancelled) return;
+        setSearchResults(products);
+        setStatus(products.length > 0 ? 'results' : 'empty');
+      } catch {
+        if (cancelled) return;
+        setSearchResults([]);
+        setStatus('empty');
+      }
+    }, 350);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [searchTerm]);
 
   return (
     <>
-      <div className="flex items-center gap-10 py-5 border-b px-7 border-slate-200">
-        <form className="flex items-center flex-1 gap-3" onSubmit={handleSearch}>
-          <HiOutlineSearch size={22} />
+      <div className="sticky top-0 z-10 flex items-center gap-4 sm:gap-6 py-4 border-b border-slate-200 px-4 sm:px-7 bg-white">
+        <form
+          className="flex items-center flex-1 min-w-0 gap-3"
+          onSubmit={e => e.preventDefault()}
+        >
+          <HiOutlineSearch size={22} className="shrink-0" />
           <input
             type="text"
             placeholder="¿Qué busca?"
-            className="w-full text-sm outline-none "
+            className="w-full min-w-0 text-sm outline-none bg-transparent"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
+            autoFocus
           />
         </form>
-        <button onClick={closeSheet}>
+        <button onClick={closeSheet} className="shrink-0" aria-label="Cerrar">
           <IoMdClose size={25} className="text-black" />
         </button>
       </div>
 
-      {/* RESULTADOS DE BÚSQUEDA */}
-      <div className="p-5">
-        {searchResults.length > 0 ? (
+      <div className="p-4 sm:p-5 flex-1">
+        {status === 'idle' && (
+          <p className="text-sm text-gray-600">Escriba para buscar</p>
+        )}
+        {status === 'searching' && (
+          <p className="text-sm text-gray-500">Buscando…</p>
+        )}
+        {status === 'empty' && (
+          <p className="text-sm text-gray-600">No se encontraron resultados</p>
+        )}
+        {status === 'results' && (
           <ul>
             {searchResults.map(product => {
               const variants = (product as any).variants ?? [];
@@ -59,7 +89,7 @@ export const Search = () => {
               return (
                 <li className="py-2 group" key={(product as any).id}>
                   <button
-                    className="flex items-center gap-3"
+                    className="flex items-center gap-3 w-full text-left"
                     onClick={() => {
                       navigate(`/producto/${(product as any).slug}`);
                       closeSheet();
@@ -68,14 +98,12 @@ export const Search = () => {
                     <img
                       src={(product as any).images?.[0] ?? ''}
                       alt={(product as any).name ?? ''}
-                      className="object-contain w-20 h-20 p-3"
+                      className="object-contain w-16 h-16 sm:w-20 sm:h-20 p-2 sm:p-3 shrink-0"
                     />
-
-                    <div className="flex flex-col gap-1">
-                      <p className="text-sm font-semibold group-hover:underline">
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <p className="text-sm font-semibold group-hover:underline truncate">
                         {(product as any).name}
                       </p>
-
                       <p className="text-sm font-medium text-gray-600">
                         {formatPrice(displayPrice)}{' '}
                         <span className="text-[10px] text-gray-500">
@@ -88,10 +116,6 @@ export const Search = () => {
               );
             })}
           </ul>
-        ) : (
-          <p className="text-sm text-gray-600">
-            {searchTerm.trim() ? 'No se encontraron resultados' : 'Escriba para buscar'}
-          </p>
         )}
       </div>
     </>

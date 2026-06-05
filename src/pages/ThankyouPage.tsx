@@ -5,8 +5,11 @@ import { CiCircleCheck } from 'react-icons/ci';
 import { formatPrice } from '../helpers';
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase/client';
-import { getAppSettings } from '../actions';
+import { getAppSettings, uploadPaymentProof } from '../actions';
 import { useCartStore } from '../store/cart.store';
+import toast from 'react-hot-toast';
+import { HiOutlineCloudUpload, HiOutlineMail } from 'react-icons/hi';
+import { FaWhatsapp } from 'react-icons/fa';
 
 interface TransferInfo {
 	banco?: string;
@@ -105,11 +108,11 @@ export const ThankyouPage = () => {
 							totalUyu={totalUyu}
 							formatUyu={formatUyu}
 						/>
-						<p className='text-xs text-emerald-800 leading-relaxed pt-2'>
-							Una vez recibida la transferencia, despachamos tu pedido y te
-							avisamos.
-						</p>
 					</div>
+				)}
+
+				{(data.paymentMethod === 'transfer' || data.paymentMethod === 'deposit') && (
+					<PaymentProofBlock orderId={data.id} />
 				)}
 
 				<div className='border border-slate-200 w-full p-5 rounded-md space-y-3 md:w-[600px]'>
@@ -243,6 +246,98 @@ const TransferDetails = ({ info, orderId, totalAmount, totalUyu, formatUyu }: Tr
 				<span className='text-emerald-800'>Concepto</span>
 				<span className='font-semibold text-ink-900'>Pedido {orderId}</span>
 			</div>
+		</div>
+	);
+};
+
+const SALES_EMAIL = 'ventas@rfstore.uy';
+const SALES_WHATSAPP = '59894116299';
+
+const PaymentProofBlock = ({ orderId }: { orderId: number }) => {
+	const [file, setFile] = useState<File | null>(null);
+	const [uploading, setUploading] = useState(false);
+	const [uploaded, setUploaded] = useState(false);
+
+	const handleUpload = async () => {
+		if (!file) return;
+		setUploading(true);
+		try {
+			await uploadPaymentProof(orderId, file);
+			setUploaded(true);
+			toast.success('Comprobante recibido. Vamos a verificarlo.');
+		} catch (err) {
+			toast.error((err as Error).message || 'No se pudo subir el comprobante');
+		} finally {
+			setUploading(false);
+		}
+	};
+
+	const mailSubject = encodeURIComponent(`Comprobante de pago — Pedido #${orderId}`);
+	const mailBody = encodeURIComponent(
+		`Hola, adjunto el comprobante del pago para el pedido #${orderId}. Gracias.`
+	);
+	const waText = encodeURIComponent(
+		`Hola, te envío el comprobante de pago del pedido #${orderId}.`
+	);
+
+	return (
+		<div className='w-full p-5 border-2 border-amber-200 bg-amber-50/60 rounded-md space-y-4 md:w-[600px]'>
+			<h3 className='font-bold text-amber-900'>
+				Enviar comprobante de pago
+			</h3>
+			<p className='text-sm text-amber-900/90 leading-relaxed'>
+				Una vez hagas el pago, mandanos el comprobante por cualquiera de estas vías. En cuanto lo verifiquemos despachamos tu pedido.
+			</p>
+
+			{!uploaded ? (
+				<div className='border border-amber-200 rounded-md bg-white p-4 space-y-3'>
+					<div className='flex items-center gap-2 text-sm font-semibold text-amber-900'>
+						<HiOutlineCloudUpload size={20} />
+						Subirlo acá
+					</div>
+					<input
+						type='file'
+						accept='image/*,application/pdf'
+						onChange={e => setFile(e.target.files?.[0] ?? null)}
+						className='block w-full text-sm'
+					/>
+					<button
+						type='button'
+						onClick={handleUpload}
+						disabled={!file || uploading}
+						className='w-full bg-amber-700 text-white text-sm font-semibold py-2.5 rounded-md disabled:opacity-50'
+					>
+						{uploading ? 'Subiendo…' : 'Subir comprobante'}
+					</button>
+				</div>
+			) : (
+				<div className='border border-emerald-300 bg-emerald-50 rounded-md p-3 text-sm font-semibold text-emerald-800 text-center'>
+					✓ Comprobante recibido
+				</div>
+			)}
+
+			<div className='grid grid-cols-1 sm:grid-cols-2 gap-3'>
+				<a
+					href={`mailto:${SALES_EMAIL}?subject=${mailSubject}&body=${mailBody}`}
+					className='flex items-center justify-center gap-2 border border-amber-300 bg-white px-3 py-2.5 rounded-md text-sm font-semibold text-amber-900 hover:bg-amber-100'
+				>
+					<HiOutlineMail size={18} />
+					Por mail
+				</a>
+				<a
+					href={`https://wa.me/${SALES_WHATSAPP}?text=${waText}`}
+					target='_blank'
+					rel='noreferrer'
+					className='flex items-center justify-center gap-2 border border-emerald-300 bg-white px-3 py-2.5 rounded-md text-sm font-semibold text-emerald-900 hover:bg-emerald-100'
+				>
+					<FaWhatsapp size={18} />
+					Por WhatsApp
+				</a>
+			</div>
+
+			<p className='text-[11px] text-amber-800/80 text-center'>
+				Mail: <strong>{SALES_EMAIL}</strong> · WhatsApp: <strong>094 116 299</strong>
+			</p>
 		</div>
 	);
 };

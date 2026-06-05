@@ -4,7 +4,6 @@ import { useCheckoutShippingStore } from '../../store/checkoutShipping.store';
 import {
 	createMpPreference,
 	getAppSettings,
-	uploadPaymentProof,
 	checkCdrStock,
 	sendTransferEmail,
 	type CartItemForMP,
@@ -54,7 +53,6 @@ export const CdrCheckoutForm = () => {
 	const [submitting, setSubmitting] = useState(false);
 	const [transferInfo, setTransferInfo] = useState<TransferInfo>({});
 	const [depositInfo, setDepositInfo] = useState<DepositInfo>({});
-	const [proofFile, setProofFile] = useState<File | null>(null);
 	const { data: fx } = useUsdUyuRate();
 
 	const [form, setForm] = useState({
@@ -279,7 +277,7 @@ export const CdrCheckoutForm = () => {
 					shipping_zone: shipping.zone,
 					shipping_barrio: shipping.barrio ?? undefined,
 					shipping_department: shipping.department ?? undefined,
-					shipping_cost_usd: shipping.cost_usd,
+					shipping_cost_usd: shippingCostUsd,
 				});
 				// NO limpiamos el carrito acá. Si limpiáramos antes del redirect,
 				// la CheckoutPage re-renderizaría mostrando "carrito vacío" por una
@@ -315,10 +313,6 @@ export const CdrCheckoutForm = () => {
 			});
 			if (rpcErr) throw new Error(rpcErr.message);
 			const orderId = orderIdData as number;
-
-			if (proofFile) {
-				await uploadPaymentProof(orderId, proofFile);
-			}
 
 			// Si es transferencia, mandamos el mail con datos bancarios al comprador.
 			// No bloqueamos el checkout si el mail falla — el cliente igual ve los datos
@@ -521,12 +515,9 @@ export const CdrCheckoutForm = () => {
 								<p><strong>Cuenta:</strong> {transferInfo.cuenta_externa}</p>
 							</div>
 						)}
-						<p className='pt-2'>Subí tu comprobante:</p>
-						<input
-							type='file'
-							accept='image/*,application/pdf'
-							onChange={e => setProofFile(e.target.files?.[0] ?? null)}
-						/>
+						<p className='pt-2 text-xs text-gray-600'>
+							Vas a poder enviarnos el comprobante después de confirmar el pedido (subiéndolo, por mail o WhatsApp).
+						</p>
 					</div>
 				)}
 
@@ -541,12 +532,9 @@ export const CdrCheckoutForm = () => {
 						{depositInfo.instrucciones && (
 							<p className='whitespace-pre-line'>{depositInfo.instrucciones}</p>
 						)}
-						<p className='pt-2'>Subí tu comprobante:</p>
-						<input
-							type='file'
-							accept='image/*,application/pdf'
-							onChange={e => setProofFile(e.target.files?.[0] ?? null)}
-						/>
+						<p className='pt-2 text-xs text-gray-600'>
+							Vas a poder enviarnos el comprobante después de confirmar el pedido (subiéndolo, por mail o WhatsApp).
+						</p>
 					</div>
 				)}
 			</section>

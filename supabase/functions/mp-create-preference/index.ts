@@ -40,7 +40,13 @@ interface ReqBody {
 	};
 	customer_email?: string;
 	customer_name?: string;
+	shipping_zone?: 'montevideo' | 'interior';
+	shipping_barrio?: string;
+	shipping_department?: string;
+	shipping_cost_usd?: number;
 }
+
+const FREE_SHIPPING_MIN_USD = 100;
 
 Deno.serve(async req => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -169,7 +175,18 @@ Deno.serve(async req => {
 			const unitFinal = Number((it.unit_price_usd * f).toFixed(2));
 			return { ...it, unit_final_usd: unitFinal, line_total: unitFinal * it.quantity };
 		});
-		const totalAmount = lineTotals.reduce((acc, l) => acc + l.line_total, 0);
+		const subtotal = lineTotals.reduce((acc, l) => acc + l.line_total, 0);
+
+		// Regla de envío: Montevideo gratis si subtotal >= 100 USD; Interior se paga
+		// en agencia (no se cobra acá). Fuera de eso, usamos lo que mandó el front.
+		const requestedShipping = Number(body.shipping_cost_usd ?? 0);
+		const isMvd = body.shipping_zone === 'montevideo';
+		const isInterior = body.shipping_zone === 'interior';
+		const qualifiesFreeMvd = isMvd && subtotal >= FREE_SHIPPING_MIN_USD;
+		const shippingCharge = isInterior || qualifiesFreeMvd
+			? 0
+			: Math.max(0, Number(requestedShipping.toFixed(2)));
+		const totalAmount = Number((subtotal + shippingCharge).toFixed(2));
 
 		// 5. Guardar dirección
 		const { data: addressRow, error: addrErr } = await supabaseAdmin
@@ -197,6 +214,10 @@ Deno.serve(async req => {
 				status: 'pago_pendiente',
 				payment_method: 'mercadopago',
 				payment_status: 'pending',
+				shipping_zone: body.shipping_zone ?? null,
+				shipping_barrio: body.shipping_barrio ?? null,
+				shipping_department: body.shipping_department ?? null,
+				shipping_cost_usd: shippingCharge,
 			})
 			.select()
 			.single();
@@ -229,13 +250,25 @@ Deno.serve(async req => {
 		}
 
 		// 8. Crear preference en MercadoPago
-		const preferenceBody = {
-			items: lineTotals.map(l => ({
-				title: l.title,
-				quantity: l.quantity,
+		const mpItems: Array<{ title: string; quantity: number; currency_id: string; unit_price: number }> = lineTotals.map(l => ({
+			title: l.title,
+			quantity: l.quantity,
+			currency_id: 'USD',
+			unit_price: l.unit_final_usd,
+		}));
+		if (shippingCharge > 0) {
+			const zoneLabel = isMvd
+				? `Montevideo${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}`
+				: 'Envío';
+			mpItems.push({
+				title: `Envío (${zoneLabel})`,
+				quantity: 1,
 				currency_id: 'USD',
-				unit_price: l.unit_final_usd,
-			})),
+				unit_price: shippingCharge,
+			});
+		}
+		const preferenceBody = {
+			items: mpItems,
 			payer: {
 				email: body.customer_email ?? customer.email ?? userData.user.email,
 				name: body.customer_name ?? customer.full_name ?? undefined,
