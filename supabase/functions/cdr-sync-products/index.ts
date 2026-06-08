@@ -98,8 +98,21 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 		const products = await fetchProductosConGaleria(CDR_EMAIL, CDR_TOKEN, '2015-01-01 00:00:00');
 		counters.fetched = products.length;
 
-		const { data: existingRows } = await supabase.from('products').select('external_code').eq('source', 'cdr');
-		const existingCodes = new Set((existingRows ?? []).map((r: any) => r.external_code));
+		// Traer TODOS los códigos existentes. PostgREST limita a 1000 filas por request,
+		// así que paginamos: sin esto, con >1000 productos el sync cree que los que ya
+		// tenemos son "nuevos" e infla to_insert (y podría duplicar en modo new-only/full).
+		const existingCodes = new Set<string>();
+		for (let from = 0; ; from += 1000) {
+			const { data: rows, error: exErr } = await supabase
+				.from('products')
+				.select('external_code')
+				.eq('source', 'cdr')
+				.range(from, from + 999);
+			if (exErr) throw new Error(`existing_codes: ${exErr.message}`);
+			if (!rows || rows.length === 0) break;
+			for (const r of rows as any[]) if (r.external_code) existingCodes.add(r.external_code);
+			if (rows.length < 1000) break;
+		}
 		counters.already_in_db = existingCodes.size;
 
 		const catId = await getSetting<string>('cdr_default_category_id', '');

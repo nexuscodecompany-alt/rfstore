@@ -72,7 +72,20 @@
       "PowerShell(.\\\\publish-loop.ps1)",
       "PowerShell(.\\\\publish-loop2.ps1)",
       "PowerShell(.\\\\check-attrs.ps1 MLU14407)",
-      "PowerShell(.\\\\monitor-loop.ps1)"
+      "PowerShell(.\\\\monitor-loop.ps1)",
+      "Bash(echo \"=== GET /users/me \\(valida token\\) ===\")",
+      "Bash(head -c 400 /tmp/me.json)",
+      "Bash(echo)",
+      "Bash(echo \"=== GET /orders/2000016840977230 ===\")",
+      "Bash(cat /tmp/ord.json)",
+      "WebFetch(domain:developers.mercadolibre.com.ar)",
+      "WebFetch(domain:developers.mercadolibre.cl)",
+      "PowerShell(npx tsc -b 2>&1 | Select-Object -First 40)",
+      "PowerShell(npx tsc -b 2>&1 | Select-Object -First 60)",
+      "PowerShell(npm run *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'ML: sincronizar stock RF al vender en ML + registrar venta con canal + notificaciones *)",
+      "Bash(git push *)"
     ]
   }
 }
