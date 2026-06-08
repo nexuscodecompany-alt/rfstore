@@ -76,11 +76,22 @@ export const TableOrdersAdmin = ({ orders }: Props) => {
 							>
 								<td className='px-5 py-4'>
 									<div className='flex flex-col'>
-										<span className='font-semibold text-ink-800'>
-											{order.customers?.full_name || 'Sin nombre'}
+										<span className='flex items-center gap-2 font-semibold text-ink-800'>
+											{order.customers?.full_name ||
+												(order.channel === 'ml'
+													? 'Comprador de Mercado Libre'
+													: 'Sin nombre')}
+											{order.channel === 'ml' && (
+												<span className='inline-flex shrink-0 items-center rounded-full bg-yellow-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-900'>
+													ML
+												</span>
+											)}
 										</span>
 										<span className='text-xs text-ink-500'>
-											{order.customers?.email}
+											{order.customers?.email ||
+												(order.channel === 'ml' && order.ml_order_id
+													? `Orden ML ${order.ml_order_id}`
+													: '')}
 										</span>
 									</div>
 								</td>
@@ -117,11 +128,22 @@ export const TableOrdersAdmin = ({ orders }: Props) => {
 					>
 						<div className='flex items-start justify-between gap-3'>
 							<div className='min-w-0'>
-								<p className='truncate font-semibold text-ink-800'>
-									{order.customers?.full_name || 'Sin nombre'}
+								<p className='flex items-center gap-2 truncate font-semibold text-ink-800'>
+									{order.customers?.full_name ||
+										(order.channel === 'ml'
+											? 'Comprador de Mercado Libre'
+											: 'Sin nombre')}
+									{order.channel === 'ml' && (
+										<span className='inline-flex shrink-0 items-center rounded-full bg-yellow-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-900'>
+											ML
+										</span>
+									)}
 								</p>
 								<p className='truncate text-xs text-ink-500'>
-									{order.customers?.email}
+									{order.customers?.email ||
+										(order.channel === 'ml' && order.ml_order_id
+											? `Orden ML ${order.ml_order_id}`
+											: '')}
 								</p>
 								<p className='mt-1 text-xs text-ink-400'>
 									{formatDateLong(order.created_at)}

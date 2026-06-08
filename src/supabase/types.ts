@@ -541,10 +541,13 @@ export type Database = {
       }
       orders: {
         Row: {
-          address_id: string
+          address_id: string | null
+          channel: string
           created_at: string
-          customer_id: string
+          customer_id: string | null
           id: number
+          ml_order_id: string | null
+          ml_pack_id: string | null
           mp_payment_id: string | null
           mp_preference_id: string | null
           paid_at: string | null
@@ -559,10 +562,13 @@ export type Database = {
           total_amount: number
         }
         Insert: {
-          address_id: string
+          address_id?: string | null
+          channel?: string
           created_at?: string
-          customer_id: string
+          customer_id?: string | null
           id?: number
+          ml_order_id?: string | null
+          ml_pack_id?: string | null
           mp_payment_id?: string | null
           mp_preference_id?: string | null
           paid_at?: string | null
@@ -577,10 +583,13 @@ export type Database = {
           total_amount: number
         }
         Update: {
-          address_id?: string
+          address_id?: string | null
+          channel?: string
           created_at?: string
-          customer_id?: string
+          customer_id?: string | null
           id?: number
+          ml_order_id?: string | null
+          ml_pack_id?: string | null
           mp_payment_id?: string | null
           mp_preference_id?: string | null
           paid_at?: string | null

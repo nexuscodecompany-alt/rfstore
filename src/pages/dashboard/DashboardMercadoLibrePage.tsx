@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import { useAdminNotifications } from '../../hooks';
 import {
 	buildMlAuthUrl,
 	disconnectMl,
@@ -156,6 +157,9 @@ export const DashboardMercadoLibrePage = () => {
 					</div>
 				)}
 			</section>
+
+			{/* --- NOVEDADES ML (ventas / avisos) --- */}
+			<MlNotificationsSection />
 
 			{/* --- STATS --- */}
 			{credential && stats && (
@@ -877,5 +881,89 @@ const Stat = ({
 			<p className='text-2xl font-bold'>{value}</p>
 			<p className='text-xs'>{label}</p>
 		</div>
+	);
+};
+
+// Novedades de Mercado Libre: ventas (ml_sale) y avisos de órdenes que no se
+// pudieron leer (ml_order_unfetchable). Lee de admin_notifications.
+const MlNotificationsSection = () => {
+	const { notifications, markOne } = useAdminNotifications();
+	const mlNotifs = notifications.filter(
+		n => typeof n.type === 'string' && n.type.startsWith('ml_')
+	);
+
+	if (mlNotifs.length === 0) return null;
+
+	return (
+		<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
+			<h2 className='font-semibold'>Novedades de Mercado Libre</h2>
+			<ul className='divide-y divide-gray-100'>
+				{mlNotifs.map(n => {
+					const isUnread = !n.read_at;
+					const isSale = n.type === 'ml_sale';
+					const p = (n.payload ?? {}) as {
+						ml_order_id?: string;
+						message?: string;
+						total?: number;
+						items?: { title: string; qty: number }[];
+						needs_manual_stock?: boolean;
+					};
+					return (
+						<li
+							key={n.id}
+							className={`py-3 ${isUnread ? 'bg-amber-50/50 -mx-2 px-2 rounded-md' : ''}`}
+						>
+							<div className='flex items-start justify-between gap-3'>
+								<div className='flex-1 min-w-0'>
+									<p className='text-sm font-medium'>
+										<span
+											className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide mr-2 ${
+												isSale
+													? 'bg-emerald-100 text-emerald-800'
+													: 'bg-red-100 text-red-800'
+											}`}
+										>
+											{isSale ? 'Venta' : 'Atención'}
+										</span>
+										{p.message ?? (isSale ? 'Venta en Mercado Libre' : 'Aviso de Mercado Libre')}
+									</p>
+									{p.ml_order_id && (
+										<p className='text-xs text-gray-500 mt-1'>
+											Orden ML {p.ml_order_id}
+											{typeof p.total === 'number' ? ` · $${p.total}` : ''}
+										</p>
+									)}
+									{p.items && p.items.length > 0 && (
+										<ul className='mt-1 ml-1 text-xs text-gray-600 list-disc list-inside'>
+											{p.items.slice(0, 8).map((it, i) => (
+												<li key={i}>
+													{it.title} × {it.qty}
+												</li>
+											))}
+										</ul>
+									)}
+									{p.needs_manual_stock && (
+										<p className='text-xs text-red-600 mt-1 font-medium'>
+											⚠️ Revisá el stock a mano (item sin vínculo).
+										</p>
+									)}
+									<p className='text-[11px] text-gray-400 mt-1'>
+										{formatDate(n.created_at)}
+									</p>
+								</div>
+								{isUnread && (
+									<button
+										onClick={() => markOne(n.id)}
+										className='shrink-0 text-xs font-semibold text-gray-600 hover:text-gray-900'
+									>
+										Marcar leída
+									</button>
+								)}
+							</div>
+						</li>
+					);
+				})}
+			</ul>
+		</section>
 	);
 };

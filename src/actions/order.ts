@@ -128,12 +128,12 @@ export const getOrderById = async (orderId: number) => {
 		paymentStatus: order.payment_status as string,
 		created_at: order.created_at,
 		address: {
-			addressLine1: order.addresses.address_line1,
-			addressLine2: order.addresses.address_line2,
-			city: order.addresses.city,
-			state: order.addresses.state,
-			postalCode: order.addresses.postal_code,
-			country: order.addresses.country,
+			addressLine1: order.addresses?.address_line1 ?? '',
+			addressLine2: order.addresses?.address_line2 ?? null,
+			city: order.addresses?.city ?? '',
+			state: order.addresses?.state ?? '',
+			postalCode: order.addresses?.postal_code ?? null,
+			country: order.addresses?.country ?? '',
 		},
 		customer: {
 			full_name: data.user.user_metadata.full_name,
@@ -148,7 +148,9 @@ export const getOrderById = async (orderId: number) => {
 export const getAllOrders = async () => {
 	const { data, error } = await supabase
 		.from('orders')
-		.select('id, total_amount, status, created_at, customers(full_name, email)')
+		.select(
+			'id, total_amount, status, created_at, channel, ml_order_id, customers(full_name, email)'
+		)
 		.order('created_at', { ascending: false });
 
 	if (error) throw new Error(error.message);
@@ -176,7 +178,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 		.from('orders')
 		.select(
 			`
-				id, total_amount, status, created_at,
+				id, total_amount, status, created_at, channel, ml_order_id,
 				addresses:addresses(*),
 				order_items:order_items(quantity, price, variants(color_name, storage, products(name, images))),
 				customers:customers(full_name, email)
@@ -187,8 +189,22 @@ export const getOrderByIdAdmin = async (id: number) => {
 
 	if (error) throw new Error(error.message);
 
+	// Las órdenes de Mercado Libre no tienen dirección ni cliente local (address/customer null).
+	const addr = order.addresses as
+		| {
+				address_line1: string;
+				address_line2: string | null;
+				city: string;
+				state: string;
+				postal_code: string | null;
+				country: string;
+		  }
+		| null;
+
 	return {
 		id: order.id,
+		channel: (order.channel as 'web' | 'ml' | null) ?? 'web',
+		ml_order_id: (order.ml_order_id as string | null) ?? null,
 		orderItems: order.order_items.map(item => ({
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',
@@ -200,14 +216,16 @@ export const getOrderByIdAdmin = async (id: number) => {
 		totalAmount: order.total_amount,
 		status: order.status,
 		created_at: order.created_at,
-		address: {
-			addressLine1: order.addresses.address_line1,
-			addressLine2: order.addresses.address_line2,
-			city: order.addresses.city,
-			state: order.addresses.state,
-			postalCode: order.addresses.postal_code,
-			country: order.addresses.country,
-		},
+		address: addr
+			? {
+					addressLine1: addr.address_line1,
+					addressLine2: addr.address_line2,
+					city: addr.city,
+					state: addr.state,
+					postalCode: addr.postal_code,
+					country: addr.country,
+			  }
+			: null,
 		customer: {
 			full_name: order.customers?.full_name || '',
 			email: order.customers?.email || '',

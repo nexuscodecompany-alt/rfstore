@@ -98,8 +98,17 @@ export const DashboardCdrSyncPage = () => {
 		onError: (e: Error) => toast.error(e.message),
 	});
 
-	const { notifications, unreadCount, markOne, markAll } =
-		useAdminNotifications();
+	const { notifications, markOne, markAll } = useAdminNotifications();
+
+	// admin_notifications es una tabla compartida. Esta sección solo entiende las
+	// novedades de "productos nuevos de CDR" (payload con count/products). Filtramos
+	// cualquier otro tipo (ej. avisos de Mercado Libre) para no romper el render.
+	const cdrNotifications = notifications.filter(
+		n =>
+			!!n.payload &&
+			(typeof n.payload?.count === 'number' || Array.isArray(n.payload.products))
+	);
+	const cdrUnread = cdrNotifications.filter(n => !n.read_at).length;
 
 	const { data: pendingData } = useQuery({
 		queryKey: ['cdr_pending_review_count'],
@@ -146,14 +155,14 @@ export const DashboardCdrSyncPage = () => {
 						<HiOutlineSparkles className='text-brand-600' size={22} />
 						<h2 className='font-semibold'>
 							Novedades de CDR
-							{unreadCount > 0 && (
+							{cdrUnread > 0 && (
 								<span className='ml-2 inline-flex items-center justify-center min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-bold'>
-									{unreadCount}
+									{cdrUnread}
 								</span>
 							)}
 						</h2>
 					</div>
-					{unreadCount > 0 && (
+					{cdrUnread > 0 && (
 						<button
 							onClick={() => markAll()}
 							className='text-xs font-semibold text-brand-700 hover:text-brand-900'
@@ -163,16 +172,16 @@ export const DashboardCdrSyncPage = () => {
 					)}
 				</div>
 
-				{notifications.length === 0 ? (
+				{cdrNotifications.length === 0 ? (
 					<p className='text-sm text-gray-500'>
 						Sin novedades. El cron diario revisa CDR a las 03:00 (hora UY) y
 						avisa acá cuando ingresan productos nuevos.
 					</p>
 				) : (
 					<ul className='divide-y divide-gray-100'>
-						{notifications.map(n => {
+						{cdrNotifications.map(n => {
 							const isUnread = !n.read_at;
-							const products = n.payload.products ?? [];
+							const products = n.payload?.products ?? [];
 							return (
 								<li
 									key={n.id}
@@ -181,9 +190,9 @@ export const DashboardCdrSyncPage = () => {
 									<div className='flex items-center justify-between gap-3'>
 										<div className='flex-1 min-w-0'>
 											<p className='text-sm'>
-												<b>{n.payload.count} producto
-												{n.payload.count === 1 ? '' : 's'} nuevo
-												{n.payload.count === 1 ? '' : 's'}</b> de CDR
+												<b>{n.payload?.count} producto
+												{n.payload?.count === 1 ? '' : 's'} nuevo
+												{n.payload?.count === 1 ? '' : 's'}</b> de CDR
 												<span className='text-xs text-gray-500 ml-2'>
 													· {formatRelative(n.created_at)}
 												</span>

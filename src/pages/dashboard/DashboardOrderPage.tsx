@@ -54,13 +54,23 @@ export const DashboardOrderPage = () => {
 						</p>
 					</div>
 				</div>
-				<span
-					className={`inline-flex w-fit items-center rounded-full px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wide ${orderStatusBadge(
-						order.status
-					)}`}
-				>
-					{order.status}
-				</span>
+				<div className='flex w-fit items-center gap-2'>
+					{order.channel === 'ml' && (
+						<span
+							className='inline-flex items-center rounded-full bg-yellow-400 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-stone-900'
+							title={order.ml_order_id ? `Orden ML ${order.ml_order_id}` : 'Venta de Mercado Libre'}
+						>
+							Mercado Libre
+						</span>
+					)}
+					<span
+						className={`inline-flex items-center rounded-full px-3.5 py-1.5 text-xs font-semibold uppercase tracking-wide ${orderStatusBadge(
+							order.status
+						)}`}
+					>
+						{order.status}
+					</span>
+				</div>
 			</div>
 
 			<div className='grid grid-cols-1 gap-6 lg:grid-cols-3'>
@@ -135,7 +145,10 @@ export const DashboardOrderPage = () => {
 							Cliente
 						</h2>
 						<p className='text-sm font-medium text-ink-800'>
-							{order.customer.full_name || 'Sin nombre'}
+							{order.customer.full_name ||
+								(order.channel === 'ml'
+									? 'Comprador de Mercado Libre'
+									: 'Sin nombre')}
 						</p>
 						{order.customer.email && (
 							<a
@@ -153,25 +166,27 @@ export const DashboardOrderPage = () => {
 							Dirección de envío
 						</h2>
 						<div className='space-y-0.5 text-sm text-ink-600'>
-							{order.address.addressLine1 ? (
+							{order.address?.addressLine1 ? (
 								<>
-									<p>{order.address.addressLine1}</p>
-									{order.address.addressLine2 && (
-										<p>{order.address.addressLine2}</p>
+									<p>{order.address?.addressLine1}</p>
+									{order.address?.addressLine2 && (
+										<p>{order.address?.addressLine2}</p>
 									)}
 									<p>
-										{[order.address.city, order.address.state]
+										{[order.address?.city, order.address?.state]
 											.filter(Boolean)
 											.join(', ')}
 									</p>
-									{order.address.postalCode && (
-										<p>CP {order.address.postalCode}</p>
+									{order.address?.postalCode && (
+										<p>CP {order.address?.postalCode}</p>
 									)}
-									<p>{order.address.country}</p>
+									<p>{order.address?.country}</p>
 								</>
 							) : (
 								<p className='text-ink-400'>
-									Sin dirección registrada (cotización).
+									{order.channel === 'ml'
+										? 'Envío gestionado por Mercado Envíos (ML).'
+										: 'Sin dirección registrada (cotización).'}
 								</p>
 							)}
 						</div>
