@@ -1,13 +1,5 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../../supabase/client';
-
-const supabaseCountPending = async () =>
-	supabase
-		.from('products')
-		.select('id', { count: 'exact', head: true })
-		.eq('source', 'cdr')
-		.eq('active', false);
 import {
 	assignCdrProductTaxonomy,
 	getAppSettings,
@@ -33,6 +25,14 @@ const formatRelative = (iso: string): string => {
 	const days = Math.floor(hr / 24);
 	if (days < 30) return `hace ${days} d`;
 	return new Date(iso).toLocaleDateString('es-UY');
+};
+
+// El sync se guarda en UTC ("YYYY-MM-DD HH:MM:SS"). Lo mostramos en hora de Uruguay.
+const formatSyncDate = (v: unknown): string => {
+	if (!v || typeof v !== 'string') return '—';
+	const d = new Date(v.replace(' ', 'T') + 'Z');
+	if (isNaN(d.getTime())) return v;
+	return d.toLocaleString('es-UY', { timeZone: 'America/Montevideo' });
 };
 
 export const DashboardCdrSyncPage = () => {
@@ -110,43 +110,9 @@ export const DashboardCdrSyncPage = () => {
 	);
 	const cdrUnread = cdrNotifications.filter(n => !n.read_at).length;
 
-	const { data: pendingData } = useQuery({
-		queryKey: ['cdr_pending_review_count'],
-		queryFn: async () => {
-			const { count } = await supabaseCountPending();
-			return count ?? 0;
-		},
-		refetchInterval: 60 * 1000,
-	});
-	const pendingCount = pendingData ?? 0;
-
 	return (
 		<div className='flex flex-col gap-8'>
 			<h1 className='text-xl font-bold'>Integración CDR</h1>
-
-			{pendingCount > 0 && (
-				<Link
-					to='/dashboard/productos?source=cdr&estado=inactive'
-					className='block p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-amber-100 border border-amber-300 hover:from-amber-100 hover:to-amber-200 transition-all'
-				>
-					<div className='flex items-center justify-between gap-3'>
-						<div>
-							<p className='text-amber-900 font-bold text-base flex items-center gap-2'>
-								<HiOutlineSparkles size={20} />
-								{pendingCount} producto{pendingCount === 1 ? '' : 's'} de CDR
-								pendiente{pendingCount === 1 ? '' : 's'} de aprobación
-							</p>
-							<p className='text-xs text-amber-800 mt-1'>
-								Los productos nuevos entran inactivos. Revisalos y activá los que
-								querés mostrar en la web.
-							</p>
-						</div>
-						<span className='text-amber-700 text-sm font-semibold'>
-							Ver listado →
-						</span>
-					</div>
-				</Link>
-			)}
 
 			{/* Productos nuevos detectados */}
 			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
@@ -174,8 +140,7 @@ export const DashboardCdrSyncPage = () => {
 
 				{cdrNotifications.length === 0 ? (
 					<p className='text-sm text-gray-500'>
-						Sin novedades. El cron diario revisa CDR a las 03:00 (hora UY) y
-						avisa acá cuando ingresan productos nuevos.
+						Sin novedades por ahora.
 					</p>
 				) : (
 					<ul className='divide-y divide-gray-100'>
@@ -269,7 +234,7 @@ export const DashboardCdrSyncPage = () => {
 			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-4'>
 				<h2 className='font-semibold'>Sincronización</h2>
 				<p className='text-sm text-gray-600'>
-					Última fecha de sync: {String(settings?.get('cdr_last_full_sync') ?? '—')}
+					Última fecha de sync: {formatSyncDate(settings?.get('cdr_last_full_sync'))}
 				</p>
 				<div className='flex gap-3 flex-wrap'>
 					<button
