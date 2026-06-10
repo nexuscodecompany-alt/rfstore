@@ -131,10 +131,16 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 			}
 		}
 		if (mode === 'update-prices' || mode === 'full') {
-			for (let i = 0; i < toUpdate.length; i += PRODUCT_CONCURRENCY * 2) {
-				const chunk = toUpdate.slice(i, i + PRODUCT_CONCURRENCY * 2);
-				await Promise.allSettled(chunk.map(p => updateExistingProductStock(p.codigo, p, counters)));
-			}
+			// Update en LOTE (una sola operación SQL) en vez de uno por uno: así la corrida
+			// siempre termina y reconcilia TODOS los productos (stock = CDR - reservado).
+			const rows = toUpdate.map(p => ({
+				code: p.codigo,
+				precio: Number(p.precio) || 0,
+				stock: typeof p.stock === 'number' ? p.stock : Number(p.stock) || 0,
+			}));
+			const { data: res, error: bulkErr } = await supabase.rpc('cdr_bulk_update_stock_price', { p_rows: rows });
+			if (bulkErr) counters.errors.push(`bulk_update: ${bulkErr.message}`);
+			else counters.updated = (res as { variants?: number } | null)?.variants ?? 0;
 		}
 		counters.ok = counters.errors.length === 0;
 		counters.finished_at = new Date().toISOString();

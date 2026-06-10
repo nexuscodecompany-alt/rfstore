@@ -180,7 +180,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 			`
 				id, total_amount, status, created_at, channel, ml_order_id,
 				addresses:addresses(*),
-				order_items:order_items(quantity, price, variants(color_name, storage, products(name, images))),
+				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images))),
 				customers:customers(full_name, email)
 			`
 		)
@@ -209,6 +209,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',
 			price: item.price,
+			cost: (item as { cost_usd: number | null }).cost_usd ?? null,
 			quantity: item.quantity,
 			color_name: item.variants ? item.variants.color_name : '',
 			storage: item.variants ? item.variants.storage : '',

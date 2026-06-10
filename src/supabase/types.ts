@@ -499,6 +499,7 @@ export type Database = {
       }
       order_items: {
         Row: {
+          cost_usd: number | null
           created_at: string
           id: number
           order_id: number
@@ -507,6 +508,7 @@ export type Database = {
           variant_id: string
         }
         Insert: {
+          cost_usd?: number | null
           created_at?: string
           id?: number
           order_id: number
@@ -515,6 +517,7 @@ export type Database = {
           variant_id: string
         }
         Update: {
+          cost_usd?: number | null
           created_at?: string
           id?: number
           order_id?: number

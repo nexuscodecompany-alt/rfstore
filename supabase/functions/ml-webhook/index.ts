@@ -97,8 +97,8 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
   const toUsd = (amount: number, currency?: string) =>
     currency === 'UYU' && usdRate > 0 ? Math.round((amount / usdRate) * 100) / 100 : amount;
 
-  // Resolver cada item vendido a su variant de RF Store
-  const resolved: { variant_id: string; qty: number; unitPrice: number; title: string }[] = [];
+  // Resolver cada item vendido a su variant de RF Store (+ costo CDR para registrar margen)
+  const resolved: { variant_id: string; qty: number; unitPrice: number; cost: number; title: string }[] = [];
   const unmapped: { ml_item_id: string; title: string; qty: number }[] = [];
   for (const oi of order.order_items ?? []) {
     const mlItemId = oi?.item?.id;
@@ -106,9 +106,12 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
     const unitPrice = toUsd(Number(oi?.unit_price) || 0, oi?.currency_id ?? order.currency_id);
     const title = oi?.item?.title ?? mlItemId ?? 'item';
     if (!mlItemId || !qty) continue;
-    const { data: mapping } = await supabase.from('ml_item_mapping').select('variant_id').eq('ml_item_id', mlItemId).maybeSingle();
+    const { data: mapping } = await supabase.from('ml_item_mapping').select('variant_id, product_id').eq('ml_item_id', mlItemId).maybeSingle();
     if (!mapping?.variant_id) { unmapped.push({ ml_item_id: mlItemId, title, qty }); continue; }
-    resolved.push({ variant_id: mapping.variant_id, qty, unitPrice, title });
+    // Costo CDR (USD) al momento de la venta, para registrar el margen.
+    const { data: prod } = await supabase.from('products').select('price_usd').eq('id', mapping.product_id).maybeSingle();
+    const cost = Number(prod?.price_usd) || 0;
+    resolved.push({ variant_id: mapping.variant_id, qty, unitPrice, cost, title });
   }
 
   // Registrar la orden en rfstore con canal explícito (sin abusar de mp_payment_id).
@@ -134,7 +137,7 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
   // Por cada item mapeado: registrar order_item y descontar stock del variant
   // (el descuento dispara el trigger que sincroniza el stock a la publicación ML).
   for (const it of resolved) {
-    await supabase.from('order_items').insert({ order_id: orderId, variant_id: it.variant_id, quantity: it.qty, price: it.unitPrice });
+    await supabase.from('order_items').insert({ order_id: orderId, variant_id: it.variant_id, quantity: it.qty, price: it.unitPrice, cost_usd: it.cost });
     const { data: variant } = await supabase.from('variants').select('stock').eq('id', it.variant_id).single();
     if (variant) {
       const newStock = Math.max(0, Number(variant.stock) - it.qty);

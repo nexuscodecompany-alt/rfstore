@@ -33,6 +33,19 @@ export const DashboardOrderPage = () => {
 		);
 	}
 
+	// Margen vs costo CDR (registrado al momento de la venta en cost_usd).
+	const itemsRevenue = order.orderItems.reduce(
+		(s, i) => s + i.price * i.quantity,
+		0
+	);
+	const hasCost = order.orderItems.some(i => i.cost != null);
+	const totalCost = order.orderItems.reduce(
+		(s, i) => s + (i.cost ?? 0) * i.quantity,
+		0
+	);
+	const margin = itemsRevenue - totalCost;
+	const marginPct = totalCost > 0 ? (margin / totalCost) * 100 : null;
+
 	return (
 		<div className='space-y-6'>
 			{/* Encabezado */}
@@ -109,6 +122,14 @@ export const DashboardOrderPage = () => {
 										<p className='mt-1 text-sm text-ink-600'>
 											{formatPrice(item.price)} × {item.quantity}
 										</p>
+										{item.cost != null && (
+											<p className='mt-0.5 text-xs text-emerald-700'>
+												Costo CDR {formatPrice(item.cost)} · Margen{' '}
+												{formatPrice((item.price - item.cost) * item.quantity)}
+												{item.cost > 0 &&
+													` (${Math.round(((item.price - item.cost) / item.cost) * 100)}%)`}
+											</p>
+										)}
 									</div>
 									<p className='shrink-0 font-semibold text-ink-900'>
 										{formatPrice(item.price * item.quantity)}
@@ -136,6 +157,21 @@ export const DashboardOrderPage = () => {
 								<span>Total</span>
 								<span>{formatPrice(order.totalAmount)}</span>
 							</div>
+							{hasCost && (
+								<div className='mt-2 space-y-1.5 border-t border-ink-100 pt-3'>
+									<div className='flex justify-between text-ink-500'>
+										<span>Costo CDR</span>
+										<span>{formatPrice(totalCost)}</span>
+									</div>
+									<div className='flex justify-between font-semibold text-emerald-700'>
+										<span>Ganancia</span>
+										<span>
+											{formatPrice(margin)}
+											{marginPct != null && ` (${Math.round(marginPct)}%)`}
+										</span>
+									</div>
+								</div>
+							)}
 						</div>
 					</div>
 
