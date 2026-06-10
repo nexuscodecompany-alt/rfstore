@@ -90,13 +90,20 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
   const { data: existing } = await supabase.from('orders').select('id').eq('ml_order_id', mlOrderId).maybeSingle();
   if (existing) return { ok: true };
 
+  // ML puede cobrar en UYU o USD; la tienda guarda todo en USD. Convertimos si hace falta
+  // usando el tipo de cambio BCU cacheado (mismo que usa el resto del sistema).
+  const { data: rateRow } = await supabase.from('app_settings').select('value').eq('key', 'usd_uyu_rate_cache').maybeSingle();
+  const usdRate = Number((rateRow?.value as any)?.rate) || 0;
+  const toUsd = (amount: number, currency?: string) =>
+    currency === 'UYU' && usdRate > 0 ? Math.round((amount / usdRate) * 100) / 100 : amount;
+
   // Resolver cada item vendido a su variant de RF Store
   const resolved: { variant_id: string; qty: number; unitPrice: number; title: string }[] = [];
   const unmapped: { ml_item_id: string; title: string; qty: number }[] = [];
   for (const oi of order.order_items ?? []) {
     const mlItemId = oi?.item?.id;
     const qty = Number(oi?.quantity) || 0;
-    const unitPrice = Number(oi?.unit_price) || 0;
+    const unitPrice = toUsd(Number(oi?.unit_price) || 0, oi?.currency_id ?? order.currency_id);
     const title = oi?.item?.title ?? mlItemId ?? 'item';
     if (!mlItemId || !qty) continue;
     const { data: mapping } = await supabase.from('ml_item_mapping').select('variant_id').eq('ml_item_id', mlItemId).maybeSingle();
@@ -105,7 +112,7 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
   }
 
   // Registrar la orden en rfstore con canal explícito (sin abusar de mp_payment_id).
-  const total = Number(order.total_amount ?? 0);
+  const total = toUsd(Number(order.total_amount ?? 0), order.currency_id);
   const { data: inserted, error: insErr } = await supabase.from('orders').insert({
     customer_id: null,
     address_id: null,
