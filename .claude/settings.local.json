@@ -88,7 +88,9 @@
       "Bash(git push *)",
       "Bash(git commit -m 'CDR sync UI: fecha en hora UY, sacar texto cron 03:00 falso, quitar banner 177 pendientes; fix tope 1000 en cdr-sync *)",
       "Bash(git commit -m 'ml-webhook: guardar montos de ordenes ML en USD \\(convertir desde UYU con rate BCU\\) *)",
-      "Bash(git commit -m 'Registrar margen vs CDR en ordenes + cdr-sync en lote *)"
+      "Bash(git commit -m 'Registrar margen vs CDR en ordenes + cdr-sync en lote *)",
+      "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/ml-process-sync-queue\" -Method Post -ContentType \"application/json\" -Body \"{}\" | ConvertTo-Json)",
+      "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-debug-stock?id=MLU694583415\" -Method Get -TimeoutSec 60 | ConvertTo-Json -Depth 8)"
     ]
   }
 }
