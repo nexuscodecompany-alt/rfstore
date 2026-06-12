@@ -22,6 +22,13 @@ export interface DashboardOverview {
 	paid_cost_period: number; // Costo CDR de lo vendido (pagado)
 	paid_margin_period: number; // Ganancia real = venta - costo CDR
 	prev_paid_margin_period: number;
+	// Ganancia por moneda real de venta (pesos y dólares por separado)
+	uyu_orders: number;
+	uyu_revenue: number; // venta en pesos (real ML)
+	uyu_cost: number; // costo CDR convertido a pesos
+	usd_orders: number;
+	usd_revenue: number; // venta en dólares
+	usd_cost: number; // costo CDR en dólares
 	orders_total: number;
 	status_breakdown: StatusBreakdownItem[];
 	concretado_count: number;

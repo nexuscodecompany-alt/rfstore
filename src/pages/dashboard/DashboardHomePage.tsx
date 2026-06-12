@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
 	HiOutlineBanknotes,
-	HiOutlineCurrencyDollar,
 	HiOutlineClipboardDocumentList,
 	HiOutlineReceiptPercent,
 	HiOutlineArrowTrendingUp,
@@ -18,7 +17,7 @@ import {
 	HiOutlineCalendarDays,
 } from 'react-icons/hi2';
 import { useDashboardMetrics } from '../../hooks/dashboard/useDashboardMetrics';
-import { formatPrice } from '../../helpers';
+import { formatPrice, formatMoneyCur } from '../../helpers';
 import type { TopProduct } from '../../actions/dashboard';
 
 /* ---------- helpers de fecha ---------- */
@@ -104,6 +103,52 @@ const StatCard = ({
 		)}
 	</div>
 );
+
+const ProfitCard = ({
+	label,
+	currency,
+	orders,
+	revenue,
+	cost,
+}: {
+	label: string;
+	currency: 'UYU' | 'USD';
+	orders: number;
+	revenue: number;
+	cost: number;
+}) => {
+	const margin = revenue - cost;
+	const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
+	return (
+		<div className='rounded-xl border border-ink-100 bg-ink-50/40 p-4'>
+			<div className='flex items-center justify-between'>
+				<span className='text-sm font-semibold text-ink-700'>{label}</span>
+				<span className='text-xs text-ink-400'>{num(orders)} ventas</span>
+			</div>
+			<p className='mt-2 text-2xl font-bold text-emerald-600'>
+				{formatMoneyCur(margin, currency)}
+			</p>
+			<p className='text-xs text-ink-500'>
+				ganancia
+				{revenue > 0 ? ` · ${marginPct.toFixed(1)}% de margen` : ''}
+			</p>
+			<div className='mt-3 space-y-1 text-xs'>
+				<div className='flex justify-between'>
+					<span className='text-ink-500'>Vendido</span>
+					<span className='font-medium text-ink-700'>
+						{formatMoneyCur(revenue, currency)}
+					</span>
+				</div>
+				<div className='flex justify-between'>
+					<span className='text-ink-500'>Costo CDR</span>
+					<span className='font-medium text-ink-700'>
+						{formatMoneyCur(cost, currency)}
+					</span>
+				</div>
+			</div>
+		</div>
+	);
+};
 
 const SectionCard = ({
 	title,
@@ -220,14 +265,6 @@ export const DashboardHomePage = () => {
 		return (o.concretado_count / o.orders_in_period) * 100;
 	}, [o]);
 
-	// Margen % sobre la venta de lo pagado (ganancia / (ganancia + costo))
-	const marginPct = useMemo(() => {
-		if (!o) return 0;
-		const base = o.paid_margin_period + o.paid_cost_period;
-		if (!base) return 0;
-		return (o.paid_margin_period / base) * 100;
-	}, [o]);
-
 	const applyPreset = (days: number) => {
 		setActivePreset(days);
 		setRange(presetRange(days));
@@ -331,17 +368,6 @@ export const DashboardHomePage = () => {
 							tone='emerald'
 						/>
 						<StatCard
-							icon={<HiOutlineCurrencyDollar size={20} />}
-							label='Ganancia (margen)'
-							value={formatPrice(o.paid_margin_period)}
-							sub={`Costo CDR ${formatPrice(o.paid_cost_period)} · ${marginPct.toFixed(1)}%`}
-							delta={deltaPercent(
-								o.paid_margin_period,
-								o.prev_paid_margin_period
-							)}
-							tone='emerald'
-						/>
-						<StatCard
 							icon={<HiOutlineDocumentText size={20} />}
 							label='Cotizado (pipeline)'
 							value={formatPrice(o.revenue_period)}
@@ -422,6 +448,31 @@ export const DashboardHomePage = () => {
 							tone='slate'
 						/>
 					</div>
+
+					{/* Ganancias por moneda real de venta (pesos y dólares por separado) */}
+					<SectionCard title='Ganancias (moneda real de venta)'>
+						<div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
+							<ProfitCard
+								label='En pesos (UYU)'
+								currency='UYU'
+								orders={o.uyu_orders}
+								revenue={o.uyu_revenue}
+								cost={o.uyu_cost}
+							/>
+							<ProfitCard
+								label='En dólares (USD)'
+								currency='USD'
+								orders={o.usd_orders}
+								revenue={o.usd_revenue}
+								cost={o.usd_cost}
+							/>
+						</div>
+						<p className='mt-3 text-xs text-ink-400'>
+							Cada venta se muestra en la moneda en que se cobró en
+							Mercado Libre. El costo CDR (en USD) se convierte a la
+							moneda de la venta para calcular la ganancia.
+						</p>
+					</SectionCard>
 
 					{/* Gráfico + estados */}
 					<div className='grid grid-cols-1 gap-4 lg:grid-cols-3'>

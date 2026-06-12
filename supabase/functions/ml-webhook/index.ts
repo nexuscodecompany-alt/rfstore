@@ -115,7 +115,12 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
   }
 
   // Registrar la orden en rfstore con canal explícito (sin abusar de mp_payment_id).
+  // total_amount: SIEMPRE en USD (para métricas internas comparables).
+  // ml_currency + total_original: la moneda y el monto REAL como cobró ML (pesos o USD),
+  // para mostrar la ganancia idéntica a como se vendió. fx_rate: UYU por USD usado.
   const total = toUsd(Number(order.total_amount ?? 0), order.currency_id);
+  const mlCurrency = order.currency_id ?? 'USD';
+  const totalOriginal = Number(order.total_amount ?? 0);
   const { data: inserted, error: insErr } = await supabase.from('orders').insert({
     customer_id: null,
     address_id: null,
@@ -126,6 +131,9 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
     channel: 'ml',
     ml_order_id: mlOrderId,
     ml_pack_id: order.pack_id ? String(order.pack_id) : null,
+    ml_currency: mlCurrency,
+    total_original: totalOriginal,
+    fx_rate: mlCurrency === 'UYU' && usdRate > 0 ? usdRate : 1,
     paid_at: order.date_closed ?? new Date().toISOString(),
   } as any).select('id').single();
   if (insErr || !inserted) {

@@ -119,12 +119,33 @@ export const getSimilarProductsByCategory = async (
     return hideOutOfStockCdrProducts(products);
 };
 
+// Normaliza a minúsculas y sin acentos (igual que la columna search_text en la DB).
+// Así "Micrófono" y "microfono" matchean igual.
+const normalizeSearch = (s: string) =>
+    s
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[̀-ͯ]/g, '')
+        .trim();
+
 export const searchProducts = async (searchTerm: string) => {
-    const { data, error } = await supabase
+    // Búsqueda inteligente: separa en palabras y exige que TODAS aparezcan
+    // (en cualquier orden), sin importar acentos, sobre el nombre + código del
+    // producto (columna generada `search_text`). Ej: "sony auricular" encuentra
+    // "Auriculares Sony WH-1000XM5"; "microfono genius" encuentra "Micrófono Genius".
+    const words = normalizeSearch(searchTerm).split(/\s+/).filter(Boolean);
+    if (words.length === 0) return [];
+
+    let query = supabase
         .from('products')
         .select('*, variants(*), brand:brands(*), category:categories(*)')
-        .eq('active', true)
-        .ilike('name', `%${searchTerm}%`);
+        .eq('active', true);
+
+    for (const word of words) {
+        query = query.ilike('search_text', `%${word}%`);
+    }
+
+    const { data, error } = await query.limit(40);
 
     if (error) {
         console.log(error.message);

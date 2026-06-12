@@ -12,6 +12,26 @@ export const formatPrice = (price: number) => {
 	return `USD ${formatted}`;
 };
 
+// Dinero REAL con 2 decimales, para vistas financieras (ingresos, órdenes,
+// ganancia/margen). A diferencia de formatPrice, NO redondea hacia arriba:
+// refleja exactamente la plata vendida/cobrada. Ej: 514.35 -> "USD 514,35".
+export const formatMoney = (price: number) => {
+	const formatted = new Intl.NumberFormat('es-UY', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(price ?? 0);
+	return `USD ${formatted}`;
+};
+
+// Dinero real en su moneda original. UYU -> "$ 21.460,45"; USD -> "USD 188,95".
+export const formatMoneyCur = (price: number, currency: 'UYU' | 'USD') => {
+	const formatted = new Intl.NumberFormat('es-UY', {
+		minimumFractionDigits: 2,
+		maximumFractionDigits: 2,
+	}).format(price ?? 0);
+	return currency === 'UYU' ? `$ ${formatted}` : `USD ${formatted}`;
+};
+
 /* ====================================================================== */
 /*  PRECIOS: margen por tramo (sobre el costo) + IVA -> precio de venta   */
 /* ====================================================================== */
