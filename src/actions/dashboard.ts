@@ -19,6 +19,9 @@ export interface DashboardOverview {
 	paid_revenue_period: number; // Ingresos reales (pagado)
 	paid_orders_in_period: number;
 	prev_paid_revenue_period: number;
+	paid_cost_period: number; // Costo CDR de lo vendido (pagado)
+	paid_margin_period: number; // Ganancia real = venta - costo CDR
+	prev_paid_margin_period: number;
 	orders_total: number;
 	status_breakdown: StatusBreakdownItem[];
 	concretado_count: number;

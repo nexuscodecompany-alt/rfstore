@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import {
 	HiOutlineBanknotes,
+	HiOutlineCurrencyDollar,
 	HiOutlineClipboardDocumentList,
 	HiOutlineReceiptPercent,
 	HiOutlineArrowTrendingUp,
@@ -219,6 +220,14 @@ export const DashboardHomePage = () => {
 		return (o.concretado_count / o.orders_in_period) * 100;
 	}, [o]);
 
+	// Margen % sobre la venta de lo pagado (ganancia / (ganancia + costo))
+	const marginPct = useMemo(() => {
+		if (!o) return 0;
+		const base = o.paid_margin_period + o.paid_cost_period;
+		if (!base) return 0;
+		return (o.paid_margin_period / base) * 100;
+	}, [o]);
+
 	const applyPreset = (days: number) => {
 		setActivePreset(days);
 		setRange(presetRange(days));
@@ -318,6 +327,17 @@ export const DashboardHomePage = () => {
 							delta={deltaPercent(
 								o.paid_revenue_period,
 								o.prev_paid_revenue_period
+							)}
+							tone='emerald'
+						/>
+						<StatCard
+							icon={<HiOutlineCurrencyDollar size={20} />}
+							label='Ganancia (margen)'
+							value={formatPrice(o.paid_margin_period)}
+							sub={`Costo CDR ${formatPrice(o.paid_cost_period)} · ${marginPct.toFixed(1)}%`}
+							delta={deltaPercent(
+								o.paid_margin_period,
+								o.prev_paid_margin_period
 							)}
 							tone='emerald'
 						/>

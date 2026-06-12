@@ -92,7 +92,8 @@
       "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/ml-process-sync-queue\" -Method Post -ContentType \"application/json\" -Body \"{}\" | ConvertTo-Json)",
       "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-debug-stock?id=MLU694583415\" -Method Get -TimeoutSec 60 | ConvertTo-Json -Depth 8)",
       "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-debug-stock?id=MLU694609143\" -Method Get -TimeoutSec 60 | ConvertTo-Json -Depth 6)",
-      "PowerShell(Out-Null *)"
+      "PowerShell(Out-Null *)",
+      "mcp__ide__getDiagnostics"
     ]
   }
 }
