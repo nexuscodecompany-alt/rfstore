@@ -103,7 +103,9 @@
       "Bash(perl _fix.pl)",
       "Bash(rm _fix.pl)",
       "Bash(awk '/return s\\\\.replace\\\\\\(\\\\/<\\\\[\\\\^>\\\\]/{print NR\": \"$0}' index.ts)",
-      "Bash(grep -o \"replace\\(/\\\\[[^]]*\\\\]/g, ''\\)\")"
+      "Bash(grep -o \"replace\\(/\\\\[[^]]*\\\\]/g, ''\\)\")",
+      "Bash(cat .vercel/project.json)",
+      "Bash(cat vercel.json)"
     ]
   }
 }

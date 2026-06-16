@@ -106,7 +106,7 @@ export const dashboardLinks = [
     },
     {
         id: 7,
-        title: 'Precios',
+        title: 'Márgenes',
         href: '/dashboard/precios',
         icon: <FaPercent size={22} />,
     },

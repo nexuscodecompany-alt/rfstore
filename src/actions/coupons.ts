@@ -56,7 +56,7 @@ export const validateCoupon = async (params: {
 
 // ---------- ABM admin ----------
 export const getCoupons = async (): Promise<Coupon[]> => {
-	const { data, error } = await supabase
+	const { data, error } = await (supabase as any)
 		.from('coupons')
 		.select('*')
 		.order('created_at', { ascending: false });
@@ -65,7 +65,7 @@ export const getCoupons = async (): Promise<Coupon[]> => {
 };
 
 export const createCoupon = async (input: CouponInput): Promise<Coupon> => {
-	const { data, error } = await supabase
+	const { data, error } = await (supabase as any)
 		.from('coupons')
 		.insert({ ...input, code: input.code.trim().toUpperCase() })
 		.select('*')
@@ -77,11 +77,11 @@ export const createCoupon = async (input: CouponInput): Promise<Coupon> => {
 export const updateCoupon = async (id: string, patch: Partial<CouponInput>): Promise<void> => {
 	const clean = { ...patch };
 	if (clean.code) clean.code = clean.code.trim().toUpperCase();
-	const { error } = await supabase.from('coupons').update(clean).eq('id', id);
+	const { error } = await (supabase as any).from('coupons').update(clean).eq('id', id);
 	if (error) throw new Error(error.message);
 };
 
 export const deleteCoupon = async (id: string): Promise<void> => {
-	const { error } = await supabase.from('coupons').delete().eq('id', id);
+	const { error } = await (supabase as any).from('coupons').delete().eq('id', id);
 	if (error) throw new Error(error.message);
 };

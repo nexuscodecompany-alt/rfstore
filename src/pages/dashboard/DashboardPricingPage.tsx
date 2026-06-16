@@ -6,7 +6,7 @@ import { getPricingConfig, updatePricingConfig } from '../../actions/pricing';
 import { DEFAULT_PRICING, PricingConfig, formatPrice, salePrice } from '../../helpers';
 import { Loader } from '../../components/shared/Loader';
 
-export const DashboardPricingPage = () => {
+export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean } = {}) => {
 	const queryClient = useQueryClient();
 	const { data, isLoading } = useQuery({
 		queryKey: ['pricing_config'],
@@ -55,14 +55,16 @@ export const DashboardPricingPage = () => {
 
 	return (
 		<div className='max-w-3xl space-y-6'>
-			<div>
-				<h1 className='text-2xl font-bold text-ink-900'>Precios y márgenes</h1>
-				<p className='text-sm text-ink-500'>
-					El precio que cargás en cada producto es el <b>costo sin IVA</b>. El
-					sistema calcula el precio de venta sumando el margen según el costo y
-					el IVA. Fórmula: <code>costo × (1 + margen) × (1 + IVA)</code>.
-				</p>
-			</div>
+			{!embedded && (
+				<div>
+					<h1 className='text-2xl font-bold text-ink-900'>Precios y márgenes</h1>
+					<p className='text-sm text-ink-500'>
+						El precio que cargás en cada producto es el <b>costo sin IVA</b>. El
+						sistema calcula el precio de venta sumando el margen según el costo y
+						el IVA. Fórmula: <code>costo × (1 + margen) × (1 + IVA)</code>.
+					</p>
+				</div>
+			)}
 
 			{/* IVA */}
 			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft'>

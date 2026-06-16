@@ -29,6 +29,7 @@ export { DashboardPostFormPage } from './dashboard/DashboardPostFormPage';
 export * from './dashboard/DashboardCdrSyncPage';
 export * from './dashboard/DashboardPaymentsPage';
 export * from './dashboard/DashboardPricingPage';
+export * from './dashboard/DashboardMarginsPage';
 export * from './dashboard/DashboardCouponsPage';
 export * from './dashboard/DashboardHomeSectionsPage';
 export * from './dashboard/DashboardLegalPage';

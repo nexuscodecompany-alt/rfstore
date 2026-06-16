@@ -183,29 +183,11 @@ export const getAdminProducts = async (
         .order('created_at', { ascending: false })
         .order('id', { ascending: true });
 
-    // Filtro "En Mercado Libre": productos con una publicación viva (activa o
-    // pausada) en ml_item_mapping. Resolvemos los product_id primero y filtramos
-    // por id para evitar que un inner-join duplique filas y rompa el count.
-    if (mlFilter === 'in' || mlFilter === 'out') {
-        const { data: mlRows } = await supabase
-            .from('ml_item_mapping')
-            .select('product_id')
-            .in('status', ['active', 'paused']);
-        const mlIds = [
-            ...new Set(
-                (mlRows ?? [])
-                    .map((r: { product_id: string | null }) => r.product_id)
-                    .filter(Boolean)
-            ),
-        ] as string[];
-        if (mlFilter === 'in') {
-            if (mlIds.length === 0) return { products: [], count: 0 };
-            query = query.in('id', mlIds);
-        } else if (mlIds.length > 0) {
-            // "out": productos que NO están en ML. Si no hay ninguno en ML, no filtra.
-            query = query.not('id', 'in', `(${mlIds.join(',')})`);
-        }
-    }
+    // Filtro "En Mercado Libre": usa la columna denormalizada products.is_in_ml
+    // (mantenida por trigger sobre ml_item_mapping). Compone bien con búsqueda,
+    // marca, categoría, paginación y count — sin pasar cientos de IDs por la URL.
+    if (mlFilter === 'in') query = query.eq('is_in_ml', true);
+    else if (mlFilter === 'out') query = query.eq('is_in_ml', false);
 
     if (searchTerm.trim()) {
         const ilike = `%${searchTerm.trim()}%`;

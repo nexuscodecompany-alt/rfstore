@@ -174,11 +174,12 @@ export const updateOrderStatus = async ({
 };
 
 export const getOrderByIdAdmin = async (id: number) => {
-	const { data: order, error } = await supabase
+	const { data: order, error } = await (supabase as any)
 		.from('orders')
 		.select(
 			`
 				id, total_amount, status, created_at, channel, ml_order_id,
+				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 				addresses:addresses(*),
 				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images))),
 				customers:customers(full_name, email)
@@ -205,7 +206,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 		id: order.id,
 		channel: (order.channel as 'web' | 'ml' | null) ?? 'web',
 		ml_order_id: (order.ml_order_id as string | null) ?? null,
-		orderItems: order.order_items.map(item => ({
+		orderItems: (order.order_items as any[]).map((item: any) => ({
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',
 			price: item.price,
@@ -215,6 +216,9 @@ export const getOrderByIdAdmin = async (id: number) => {
 			storage: item.variants ? item.variants.storage : '',
 		})),
 		totalAmount: order.total_amount,
+		mlCommissionUsd: Number((order as { ml_commission_usd?: number }).ml_commission_usd ?? 0),
+		mlShippingCostUsd: Number((order as { ml_shipping_cost_usd?: number }).ml_shipping_cost_usd ?? 0),
+		mlOtherCostsUsd: Number((order as { ml_other_costs_usd?: number }).ml_other_costs_usd ?? 0),
 		status: order.status,
 		created_at: order.created_at,
 		address: addr
@@ -232,4 +236,20 @@ export const getOrderByIdAdmin = async (id: number) => {
 			email: order.customers?.email || '',
 		},
 	};
+};
+
+// Costos/comisiones de ML cargados a mano por orden (USD), para la ganancia real.
+export const updateOrderMlCosts = async (
+	orderId: number,
+	costs: { commission: number; shipping: number; other: number }
+): Promise<void> => {
+	const { error } = await (supabase as any)
+		.from('orders')
+		.update({
+			ml_commission_usd: costs.commission,
+			ml_shipping_cost_usd: costs.shipping,
+			ml_other_costs_usd: costs.other,
+		})
+		.eq('id', orderId);
+	if (error) throw new Error(error.message);
 };

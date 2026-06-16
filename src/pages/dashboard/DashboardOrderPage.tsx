@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { IoChevronBack } from 'react-icons/io5';
 import { HiOutlineMapPin, HiOutlineUser } from 'react-icons/hi2';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useOrderAdmin } from '../../hooks';
+import { updateOrderMlCosts } from '../../actions';
 import { Loader } from '../../components/shared/Loader';
 import { formatPrice, formatDateTime, orderStatusBadge } from '../../helpers';
 
@@ -10,6 +14,28 @@ export const DashboardOrderPage = () => {
 	const { id } = useParams<{ id: string }>();
 
 	const { data: order, isLoading, isError } = useOrderAdmin(Number(id));
+	const queryClient = useQueryClient();
+
+	// Costos/comisiones de ML cargados a mano (USD) para la ganancia real.
+	const [commission, setCommission] = useState(0);
+	const [shipping, setShipping] = useState(0);
+	const [other, setOther] = useState(0);
+	useEffect(() => {
+		if (order) {
+			setCommission(order.mlCommissionUsd);
+			setShipping(order.mlShippingCostUsd);
+			setOther(order.mlOtherCostsUsd);
+		}
+	}, [order]);
+
+	const { mutate: saveCosts, isPending: savingCosts } = useMutation({
+		mutationFn: () => updateOrderMlCosts(Number(id), { commission, shipping, other }),
+		onSuccess: () => {
+			toast.success('Costos guardados');
+			queryClient.invalidateQueries({ queryKey: ['order', 'admin', Number(id)] });
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
 
 	if (isLoading) return <Loader />;
 
@@ -45,6 +71,8 @@ export const DashboardOrderPage = () => {
 	);
 	const margin = itemsRevenue - totalCost;
 	const marginPct = totalCost > 0 ? (margin / totalCost) * 100 : null;
+	const mlCostsTotal = commission + shipping + other;
+	const realProfit = margin - mlCostsTotal;
 
 	return (
 		<div className='space-y-6'>
@@ -157,21 +185,47 @@ export const DashboardOrderPage = () => {
 								<span>Total</span>
 								<span>{formatPrice(order.totalAmount)}</span>
 							</div>
-							{hasCost && (
-								<div className='mt-2 space-y-1.5 border-t border-ink-100 pt-3'>
-									<div className='flex justify-between text-ink-500'>
-										<span>Costo CDR</span>
-										<span>{formatPrice(totalCost)}</span>
-									</div>
-									<div className='flex justify-between font-semibold text-emerald-700'>
-										<span>Ganancia</span>
-										<span>
-											{formatPrice(margin)}
-											{marginPct != null && ` (${Math.round(marginPct)}%)`}
-										</span>
-									</div>
+							<div className='mt-2 space-y-1.5 border-t border-ink-100 pt-3'>
+								{hasCost && (
+									<>
+										<div className='flex justify-between text-ink-500'>
+											<span>Costo CDR</span>
+											<span>{formatPrice(totalCost)}</span>
+										</div>
+										<div className='flex justify-between text-ink-600'>
+											<span>Ganancia bruta</span>
+											<span>
+												{formatPrice(margin)}
+												{marginPct != null && ` (${Math.round(marginPct)}%)`}
+											</span>
+										</div>
+									</>
+								)}
+
+								{/* Costos/comisiones de Mercado Libre (cargados a mano) */}
+								<div className='mt-2 space-y-2 border-t border-ink-100 pt-3'>
+									<p className='text-xs font-semibold uppercase tracking-wider text-ink-500'>
+										Costos Mercado Libre (USD)
+									</p>
+									<CostInput label='Comisión ML' value={commission} onChange={setCommission} />
+									<CostInput label='Envío (Mercado Envíos)' value={shipping} onChange={setShipping} />
+									<CostInput label='Otros costos' value={other} onChange={setOther} />
+									<button
+										onClick={() => saveCosts()}
+										disabled={savingCosts}
+										className='w-full rounded-md bg-stone-800 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50'
+									>
+										{savingCosts ? 'Guardando…' : 'Guardar costos'}
+									</button>
 								</div>
-							)}
+
+								{hasCost && (
+									<div className='mt-2 flex justify-between border-t border-ink-100 pt-3 text-base font-bold text-emerald-700'>
+										<span>Ganancia real</span>
+										<span>{formatPrice(realProfit)}</span>
+									</div>
+								)}
+							</div>
 						</div>
 					</div>
 
@@ -232,3 +286,18 @@ export const DashboardOrderPage = () => {
 		</div>
 	);
 };
+
+const CostInput = ({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) => (
+	<div className='flex items-center justify-between gap-2'>
+		<span className='text-sm text-ink-600'>{label}</span>
+		<div className='flex items-center gap-1'>
+			<span className='text-xs text-ink-400'>USD</span>
+			<input
+				type='number'
+				value={value}
+				onChange={e => onChange(Number(e.target.value) || 0)}
+				className='w-24 rounded border border-ink-200 px-2 py-1 text-sm text-right'
+			/>
+		</div>
+	</div>
+);
