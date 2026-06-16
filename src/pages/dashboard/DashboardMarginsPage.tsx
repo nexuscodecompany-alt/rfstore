@@ -7,12 +7,10 @@ import { getMlPricingConfig } from '../../actions/ml-pricing';
 import {
 	salePrice,
 	formatPrice,
-	formatPriceCurrency,
-	mlPriceFromConfig,
+	mlMarginFor,
 	DEFAULT_PRICING,
 	DEFAULT_ML_PRICING,
 } from '../../helpers';
-import { useUsdUyuRate } from '../../hooks';
 
 export const DashboardMarginsPage = () => {
 	const [tab, setTab] = useState<'rf' | 'ml'>('rf');
@@ -20,12 +18,14 @@ export const DashboardMarginsPage = () => {
 
 	const { data: rfCfg } = useQuery({ queryKey: ['pricing_config'], queryFn: getPricingConfig });
 	const { data: mlCfg } = useQuery({ queryKey: ['ml_pricing_config'], queryFn: getMlPricingConfig });
-	const { data: rate } = useUsdUyuRate();
-	const fx = rate?.rate ?? 40;
 
 	const c = Number(cost) || 0;
 	const rf = salePrice(c, rfCfg ?? DEFAULT_PRICING);
-	const ml = mlPriceFromConfig(c, fx, null, null, mlCfg ?? DEFAULT_ML_PRICING);
+	// Precio ML en USD (para comparar contra RF en la misma moneda), aunque el
+	// listing real vaya en pesos: costo × (1 + margen) × (1 + IVA).
+	const mlCfgEff = mlCfg ?? DEFAULT_ML_PRICING;
+	const mlMarginPct = mlMarginFor(c, null, null, mlCfgEff);
+	const mlUsd = c > 0 ? c * (1 + mlMarginPct / 100) * (1 + mlCfgEff.iva_percent / 100) : 0;
 
 	const tabCls = (active: boolean) =>
 		`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${
@@ -58,11 +58,11 @@ export const DashboardMarginsPage = () => {
 						Precio RF (web): <span className='text-lg font-bold text-emerald-700'>{formatPrice(rf)}</span>
 					</div>
 					<div className='text-sm text-ink-600'>
-						Precio ML: <span className='text-lg font-bold text-blue-700'>{formatPriceCurrency(ml.price, ml.currency)}</span>
+						Precio ML: <span className='text-lg font-bold text-blue-700'>{formatPrice(mlUsd)}</span>
 					</div>
 				</div>
 				<p className='text-[11px] text-ink-400 mt-2'>
-					Mismo costo, márgenes distintos en cada canal. El de ML usa el tramo base (sin override de categoría).
+					Mismo costo, márgenes distintos en cada canal. Ambos en USD para comparar (en ML el listing puede ir en pesos al BCU). El de ML usa el tramo base (sin override de categoría).
 				</p>
 			</div>
 

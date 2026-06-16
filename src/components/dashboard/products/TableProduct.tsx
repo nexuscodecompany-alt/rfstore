@@ -12,11 +12,10 @@ import {
 } from '../../../hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Loader } from '../../shared/Loader';
-import { formatDate, formatPrice, salePrice, mlPriceFromConfig, formatPriceCurrency, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
+import { formatDate, formatPrice, salePrice, mlMarginFor, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
 import { getMlPricingConfig } from '../../../actions/ml-pricing';
 import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
-import { useUsdUyuRate } from '../../../hooks/settings/useUsdUyuRate';
 
 const tableHeaders = [
   '',
@@ -62,8 +61,6 @@ export const TableProduct = () => {
   }, [searchParams]);
 
   const { brands, categories } = useTaxonomiesAdmin();
-  const { data: rateData } = useUsdUyuRate();
-  const fxRate = rateData?.rate ?? 40;
   const { data: mlPricingCfg } = useQuery({
     queryKey: ['ml_pricing_config'],
     queryFn: getMlPricingConfig,
@@ -367,7 +364,7 @@ export const TableProduct = () => {
                       </span>
                     )}
                   </td>
-                  <PriceCellsForProduct product={product} fxRate={fxRate} mlCfg={mlCfg} />
+                  <PriceCellsForProduct product={product} mlCfg={mlCfg} />
                   <CellTableProduct
                     content={(selectedVariant.stock || 0).toString()}
                   />
@@ -453,13 +450,15 @@ export const TableProduct = () => {
 
 interface PriceCellsProps {
   product: { price_usd?: number | null; category_id?: string | null; subcategory_id?: string | null };
-  fxRate: number;
   mlCfg: MlPricingConfig;
 }
-const PriceCellsForProduct = ({ product, fxRate, mlCfg }: PriceCellsProps) => {
+const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
   const cost = Number(product.price_usd ?? 0);
   const web = salePrice(cost);
-  const ml = mlPriceFromConfig(cost, fxRate, product.category_id ?? null, product.subcategory_id ?? null, mlCfg);
+  // Precio ML en USD (mismo criterio que la web), aunque el listing real pueda ir
+  // en pesos al BCU: costo × (1 + margen) × (1 + IVA).
+  const mlMarginPct = mlMarginFor(cost, product.category_id ?? null, product.subcategory_id ?? null, mlCfg);
+  const mlUsd = cost > 0 ? cost * (1 + mlMarginPct / 100) * (1 + mlCfg.iva_percent / 100) : 0;
   return (
     <>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter'>
@@ -469,7 +468,7 @@ const PriceCellsForProduct = ({ product, fxRate, mlCfg }: PriceCellsProps) => {
         {cost > 0 ? formatPrice(web) : '—'}
       </td>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter text-blue-700'>
-        {cost > 0 ? formatPriceCurrency(ml.price, ml.currency) : '—'}
+        {cost > 0 ? formatPrice(mlUsd) : '—'}
       </td>
     </>
   );
