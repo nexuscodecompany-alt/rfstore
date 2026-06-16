@@ -9,6 +9,7 @@ import {
 	type CartItemForMP,
 } from '../../actions';
 import { useUser, useUsdUyuRate } from '../../hooks';
+import { validateCoupon, type CouponValidation } from '../../actions/coupons';
 import {
 	ShippingZoneSelector,
 	ShippingSelection,
@@ -75,8 +76,46 @@ export const CdrCheckoutForm = () => {
 	const qualifiesForFreeMvd =
 		shipping.zone === 'montevideo' && totalAmount >= FREE_SHIPPING_MIN_USD;
 	const shippingCostUsd = qualifiesForFreeMvd ? 0 : shipping.cost_usd;
-	const grandTotalUsd = totalAmount + shippingCostUsd;
+
+	// --- Cupón ---
+	const [couponInput, setCouponInput] = useState('');
+	const [coupon, setCoupon] = useState<CouponValidation | null>(null);
+	const [couponMsg, setCouponMsg] = useState<string | null>(null);
+	const [applyingCoupon, setApplyingCoupon] = useState(false);
+
+	const couponFreeShipping = coupon?.valid && coupon.free_shipping === true;
+	const effectiveShippingUsd = couponFreeShipping ? 0 : shippingCostUsd;
+	const discountUsd = coupon?.valid ? Number(coupon.discount_usd ?? 0) : 0;
+	const grandTotalUsd = Math.max(0, totalAmount + effectiveShippingUsd - discountUsd);
 	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
+
+	const applyCoupon = async () => {
+		const code = couponInput.trim();
+		if (!code) return;
+		setApplyingCoupon(true);
+		setCouponMsg(null);
+		try {
+			const res = await validateCoupon({
+				code,
+				items: cartItems.map(i => ({ variant_id: i.variantId, price: i.price, quantity: i.quantity })),
+				subtotal: totalAmount,
+				shipping: shippingCostUsd,
+			});
+			if (res.valid) {
+				setCoupon(res);
+				setCouponMsg(null);
+			} else {
+				setCoupon(null);
+				setCouponMsg(res.reason ?? 'Cupón inválido');
+			}
+		} catch (e) {
+			setCoupon(null);
+			setCouponMsg((e as Error).message);
+		} finally {
+			setApplyingCoupon(false);
+		}
+	};
+	const removeCoupon = () => { setCoupon(null); setCouponInput(''); setCouponMsg(null); };
 
 	// Sincronizamos el label con el resumen lateral.
 	const setShippingLabel = useCheckoutShippingStore(s => s.setShippingLabel);
@@ -278,6 +317,7 @@ export const CdrCheckoutForm = () => {
 					shipping_barrio: shipping.barrio ?? undefined,
 					shipping_department: shipping.department ?? undefined,
 					shipping_cost_usd: shippingCostUsd,
+					coupon_code: coupon?.valid ? coupon.code : undefined,
 				});
 				// NO limpiamos el carrito acá. Si limpiáramos antes del redirect,
 				// la CheckoutPage re-renderizaría mostrando "carrito vacío" por una
@@ -310,6 +350,7 @@ export const CdrCheckoutForm = () => {
 				p_shipping_barrio: shipping.barrio,
 				p_shipping_department: shipping.department,
 				p_shipping_cost_usd: shipping.cost_usd,
+					p_coupon_code: coupon?.valid ? coupon.code : null,
 			});
 			if (rpcErr) throw new Error(rpcErr.message);
 			const orderId = orderIdData as number;
@@ -544,6 +585,41 @@ export const CdrCheckoutForm = () => {
 				<ItemsCheckout />
 			</div>
 
+{/* Cupon de descuento */}
+				<div className='border-t border-ink-200 pt-3'>
+					{!coupon?.valid ? (
+						<div className='flex flex-col gap-1'>
+							<label className='text-sm font-medium text-ink-700'>¿Tenés un código de descuento?</label>
+							<div className='flex gap-2'>
+								<input
+									className='border rounded p-2 flex-1 uppercase'
+									placeholder='Ingresá tu código'
+									value={couponInput}
+									onChange={e => setCouponInput(e.target.value.toUpperCase())}
+									onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); applyCoupon(); } }}
+								/>
+								<button
+									type='button'
+									onClick={applyCoupon}
+									disabled={applyingCoupon || !couponInput.trim()}
+									className='px-4 py-2 bg-stone-800 text-white rounded-md text-sm disabled:opacity-50'
+								>
+									{applyingCoupon ? '...' : 'Aplicar'}
+								</button>
+							</div>
+							{couponMsg && <p className='text-xs text-rose-600'>{couponMsg}</p>}
+						</div>
+					) : (
+						<div className='flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-md p-2.5'>
+							<p className='text-sm text-emerald-800'>
+								Cupón <b>{coupon.code}</b> aplicado
+								{couponFreeShipping ? ' — envío gratis' : discountUsd > 0 ? ` — ${formatPrice(discountUsd)} off` : ''}
+							</p>
+							<button type='button' onClick={removeCoupon} className='text-xs font-semibold text-rose-600 hover:text-rose-800'>Quitar</button>
+						</div>
+					)}
+				</div>
+
 			<div className='space-y-1 border-t border-ink-200 pt-3'>
 				<div className='flex items-center justify-between text-sm text-ink-600'>
 					<span>Subtotal</span>
@@ -569,6 +645,18 @@ export const CdrCheckoutForm = () => {
 						obtener envío gratis dentro de Montevideo.
 					</p>
 				)}
+{discountUsd > 0 && (
+						<div className='flex items-center justify-between text-sm text-emerald-700'>
+							<span>Descuento ({coupon?.code})</span>
+							<span>- {formatPrice(discountUsd)}</span>
+						</div>
+					)}
+					{couponFreeShipping && (
+						<div className='flex items-center justify-between text-sm text-emerald-700'>
+							<span>Envío (cupón {coupon?.code})</span>
+							<span>Gratis</span>
+						</div>
+					)}
 				<div className='flex items-center justify-between gap-3 pt-2 border-t border-ink-100'>
 					<p className='text-sm font-semibold text-gray-700'>Total a pagar</p>
 					<div className='text-right'>

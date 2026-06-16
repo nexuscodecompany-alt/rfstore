@@ -98,6 +98,60 @@ export const mlPrice = (
 	return { price: Math.round(withMarkupIva * fxRate), currency: 'UYU' };
 };
 
+/* ====================================================================== */
+/*  PRECIOS ML: reglas configurables (tramos por costo + override por      */
+/*  categoría/subcategoría). El IVA y la regla USD/UYU se mantienen.        */
+/*  Debe coincidir con la resolución de margen en la edge ml-publish-item. */
+/* ====================================================================== */
+export interface MlPricingConfig {
+	iva_percent: number;
+	usd_threshold: number; // si el costo USD supera esto, el precio ML va en USD; sino UYU al BCU
+	tiers: PricingTier[]; // margen por tramo de costo (fallback)
+	category_overrides: Record<string, number>; // category_id -> margen %
+	subcategory_overrides: Record<string, number>; // subcategory_id -> margen %
+}
+
+// Default = comportamiento histórico (margen plano 30% + IVA 22% + umbral USD 100).
+export const DEFAULT_ML_PRICING: MlPricingConfig = {
+	iva_percent: 22,
+	usd_threshold: 100,
+	tiers: [{ max: null, pct: 30 }],
+	category_overrides: {},
+	subcategory_overrides: {},
+};
+
+// Margen ML (%) para un producto. Precedencia: subcategoría > categoría > tramo por costo.
+export const mlMarginFor = (
+	cost: number,
+	categoryId: string | null | undefined,
+	subcategoryId: string | null | undefined,
+	cfg: MlPricingConfig
+): number => {
+	if (subcategoryId && cfg.subcategory_overrides && cfg.subcategory_overrides[subcategoryId] != null) {
+		return Number(cfg.subcategory_overrides[subcategoryId]);
+	}
+	if (categoryId && cfg.category_overrides && cfg.category_overrides[categoryId] != null) {
+		return Number(cfg.category_overrides[categoryId]);
+	}
+	return marginForCost(cost, { iva_percent: cfg.iva_percent, tiers: cfg.tiers });
+};
+
+// Precio ML usando las reglas configurables. Misma regla USD/UYU por umbral que mlPrice.
+export const mlPriceFromConfig = (
+	costUsd: number | null | undefined,
+	fxRate: number,
+	categoryId: string | null | undefined,
+	subcategoryId: string | null | undefined,
+	cfg: MlPricingConfig
+): MlPriceResult => {
+	const cost = Number(costUsd ?? 0);
+	if (!cost || cost <= 0 || !fxRate || fxRate <= 0) return { price: 0, currency: 'UYU' };
+	const markup = mlMarginFor(cost, categoryId, subcategoryId, cfg);
+	const withMarkupIva = cost * (1 + markup / 100) * (1 + cfg.iva_percent / 100);
+	if (cost > cfg.usd_threshold) return { price: Math.round(withMarkupIva * 100) / 100, currency: 'USD' };
+	return { price: Math.round(withMarkupIva * fxRate), currency: 'UYU' };
+};
+
 export const formatPriceCurrency = (price: number, currency: 'USD' | 'UYU'): string => {
 	if (currency === 'UYU') {
 		return `$ ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(price)}`;

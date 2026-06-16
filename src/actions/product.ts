@@ -168,7 +168,8 @@ export const getAdminProducts = async (
     categoryId = '',
     source: '' | 'local' | 'cdr' = '',
     activeFilter: '' | 'active' | 'inactive' = '',
-    newOnly = false
+    newOnly = false,
+    mlFilter: '' | 'in' | 'out' = ''
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
@@ -181,6 +182,30 @@ export const getAdminProducts = async (
         })
         .order('created_at', { ascending: false })
         .order('id', { ascending: true });
+
+    // Filtro "En Mercado Libre": productos con una publicación viva (activa o
+    // pausada) en ml_item_mapping. Resolvemos los product_id primero y filtramos
+    // por id para evitar que un inner-join duplique filas y rompa el count.
+    if (mlFilter === 'in' || mlFilter === 'out') {
+        const { data: mlRows } = await supabase
+            .from('ml_item_mapping')
+            .select('product_id')
+            .in('status', ['active', 'paused']);
+        const mlIds = [
+            ...new Set(
+                (mlRows ?? [])
+                    .map((r: { product_id: string | null }) => r.product_id)
+                    .filter(Boolean)
+            ),
+        ] as string[];
+        if (mlFilter === 'in') {
+            if (mlIds.length === 0) return { products: [], count: 0 };
+            query = query.in('id', mlIds);
+        } else if (mlIds.length > 0) {
+            // "out": productos que NO están en ML. Si no hay ninguno en ML, no filtra.
+            query = query.not('id', 'in', `(${mlIds.join(',')})`);
+        }
+    }
 
     if (searchTerm.trim()) {
         const ilike = `%${searchTerm.trim()}%`;

@@ -26,6 +26,7 @@ import {
     DashboardPaymentsPage,
     DashboardHomePage,
     DashboardPricingPage,
+    DashboardCouponsPage,
     DashboardHomeSectionsPage,
     DashboardLegalPage,
     DashboardShippingPage,
@@ -174,6 +175,10 @@ export const router = createBrowserRouter([
             {
                 path: 'precios',
                 element: <DashboardPricingPage />,
+            },
+            {
+                path: 'cupones',
+                element: <DashboardCouponsPage />,
             },
             {
                 path: 'vitrina',

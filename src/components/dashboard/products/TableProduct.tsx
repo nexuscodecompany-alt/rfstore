@@ -10,8 +10,10 @@ import {
   useSetProductActive,
   useTaxonomiesAdmin,
 } from '../../../hooks';
+import { useQuery } from '@tanstack/react-query';
 import { Loader } from '../../shared/Loader';
-import { formatDate, formatPrice, salePrice, mlPrice, formatPriceCurrency } from '../../../helpers';
+import { formatDate, formatPrice, salePrice, mlPriceFromConfig, formatPriceCurrency, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
+import { getMlPricingConfig } from '../../../actions/ml-pricing';
 import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
 import { useUsdUyuRate } from '../../../hooks/settings/useUsdUyuRate';
@@ -46,6 +48,9 @@ export const TableProduct = () => {
     (searchParams.get('estado') as '' | 'active' | 'inactive') || ''
   );
   const [newOnly, setNewOnly] = useState<boolean>(searchParams.get('nuevos') === '1');
+  const [mlFilter, setMlFilter] = useState<'' | 'in' | 'out'>(
+    (searchParams.get('ml') as '' | 'in' | 'out') || ''
+  );
 
   // Si vienen filtros por query string (ej desde /dashboard/cdr), persistirlos en estado
   useEffect(() => {
@@ -59,6 +64,11 @@ export const TableProduct = () => {
   const { brands, categories } = useTaxonomiesAdmin();
   const { data: rateData } = useUsdUyuRate();
   const fxRate = rateData?.rate ?? 40;
+  const { data: mlPricingCfg } = useQuery({
+    queryKey: ['ml_pricing_config'],
+    queryFn: getMlPricingConfig,
+  });
+  const mlCfg = mlPricingCfg ?? DEFAULT_ML_PRICING;
   const newCount = useNewProductsCount();
   const { mutate: markSeen, isPending: markingSeen } = useMarkProductsSeen();
 
@@ -80,7 +90,8 @@ export const TableProduct = () => {
     categoryFilter,
     sourceFilter,
     activeFilter,
-    newOnly
+    newOnly,
+    mlFilter
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -193,7 +204,20 @@ export const TableProduct = () => {
             <option value="inactive">Solo inactivos (pendientes)</option>
           </select>
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly) && (
+          <select
+            value={mlFilter}
+            onChange={(e) => {
+              setMlFilter(e.target.value as '' | 'in' | 'out');
+              setPage(1);
+            }}
+            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+          >
+            <option value="">ML: todos</option>
+            <option value="in">En Mercado Libre</option>
+            <option value="out">No publicados en ML</option>
+          </select>
+
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter) && (
             <button
               type="button"
               onClick={() => {
@@ -202,6 +226,7 @@ export const TableProduct = () => {
                 setSourceFilter('');
                 setActiveFilter('');
                 setNewOnly(false);
+                setMlFilter('');
                 setSearchParams({}, { replace: true });
                 setPage(1);
               }}
@@ -342,7 +367,7 @@ export const TableProduct = () => {
                       </span>
                     )}
                   </td>
-                  <PriceCellsForProduct product={product} fxRate={fxRate} />
+                  <PriceCellsForProduct product={product} fxRate={fxRate} mlCfg={mlCfg} />
                   <CellTableProduct
                     content={(selectedVariant.stock || 0).toString()}
                   />
@@ -427,13 +452,14 @@ export const TableProduct = () => {
 };
 
 interface PriceCellsProps {
-  product: { price_usd?: number | null; markup_percent?: number | null };
+  product: { price_usd?: number | null; category_id?: string | null; subcategory_id?: string | null };
   fxRate: number;
+  mlCfg: MlPricingConfig;
 }
-const PriceCellsForProduct = ({ product, fxRate }: PriceCellsProps) => {
+const PriceCellsForProduct = ({ product, fxRate, mlCfg }: PriceCellsProps) => {
   const cost = Number(product.price_usd ?? 0);
   const web = salePrice(cost);
-  const ml = mlPrice(cost, fxRate);
+  const ml = mlPriceFromConfig(cost, fxRate, product.category_id ?? null, product.subcategory_id ?? null, mlCfg);
   return (
     <>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter'>

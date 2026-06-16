@@ -94,6 +94,7 @@ export const createMpPreference = (payload: {
 	shipping_barrio?: string;
 	shipping_department?: string;
 	shipping_cost_usd?: number;
+	coupon_code?: string;
 }) => invokeFn<CreatePreferenceResult>('mp-create-preference', payload);
 
 export const confirmManualPayment = (orderId: number, action: 'approve' | 'reject') =>

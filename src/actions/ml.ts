@@ -170,6 +170,21 @@ export interface DryRunResult {
 export const publishMlItem = (product_id: string, variant_id: string, dry_run = false) =>
 	invokeMlFn<PublishResult | DryRunResult>('ml-publish-item', { product_id, variant_id, dry_run });
 
+export interface RepriceResult {
+	ok: boolean;
+	active?: number;
+	enqueued?: number;
+	would_enqueue?: number;
+	skippedSamePrice?: number;
+	dry_run?: boolean;
+	error?: string;
+}
+
+// Recalcula el precio de TODAS las publicaciones activas según ml_pricing_config
+// y las encola para empujar a ML (la cola procesa ~20/min). dry_run no encola.
+export const repriceActiveMl = (dry_run = false) =>
+	invokeMlFn<RepriceResult>('ml-reprice-active', { dry_run });
+
 export interface PublishableProduct {
 	id: string;
 	name: string;

@@ -94,7 +94,16 @@
       "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-debug-stock?id=MLU694609143\" -Method Get -TimeoutSec 60 | ConvertTo-Json -Depth 6)",
       "PowerShell(Out-Null *)",
       "mcp__ide__getDiagnostics",
-      "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-debug-stock\" -Method Get -TimeoutSec 90 | ConvertTo-Json -Depth 6)"
+      "PowerShell(Invoke-RestMethod -Uri \"https://bwjptocnkqedakdibosu.supabase.co/functions/v1/cdr-debug-stock\" -Method Get -TimeoutSec 90 | ConvertTo-Json -Depth 6)",
+      "Bash(perl -0pi -e 's/\\(p_shipping_cost_usd: shipping\\\\.cost_usd,\\\\n\\)\\(\\\\s*\\\\}\\\\\\);\\)/$1\\\\t\\\\t\\\\t\\\\t\\\\tp_coupon_code: coupon?.valid ? coupon.code : null,\\\\n$2/' src/components/checkout/CdrCheckoutForm.tsx)",
+      "Bash(perl -0pi -e 'BEGIN{open\\(F,\"_fragA.txt\"\\);local $/;$f=<F>;close F} s/\\(\\\\t*<div className=\\\\x27space-y-1 border-t border-ink-200 pt-3\\\\x27>\\)/$f$1/' CdrCheckoutForm.tsx)",
+      "Bash(perl -0pi -e 'BEGIN{open\\(F,\"_fragB.txt\"\\);local $/;$f=<F>;close F} s/\\(\\\\t*<div className=\\\\x27flex items-center justify-between gap-3 pt-2 border-t border-ink-100\\\\x27>\\)/$f$1/' CdrCheckoutForm.tsx)",
+      "Bash(rm _fragA.txt _fragB.txt)",
+      "Bash(perl -0pi -e \"s/\\\\.replace\\\\\\(\\\\/\\\\[[^\\\\]]*\\\\]\\\\/g, ''\\\\\\)\\\\.replace\\\\\\(\\\\/\\\\\\\\\\\\\\\\r/.replace\\(\\\\/[\\\\\\\\\\\\\\\\u0000-\\\\\\\\\\\\\\\\u0008\\\\\\\\\\\\\\\\u000b-\\\\\\\\\\\\\\\\u001f-]\\\\/g, ''\\).replace\\(\\\\/\\\\\\\\\\\\\\\\r/\" index.ts)",
+      "Bash(perl _fix.pl)",
+      "Bash(rm _fix.pl)",
+      "Bash(awk '/return s\\\\.replace\\\\\\(\\\\/<\\\\[\\\\^>\\\\]/{print NR\": \"$0}' index.ts)",
+      "Bash(grep -o \"replace\\(/\\\\[[^]]*\\\\]/g, ''\\)\")"
     ]
   }
 }
