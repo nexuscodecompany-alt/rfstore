@@ -6,6 +6,13 @@ export const ItemsCheckout = () => {
 	const cartItems = useCartStore(state => state.items);
 	const totalAmount = useCartStore(state => state.totalAmount);
 	const shippingLabel = useCheckoutShippingStore(s => s.shippingLabel);
+	const discountUsd = useCheckoutShippingStore(s => s.discountUsd);
+	const couponCode = useCheckoutShippingStore(s => s.couponCode);
+	const grandTotalUsd = useCheckoutShippingStore(s => s.grandTotalUsd);
+
+	// Total real a pagar: lo calcula el formulario (subtotal + envío - descuento).
+	// Si todavía no se calculó (flujo cotización), caemos al subtotal del carrito.
+	const total = grandTotalUsd ?? totalAmount;
 
 	return (
 		<div>
@@ -38,14 +45,24 @@ export const ItemsCheckout = () => {
 				))}
 			</ul>
 
-			<div className='mt-4 p-7 space-y-5'>
-				<div className='flex justify-between'>
-					<p className='text-sm font-medium'>Envío</p>
-					<p className='text-sm font-medium uppercase'>{shippingLabel}</p>
-				</div>
-				<div className='flex justify-between font-semibold text-lg'>
-					<p>Total:</p>
+			<div className='mt-4 p-7 space-y-3'>
+				<div className='flex justify-between text-sm text-gray-600'>
+					<p>Subtotal</p>
 					<p>{formatPrice(totalAmount)}</p>
+				</div>
+				<div className='flex justify-between text-sm text-gray-600'>
+					<p>Envío</p>
+					<p className='uppercase'>{shippingLabel}</p>
+				</div>
+				{discountUsd > 0 && (
+					<div className='flex justify-between text-sm text-emerald-700'>
+						<p>Descuento{couponCode ? ` (${couponCode})` : ''}</p>
+						<p>- {formatPrice(discountUsd)}</p>
+					</div>
+				)}
+				<div className='flex justify-between font-semibold text-lg border-t border-gray-200 pt-3'>
+					<p>Total:</p>
+					<p>{formatPrice(total)}</p>
 				</div>
 			</div>
 		</div>

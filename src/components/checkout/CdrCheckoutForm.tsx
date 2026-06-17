@@ -119,7 +119,19 @@ export const CdrCheckoutForm = () => {
 
 	// Sincronizamos el label con el resumen lateral.
 	const setShippingLabel = useCheckoutShippingStore(s => s.setShippingLabel);
+	const setSummary = useCheckoutShippingStore(s => s.setSummary);
 	const resetShippingLabel = useCheckoutShippingStore(s => s.reset);
+
+	// Empujamos el desglose real (envío, descuento, total) al resumen lateral para
+	// que ItemsCheckout muestre exactamente lo que se va a cobrar.
+	useEffect(() => {
+		setSummary({
+			shippingUsd: effectiveShippingUsd,
+			discountUsd,
+			couponCode: coupon?.valid ? coupon.code ?? null : null,
+			grandTotalUsd,
+		});
+	}, [setSummary, effectiveShippingUsd, discountUsd, coupon, grandTotalUsd]);
 	useEffect(() => {
 		let label = 'A coordinar';
 		if (shipping.zone === 'montevideo') {
