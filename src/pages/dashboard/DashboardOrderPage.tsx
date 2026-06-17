@@ -13,6 +13,11 @@ import { formatPriceCurrency, formatDateTime, orderStatusBadge } from '../../hel
 const orderFx = (o: { channel?: string | null; mlCurrency?: string | null; fxRate?: number }) =>
 	o.channel === 'ml' && o.mlCurrency === 'UYU' && (o.fxRate ?? 0) > 0 ? (o.fxRate as number) : 1;
 
+// El costo CDR se compra CON IVA (22%): el precio CDR que vemos es sin IVA y RF
+// paga el IVA al comprar. La ganancia real usa costo × 1.22.
+const CDR_IVA_FACTOR = 1.22;
+const costWithIva = (cost: number) => cost * CDR_IVA_FACTOR;
+
 export const DashboardOrderPage = () => {
 	const navigate = useNavigate();
 	const { id } = useParams<{ id: string }>();
@@ -88,7 +93,7 @@ export const DashboardOrderPage = () => {
 	);
 	const hasCost = order.orderItems.some(i => i.cost != null);
 	const totalCost = order.orderItems.reduce(
-		(s, i) => s + (i.cost ?? 0) * i.quantity,
+		(s, i) => s + costWithIva(i.cost ?? 0) * i.quantity,
 		0
 	);
 	const margin = itemsRevenue - totalCost;
@@ -177,10 +182,10 @@ export const DashboardOrderPage = () => {
 										</p>
 										{item.cost != null && (
 											<p className='mt-0.5 text-xs text-emerald-700'>
-												Costo CDR {money(item.cost)} · Margen{' '}
-												{money((item.price - item.cost) * item.quantity)}
+												Costo CDR c/IVA {money(costWithIva(item.cost))} · Margen{' '}
+												{money((item.price - costWithIva(item.cost)) * item.quantity)}
 												{item.cost > 0 &&
-													` (${Math.round(((item.price - item.cost) / item.cost) * 100)}%)`}
+													` (${Math.round(((item.price - costWithIva(item.cost)) / costWithIva(item.cost)) * 100)}%)`}
 											</p>
 										)}
 									</div>
@@ -214,7 +219,7 @@ export const DashboardOrderPage = () => {
 								{hasCost && (
 									<>
 										<div className='flex justify-between text-ink-500'>
-											<span>Costo CDR</span>
+											<span>Costo CDR c/IVA</span>
 											<span>{money(totalCost)}</span>
 										</div>
 										<div className='flex justify-between text-ink-600'>

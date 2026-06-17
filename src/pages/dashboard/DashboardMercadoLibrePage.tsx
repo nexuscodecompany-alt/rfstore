@@ -12,6 +12,7 @@ import {
 	listMlUnlinkedItems,
 	searchRfProductsUnlinked,
 	linkMlItemToProduct,
+	autolinkMlByName,
 	type MlPublishedItem,
 	type MlUnlinkedItem,
 	type RfProductCandidate,
@@ -175,6 +176,18 @@ const LinkExistingMlSection = () => {
 		onError: (err: Error) => toast.error(err.message),
 	});
 
+	const autolinkMutation = useMutation({
+		mutationFn: () => autolinkMlByName(false),
+		onSuccess: res => {
+			toast.success(`Vinculadas automáticamente: ${res.linked_count}`);
+			refetch();
+			queryClient.invalidateQueries({ queryKey: ['ml_published_items'] });
+			queryClient.invalidateQueries({ queryKey: ['ml_stats'] });
+		},
+		onError: (err: Error) => toast.error(err.message),
+	});
+	const autolink = autolinkMutation.data;
+
 	return (
 		<section className='p-5 bg-white border border-stone-200 rounded-lg space-y-4'>
 			<div className='flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3'>
@@ -184,7 +197,18 @@ const LinkExistingMlSection = () => {
 						Importá publicaciones que ya tenés en ML y asociá cada una con un producto de RF Store para sincronizar stock.
 					</p>
 				</div>
-				<div className='flex items-center gap-2'>
+				<div className='flex flex-wrap items-center gap-2'>
+					<button
+						onClick={() => {
+							if (confirm('Vincular automáticamente, por nombre, las publicaciones de ML que coincidan con un producto de RF Store. Solo vincula coincidencias inequívocas. ¿Continuar?')) {
+								autolinkMutation.mutate();
+							}
+						}}
+						disabled={autolinkMutation.isPending}
+						className='px-3 py-1.5 bg-brand-600 text-white rounded-md text-sm disabled:opacity-50'
+					>
+						{autolinkMutation.isPending ? 'Vinculando…' : 'Vincular por nombre'}
+					</button>
 					<select
 						value={statusFilter}
 						onChange={e => setStatusFilter(e.target.value as 'active' | 'paused' | 'closed' | 'all')}
@@ -204,6 +228,20 @@ const LinkExistingMlSection = () => {
 					</button>
 				</div>
 			</div>
+
+			{autolink && (
+				<div className='rounded-md border border-brand-200 bg-brand-50 p-3 text-sm text-brand-900 space-y-1'>
+					<p className='font-semibold'>
+						Auto-vinculación: {autolink.linked_count} vinculadas · {autolink.ambiguous_count} ambiguas · {autolink.nomatch_count} sin coincidencia
+						<span className='font-normal text-brand-700'> (de {autolink.unlinked_before} sin vincular)</span>
+					</p>
+					{(autolink.ambiguous_count > 0 || autolink.nomatch_count > 0) && (
+						<p className='text-xs text-brand-700'>
+							Las ambiguas (varios productos con nombre parecido) y las sin coincidencia quedan para vincular a mano. Hacé "Cargar de ML" para ver las que faltan.
+						</p>
+					)}
+				</div>
+			)}
 
 			{data && (
 				<div className='text-xs text-stone-600'>

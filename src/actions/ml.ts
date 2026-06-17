@@ -409,6 +409,37 @@ export const listMlUnlinkedItems = async (status: 'active' | 'paused' | 'closed'
 	return data;
 };
 
+export interface AutolinkResult {
+	ok: boolean;
+	dry_run: boolean;
+	total_in_ml: number;
+	unlinked_before: number;
+	linked_count: number;
+	ambiguous_count: number;
+	nomatch_count: number;
+	linked: { ml_item_id: string; title: string; product: string }[];
+	ambiguous: { ml_item_id: string; title: string; candidates: number }[];
+	nomatch: { ml_item_id: string; title: string; reason?: string }[];
+}
+
+// Vincula automáticamente, por nombre, las publicaciones ML que el cliente subió
+// desde RF Store y quedaron sin vincular. Solo vincula matches inequívocos.
+export const autolinkMlByName = async (dryRun = false): Promise<AutolinkResult> => {
+	const { data: { session } } = await supabase.auth.getSession();
+	const resp = await fetch(`${SUPABASE_URL}/functions/v1/ml-autolink-by-name`, {
+		method: 'POST',
+		headers: {
+			apikey: SUPABASE_ANON,
+			Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON}`,
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({ dry_run: dryRun }),
+	});
+	const data = await resp.json();
+	if (!resp.ok || !data.ok) throw new Error(data?.error ?? `http_${resp.status}`);
+	return data as AutolinkResult;
+};
+
 export interface RfProductCandidate {
 	product_id: string;
 	product_name: string;

@@ -140,7 +140,7 @@ const ProfitCard = ({
 					</span>
 				</div>
 				<div className='flex justify-between'>
-					<span className='text-ink-500'>Costo CDR</span>
+					<span className='text-ink-500'>Costo CDR c/IVA</span>
 					<span className='font-medium text-ink-700'>
 						{formatMoneyCur(cost, currency)}
 					</span>
@@ -469,8 +469,8 @@ export const DashboardHomePage = () => {
 						</div>
 						<p className='mt-3 text-xs text-ink-400'>
 							Cada venta se muestra en la moneda en que se cobró en
-							Mercado Libre. El costo CDR (en USD) se convierte a la
-							moneda de la venta para calcular la ganancia.
+							Mercado Libre. El costo CDR (en USD, con IVA 22% incluido) se
+							convierte a la moneda de la venta para calcular la ganancia.
 						</p>
 					</SectionCard>
 
