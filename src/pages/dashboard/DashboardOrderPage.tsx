@@ -144,6 +144,21 @@ export const DashboardOrderPage = () => {
 				</div>
 			</div>
 
+			{order.paymentMethod === 'mercadopago' && order.paymentStatus !== 'paid' && (
+				<div className='flex items-start gap-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 p-4'>
+					<span className='text-xl'>🛒</span>
+					<div className='text-sm'>
+						<p className='font-semibold text-amber-900'>
+							Checkout sin pagar — no es una venta
+						</p>
+						<p className='text-amber-800'>
+							Esta persona llegó al pago de Mercado Pago pero <b>no completó el pago</b>.
+							Queda como registro para seguimiento; no se cobró ni se debe despachar.
+						</p>
+					</div>
+				</div>
+			)}
+
 			<div className='grid grid-cols-1 gap-6 lg:grid-cols-3'>
 				{/* Productos */}
 				<div className='lg:col-span-2'>

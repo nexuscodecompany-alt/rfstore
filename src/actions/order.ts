@@ -149,7 +149,7 @@ export const getAllOrders = async () => {
 	const { data, error } = await supabase
 		.from('orders')
 		.select(
-			'id, total_amount, status, created_at, channel, ml_order_id, customers(full_name, email)'
+			'id, total_amount, status, created_at, channel, ml_order_id, payment_method, payment_status, customers(full_name, email)'
 		)
 		.order('created_at', { ascending: false });
 
@@ -179,6 +179,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 		.select(
 			`
 				id, total_amount, status, created_at, channel, ml_order_id,
+				payment_method, payment_status,
 				ml_currency, fx_rate, total_original,
 				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 				addresses:addresses(*),
@@ -207,6 +208,8 @@ export const getOrderByIdAdmin = async (id: number) => {
 		id: order.id,
 		channel: (order.channel as 'web' | 'ml' | null) ?? 'web',
 		ml_order_id: (order.ml_order_id as string | null) ?? null,
+		paymentMethod: (order.payment_method as string | null) ?? null,
+		paymentStatus: (order.payment_status as string | null) ?? null,
 		orderItems: (order.order_items as any[]).map((item: any) => ({
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',
