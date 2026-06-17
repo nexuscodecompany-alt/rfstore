@@ -179,6 +179,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 		.select(
 			`
 				id, total_amount, status, created_at, channel, ml_order_id,
+				ml_currency, fx_rate, total_original,
 				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 				addresses:addresses(*),
 				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images))),
@@ -216,6 +217,13 @@ export const getOrderByIdAdmin = async (id: number) => {
 			storage: item.variants ? item.variants.storage : '',
 		})),
 		totalAmount: order.total_amount,
+		// Moneda real de la venta (ML puede cobrar en UYU). fx_rate = pesos por USD.
+		mlCurrency: ((order as { ml_currency?: string | null }).ml_currency as 'USD' | 'UYU' | null) ?? null,
+		fxRate: Number((order as { fx_rate?: number | null }).fx_rate ?? 1) || 1,
+		totalOriginal:
+			(order as { total_original?: number | null }).total_original != null
+				? Number((order as { total_original?: number | null }).total_original)
+				: null,
 		mlCommissionUsd: Number((order as { ml_commission_usd?: number }).ml_commission_usd ?? 0),
 		mlShippingCostUsd: Number((order as { ml_shipping_cost_usd?: number }).ml_shipping_cost_usd ?? 0),
 		mlOtherCostsUsd: Number((order as { ml_other_costs_usd?: number }).ml_other_costs_usd ?? 0),

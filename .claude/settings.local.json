@@ -105,7 +105,9 @@
       "Bash(awk '/return s\\\\.replace\\\\\\(\\\\/<\\\\[\\\\^>\\\\]/{print NR\": \"$0}' index.ts)",
       "Bash(grep -o \"replace\\(/\\\\[[^]]*\\\\]/g, ''\\)\")",
       "Bash(cat .vercel/project.json)",
-      "Bash(cat vercel.json)"
+      "Bash(cat vercel.json)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1 | Select-Object -First 30)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.app.json; if \\($?\\) { \"TSC_OK\" })"
     ]
   }
 }
