@@ -5,6 +5,7 @@ import { getMlPricingConfig, updateMlPricingConfig } from '../../actions/ml-pric
 import { repriceActiveMl } from '../../actions/ml';
 import { useTaxonomiesAdmin } from '../../hooks';
 import { DEFAULT_ML_PRICING, formatPriceCurrency, mlPriceFromConfig, type MlPricingConfig } from '../../helpers';
+import { NumInput } from './NumInput';
 
 // Reglas de precio para Mercado Libre: tramos por costo + override por
 // categoria/subcategoria. Precedencia: subcategoria > categoria > tramo.
@@ -53,13 +54,9 @@ export const MlPricingRulesSection = () => {
 		return `${categories.find(c => c.id === s.category_id)?.name ?? '-'} > ${s.name}`;
 	};
 
-	const setTier = (i: number, field: 'max' | 'pct', v: string) =>
-		setCfg(c => ({
-			...c,
-			tiers: c.tiers.map((t, idx) =>
-				idx === i ? { ...t, [field]: v === '' ? (field === 'max' ? null : 0) : Number(v) } : t
-			),
-		}));
+	const updateTier = (i: number, patch: Partial<{ max: number | null; pct: number }>) =>
+		setCfg(c => ({ ...c, tiers: c.tiers.map((t, idx) => (idx === i ? { ...t, ...patch } : t)) }));
+	const tierFrom = (i: number) => (i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0);
 	const addTier = () =>
 		setCfg(c => {
 			const tiers = [...c.tiers];
@@ -69,12 +66,6 @@ export const MlPricingRulesSection = () => {
 		});
 	const removeTier = (i: number) =>
 		setCfg(c => ({ ...c, tiers: c.tiers.filter((_, idx) => idx !== i) }));
-	const rangeLabel = (i: number) => {
-		const prev = i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0;
-		const max = cfg.tiers[i].max;
-		if (max === null) return `Desde USD ${prev} en adelante`;
-		return `USD ${prev} a ${max - 0.01}`;
-	};
 
 	const setOverride = (kind: 'category' | 'subcategory', id: string, pct: number) =>
 		setCfg(c => {
@@ -116,20 +107,18 @@ export const MlPricingRulesSection = () => {
 			<div className='grid grid-cols-1 sm:grid-cols-2 gap-4'>
 				<div>
 					<label className='block text-sm font-medium mb-1'>IVA (%)</label>
-					<input
-						type='number'
+					<NumInput
 						className='border rounded px-3 py-2 w-full'
 						value={cfg.iva_percent}
-						onChange={e => setCfg(c => ({ ...c, iva_percent: Number(e.target.value) || 0 }))}
+						onChange={n => setCfg(c => ({ ...c, iva_percent: n }))}
 					/>
 				</div>
 				<div>
 					<label className='block text-sm font-medium mb-1'>Umbral USD (precio en USD por encima)</label>
-					<input
-						type='number'
+					<NumInput
 						className='border rounded px-3 py-2 w-full'
 						value={cfg.usd_threshold}
-						onChange={e => setCfg(c => ({ ...c, usd_threshold: Number(e.target.value) || 0 }))}
+						onChange={n => setCfg(c => ({ ...c, usd_threshold: n }))}
 					/>
 				</div>
 			</div>
@@ -142,16 +131,21 @@ export const MlPricingRulesSection = () => {
 				<div className='space-y-2'>
 					{cfg.tiers.map((tier, i) => (
 						<div key={i} className='flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 bg-gray-50/60 p-3'>
-							<span className='min-w-[180px] text-sm font-medium text-gray-700'>{rangeLabel(i)}</span>
-							{tier.max !== null && (
+							<label className='flex items-center gap-1.5 text-xs text-gray-500'>
+								Desde USD
+								<input type='number' value={tierFrom(i)} readOnly disabled title='Se ajusta solo con el "Hasta" del tramo anterior' className='w-20 rounded border border-gray-200 bg-gray-100 px-2 py-1.5 text-sm text-gray-500' />
+							</label>
+							{tier.max !== null ? (
 								<label className='flex items-center gap-1.5 text-xs text-gray-500'>
 									Hasta USD
-									<input type='number' value={tier.max} onChange={e => setTier(i, 'max', e.target.value)} className='w-24 rounded border border-gray-200 px-2 py-1.5 text-sm' />
+									<NumInput value={tier.max} min={0} onChange={n => updateTier(i, { max: n })} className='w-24 rounded border border-gray-200 px-2 py-1.5 text-sm' />
 								</label>
+							) : (
+								<span className='text-xs font-semibold text-gray-600'>en adelante</span>
 							)}
 							<label className='ml-auto flex items-center gap-1.5 text-xs text-gray-500'>
 								Margen
-								<input type='number' value={tier.pct} onChange={e => setTier(i, 'pct', e.target.value)} className='w-20 rounded border border-gray-200 px-2 py-1.5 text-sm font-semibold' />
+								<NumInput value={tier.pct} min={0} onChange={n => updateTier(i, { pct: n })} className='w-20 rounded border border-gray-200 px-2 py-1.5 text-sm font-semibold' />
 								%
 							</label>
 							{tier.max !== null && (
@@ -186,7 +180,7 @@ export const MlPricingRulesSection = () => {
 								<span className='text-sm text-gray-700 flex-1'>{catName(id)}</span>
 								<label className='flex items-center gap-1.5 text-xs text-gray-500'>
 									Margen
-									<input type='number' value={cfg.category_overrides[id]} onChange={e => setOverride('category', id, Number(e.target.value) || 0)} className='w-20 rounded border border-gray-200 px-2 py-1.5 text-sm font-semibold' />
+									<NumInput value={cfg.category_overrides[id]} min={0} onChange={n => setOverride('category', id, n)} className='w-20 rounded border border-gray-200 px-2 py-1.5 text-sm font-semibold' />
 									%
 								</label>
 								<button onClick={() => removeOverride('category', id)} className='text-xs text-rose-600 hover:text-rose-800'>Quitar</button>
@@ -220,7 +214,7 @@ export const MlPricingRulesSection = () => {
 								<span className='text-sm text-gray-700 flex-1'>{subLabel(id)}</span>
 								<label className='flex items-center gap-1.5 text-xs text-gray-500'>
 									Margen
-									<input type='number' value={cfg.subcategory_overrides[id]} onChange={e => setOverride('subcategory', id, Number(e.target.value) || 0)} className='w-20 rounded border border-gray-200 px-2 py-1.5 text-sm font-semibold' />
+									<NumInput value={cfg.subcategory_overrides[id]} min={0} onChange={n => setOverride('subcategory', id, n)} className='w-20 rounded border border-gray-200 px-2 py-1.5 text-sm font-semibold' />
 									%
 								</label>
 								<button onClick={() => removeOverride('subcategory', id)} className='text-xs text-rose-600 hover:text-rose-800'>Quitar</button>

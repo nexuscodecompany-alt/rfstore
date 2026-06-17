@@ -15,6 +15,7 @@ import {
 import { useTaxonomiesAdmin } from '../../hooks';
 import { supabase } from '../../supabase/client';
 import { Loader } from '../../components/shared/Loader';
+import { NumInput } from '../../components/dashboard/NumInput';
 
 const EMPTY: CouponInput = {
 	code: '',
@@ -117,7 +118,7 @@ export const DashboardCouponsPage = () => {
 					</Field>
 					{form.type !== 'free_shipping' && (
 						<Field label={form.type === 'percent' ? 'Porcentaje (%)' : 'Monto en pesos (UYU)'}>
-							<input type='number' className='inp' value={form.value} onChange={e => setForm(f => ({ ...f, value: Number(e.target.value) || 0 }))} />
+							<NumInput className='inp' value={form.value} min={0} onChange={n => setForm(f => ({ ...f, value: n }))} />
 						</Field>
 					)}
 					<Field label='Aplica a'>
@@ -150,7 +151,7 @@ export const DashboardCouponsPage = () => {
 						<input type='number' className='inp' value={form.max_uses ?? ''} onChange={e => setForm(f => ({ ...f, max_uses: e.target.value === '' ? null : Number(e.target.value) }))} placeholder='ilimitado' />
 					</Field>
 					<Field label='Vence (opcional)'>
-						<input type='date' className='inp' value={form.expires_at ? form.expires_at.slice(0, 10) : ''} onChange={e => setForm(f => ({ ...f, expires_at: e.target.value ? new Date(e.target.value + 'T23:59:59').toISOString() : null }))} />
+						<input type='date' className='inp' value={form.expires_at ? new Date(form.expires_at).toLocaleDateString('en-CA') : ''} onChange={e => setForm(f => ({ ...f, expires_at: e.target.value ? new Date(e.target.value + 'T23:59:59').toISOString() : null }))} />
 					</Field>
 					<Field label='Estado'>
 						<label className='flex items-center gap-2 text-sm pt-2'>

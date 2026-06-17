@@ -5,6 +5,7 @@ import { HiOutlineCalculator } from 'react-icons/hi2';
 import { getPricingConfig, updatePricingConfig } from '../../actions/pricing';
 import { DEFAULT_PRICING, PricingConfig, formatPrice, salePrice } from '../../helpers';
 import { Loader } from '../../components/shared/Loader';
+import { NumInput } from '../../components/dashboard/NumInput';
 
 export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean } = {}) => {
 	const queryClient = useQueryClient();
@@ -31,25 +32,19 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 
 	if (isLoading) return <Loader />;
 
-	const setIva = (v: string) =>
-		setCfg(c => ({ ...c, iva_percent: Number(v) || 0 }));
-
-	const setTier = (i: number, field: 'max' | 'pct', v: string) =>
-		setCfg(c => ({
-			...c,
-			tiers: c.tiers.map((t, idx) =>
-				idx === i
-					? { ...t, [field]: v === '' ? (field === 'max' ? null : 0) : Number(v) }
-					: t
-			),
-		}));
-
-	const rangeLabel = (i: number) => {
-		const prev = i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0;
-		const max = cfg.tiers[i].max;
-		if (max === null) return `Desde USD ${prev} en adelante`;
-		return `USD ${prev} a ${max - 0.01}`;
-	};
+	const updateTier = (i: number, patch: Partial<{ max: number | null; pct: number }>) =>
+		setCfg(c => ({ ...c, tiers: c.tiers.map((t, idx) => (idx === i ? { ...t, ...patch } : t)) }));
+	const addTier = () =>
+		setCfg(c => {
+			// Inserta un tramo nuevo justo antes del último ("en adelante", max=null).
+			const tiers = [...c.tiers];
+			const lastMax = tiers.length >= 2 ? tiers[tiers.length - 2].max ?? 0 : 0;
+			tiers.splice(tiers.length - 1, 0, { max: Number(lastMax) + 50, pct: 20 });
+			return { ...c, tiers };
+		});
+	const removeTier = (i: number) =>
+		setCfg(c => ({ ...c, tiers: c.tiers.filter((_, idx) => idx !== i) }));
+	const tierFrom = (i: number) => (i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0);
 
 	const previewCost = Number(preview) || 0;
 
@@ -70,10 +65,9 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft'>
 				<h2 className='mb-3 font-bold text-ink-900'>IVA</h2>
 				<div className='flex items-center gap-2'>
-					<input
-						type='number'
+					<NumInput
 						value={cfg.iva_percent}
-						onChange={e => setIva(e.target.value)}
+						onChange={n => setCfg(c => ({ ...c, iva_percent: n }))}
 						className='w-28 rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300'
 					/>
 					<span className='text-sm text-ink-500'>% (Uruguay: 22%)</span>
@@ -82,10 +76,14 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 
 			{/* Tramos de margen */}
 			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft'>
-				<h2 className='mb-1 font-bold text-ink-900'>Márgenes por tramo</h2>
-				<p className='mb-4 text-sm text-ink-500'>
-					El tramo se decide según el <b>costo</b> del producto.
-				</p>
+				<div className='mb-4 flex items-center justify-between gap-3'>
+					<p className='text-sm text-ink-500'>
+						El tramo se decide según el <b>costo</b> del producto.
+					</p>
+					<button onClick={addTier} className='shrink-0 text-xs font-semibold text-brand-700 hover:text-brand-900'>
+						+ Agregar tramo
+					</button>
+				</div>
 
 				<div className='space-y-3'>
 					{cfg.tiers.map((tier, i) => (
@@ -93,32 +91,48 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 							key={i}
 							className='flex flex-wrap items-center gap-3 rounded-xl border border-ink-100 bg-ink-50/50 p-3'
 						>
-							<span className='min-w-[180px] text-sm font-medium text-ink-700'>
-								{rangeLabel(i)}
-							</span>
+							<label className='flex items-center gap-1.5 text-xs text-ink-500'>
+								Desde&nbsp;USD
+								<input
+									type='number'
+									value={tierFrom(i)}
+									readOnly
+									disabled
+									title='Se ajusta solo con el "Hasta" del tramo anterior'
+									className='w-20 rounded-lg border border-ink-200 bg-ink-100 px-2 py-1.5 text-sm text-ink-500'
+								/>
+							</label>
 
-							{tier.max !== null && (
+							{tier.max !== null ? (
 								<label className='flex items-center gap-1.5 text-xs text-ink-500'>
 									Hasta&nbsp;USD
-									<input
-										type='number'
+									<NumInput
 										value={tier.max}
-										onChange={e => setTier(i, 'max', e.target.value)}
+										min={0}
+										onChange={n => updateTier(i, { max: n })}
 										className='w-24 rounded-lg border border-ink-200 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300'
 									/>
 								</label>
+							) : (
+								<span className='text-xs font-semibold text-ink-600'>en adelante</span>
 							)}
 
 							<label className='ml-auto flex items-center gap-1.5 text-xs text-ink-500'>
 								Margen
-								<input
-									type='number'
+								<NumInput
 									value={tier.pct}
-									onChange={e => setTier(i, 'pct', e.target.value)}
+									min={0}
+									onChange={n => updateTier(i, { pct: n })}
 									className='w-20 rounded-lg border border-ink-200 px-2 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-300'
 								/>
 								%
 							</label>
+
+							{tier.max !== null && (
+								<button onClick={() => removeTier(i)} className='text-xs font-semibold text-rose-600 hover:text-rose-800'>
+									Quitar
+								</button>
+							)}
 						</div>
 					))}
 				</div>
