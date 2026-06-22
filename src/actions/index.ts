@@ -10,3 +10,4 @@ export * from './legal';
 export * from './notifications';
 export * from './shipping';
 export * from './ml';
+export * from './manualSales';

@@ -12,6 +12,12 @@ export interface StatusBreakdownItem {
 	amount: number;
 }
 
+export interface PaymentBreakdownItem {
+	method: 'mp' | 'transfer' | 'deposit' | 'ml' | 'manual' | 'otro';
+	count: number;
+	revenue_usd: number;
+}
+
 export interface DashboardOverview {
 	orders_in_period: number;
 	revenue_period: number; // Cotizado (pipeline, NO ingreso)
@@ -26,9 +32,17 @@ export interface DashboardOverview {
 	uyu_orders: number;
 	uyu_revenue: number; // venta en pesos (real ML)
 	uyu_cost: number; // costo CDR convertido a pesos
+	uyu_commission: number; // comisiones en pesos
+	uyu_shipping: number; // envíos en pesos
+	uyu_other: number; // otros costos en pesos
 	usd_orders: number;
 	usd_revenue: number; // venta en dólares
 	usd_cost: number; // costo CDR en dólares
+	usd_commission: number;
+	usd_shipping: number;
+	usd_other: number;
+	// Corte por forma de pago (ingreso en USD interno)
+	payment_breakdown: PaymentBreakdownItem[];
 	orders_total: number;
 	status_breakdown: StatusBreakdownItem[];
 	concretado_count: number;

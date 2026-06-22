@@ -5,7 +5,7 @@ import { IoChevronBack } from 'react-icons/io5';
 import { HiOutlineMapPin, HiOutlineUser } from 'react-icons/hi2';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useOrderAdmin } from '../../hooks';
-import { updateOrderMlCosts } from '../../actions';
+import { updateOrderMlCosts, updatePackMlCosts } from '../../actions';
 import { Loader } from '../../components/shared/Loader';
 import { formatPriceCurrency, formatDateTime, orderStatusBadge } from '../../helpers';
 
@@ -43,11 +43,17 @@ export const DashboardOrderPage = () => {
 		mutationFn: () => {
 			const fx = order ? orderFx(order) : 1;
 			// Guardamos en USD: lo ingresado (moneda nativa) / fx de la orden.
-			return updateOrderMlCosts(Number(id), {
+			const costsUsd = {
 				commission: commission / fx,
 				shipping: shipping / fx,
 				other: other / fx,
-			});
+			};
+			// Si es una venta ML unificada (pack con varias órdenes), guardamos los
+			// costos una sola vez para todo el pack.
+			const packIds = order?.packOrderIds ?? [];
+			return packIds.length > 1
+				? updatePackMlCosts(packIds, costsUsd)
+				: updateOrderMlCosts(Number(id), costsUsd);
 		},
 		onSuccess: () => {
 			toast.success('Costos guardados');
@@ -143,6 +149,22 @@ export const DashboardOrderPage = () => {
 					</span>
 				</div>
 			</div>
+
+			{(order.packOrderIds?.length ?? 0) > 1 && (
+				<div className='flex items-start gap-3 rounded-xl border border-yellow-300 bg-yellow-50/70 p-4'>
+					<span className='text-xl'>🛒</span>
+					<div className='text-sm'>
+						<p className='font-semibold text-yellow-900'>
+							Venta unificada de Mercado Libre ({order.packOrderIds!.length} pedidos)
+						</p>
+						<p className='text-yellow-800'>
+							El comprador llevó varios productos en un mismo carrito y ML los partió
+							en {order.packOrderIds!.length} pedidos. Acá los ves juntos como una sola
+							venta: cargá la <b>comisión y el envío una sola vez</b> para todo el pack.
+						</p>
+					</div>
+				</div>
+			)}
 
 			{order.paymentMethod === 'mercadopago' && order.paymentStatus !== 'paid' && (
 				<div className='flex items-start gap-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 p-4'>

@@ -11,6 +11,8 @@ import { useChangeStatusOrder } from '../../../hooks';
 
 interface Props {
 	orders: OrderWithCustomer[];
+	// Click en una venta manual: la gestiona el contenedor (abre el modal).
+	onManualClick?: (orderId: number) => void;
 }
 
 // Un "checkout sin pagar" es una orden de MercadoPago que NUNCA se pagó: el
@@ -22,6 +24,40 @@ const isUnpaidMpCheckout = (o: OrderWithCustomer): boolean =>
 
 const didNotPay = (o: OrderWithCustomer): boolean =>
 	['expirado', 'Cancelado', 'cancelado', 'rechazado'].includes(o.status);
+
+// Una fila del listado. Para una venta normal representa una orden; para una venta
+// ML en carrito (pack) agrupa todas las órdenes del pack en una sola.
+interface OrderRow {
+	key: string;
+	rep: OrderWithCustomer; // orden representativa (la más reciente del pack)
+	ids: number[]; // todas las órdenes que agrupa (1 si no es pack)
+	total: number; // total sumado del pack
+	count: number; // cantidad de pedidos del pack
+}
+
+const groupByPack = (list: OrderWithCustomer[]): OrderRow[] => {
+	const rows: OrderRow[] = [];
+	const packIndex = new Map<string, number>();
+	for (const o of list) {
+		const pack = o.channel === 'ml' && o.ml_pack_id ? o.ml_pack_id : null;
+		if (pack && packIndex.has(pack)) {
+			const row = rows[packIndex.get(pack)!];
+			row.ids.push(o.id);
+			row.total += Number(o.total_amount ?? 0);
+			row.count += 1;
+			continue;
+		}
+		if (pack) packIndex.set(pack, rows.length);
+		rows.push({
+			key: pack ? `pack-${pack}` : `order-${o.id}`,
+			rep: o,
+			ids: [o.id],
+			total: Number(o.total_amount ?? 0),
+			count: 1,
+		});
+	}
+	return rows;
+};
 
 const StatusSelect = ({
 	value,
@@ -46,17 +82,27 @@ const StatusSelect = ({
 	</select>
 );
 
-export const TableOrdersAdmin = ({ orders }: Props) => {
+export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 	const navigate = useNavigate();
 	const { mutate } = useChangeStatusOrder();
 
-	const handleStatusChange = (id: number, status: string) =>
-		mutate({ id, status });
+	const handleStatusChange = (ids: number[], status: string) =>
+		ids.forEach(id => mutate({ id, status }));
 
 	const goTo = (id: number) => navigate(`/dashboard/ordenes/${id}`);
+	// Las ventas manuales se gestionan en un modal dentro de la misma página.
+	const goToRow = (row: OrderRow) =>
+		row.rep.channel === 'manual'
+			? onManualClick?.(row.rep.id)
+			: goTo(row.rep.id);
 
 	const realOrders = orders.filter(o => !isUnpaidMpCheckout(o));
 	const unpaidCheckouts = orders.filter(isUnpaidMpCheckout);
+
+	// Las ventas de ML "en carrito" (varios productos) llegan partidas en una orden
+	// por producto, todas con el mismo ml_pack_id. Las unimos en UNA fila: total
+	// sumado y los pedidos juntos, para tratarlas como una sola venta.
+	const realRows = groupByPack(realOrders);
 
 	if (!orders.length) {
 		return (
@@ -66,19 +112,37 @@ export const TableOrdersAdmin = ({ orders }: Props) => {
 		);
 	}
 
-	const customerName = (order: OrderWithCustomer) =>
-		order.customers?.full_name ||
-		(order.channel === 'ml' ? 'Comprador de Mercado Libre' : 'Sin nombre');
-	const customerSub = (order: OrderWithCustomer) =>
-		order.customers?.email ||
-		(order.channel === 'ml' && order.ml_order_id
-			? `Orden ML ${order.ml_order_id}`
-			: '');
+	const customerName = (order: OrderWithCustomer) => {
+		if (order.channel === 'manual')
+			return (
+				order.sale_concepts?.name ||
+				order.manual_description ||
+				'Venta manual'
+			);
+		return (
+			order.customers?.full_name ||
+			(order.channel === 'ml' ? 'Comprador de Mercado Libre' : 'Sin nombre')
+		);
+	};
+	const rowSub = (row: OrderRow) => {
+		const order = row.rep;
+		if (order.channel === 'manual')
+			return order.sale_concepts?.name ? order.manual_description ?? '' : '';
+		if (order.customers?.email) return order.customers.email;
+		if (order.channel === 'ml') {
+			return row.count > 1
+				? `Carrito ML · ${row.count} pedidos`
+				: order.ml_order_id
+				? `Orden ML ${order.ml_order_id}`
+				: '';
+		}
+		return '';
+	};
 
 	return (
 		<div className='space-y-8'>
 			{/* ===== Órdenes reales ===== */}
-			{realOrders.length === 0 ? (
+			{realRows.length === 0 ? (
 				<div className='rounded-2xl border border-ink-200 bg-white p-8 text-center text-ink-400 shadow-soft'>
 					No hay órdenes reales todavía.
 				</div>
@@ -97,40 +161,50 @@ export const TableOrdersAdmin = ({ orders }: Props) => {
 								</tr>
 							</thead>
 							<tbody className='divide-y divide-ink-100'>
-								{realOrders.map(order => (
+								{realRows.map(row => (
 									<tr
-										key={order.id}
+										key={row.key}
 										className='cursor-pointer transition-colors hover:bg-brand-50/40'
-										onClick={() => goTo(order.id)}
+										onClick={() => goToRow(row)}
 									>
 										<td className='px-5 py-4'>
 											<div className='flex flex-col'>
 												<span className='flex items-center gap-2 font-semibold text-ink-800'>
-													{customerName(order)}
-													{order.channel === 'ml' && (
+													{customerName(row.rep)}
+													{row.rep.channel === 'ml' && (
 														<span className='inline-flex shrink-0 items-center rounded-full bg-yellow-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-900'>
 															ML
 														</span>
 													)}
+													{row.rep.channel === 'manual' && (
+														<span className='inline-flex shrink-0 items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700'>
+															Manual
+														</span>
+													)}
+													{row.count > 1 && (
+														<span className='inline-flex shrink-0 items-center rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-600'>
+															{row.count} pedidos
+														</span>
+													)}
 												</span>
 												<span className='text-xs text-ink-500'>
-													{customerSub(order)}
+													{rowSub(row)}
 												</span>
 											</div>
 										</td>
 										<td className='px-5 py-4 text-ink-600'>
-											{formatDateLong(order.created_at)}
+											{formatDateLong(row.rep.created_at)}
 										</td>
 										<td className='px-5 py-4'>
 											<StatusSelect
-												value={order.status}
+												value={row.rep.status}
 												onChange={status =>
-													handleStatusChange(order.id, status)
+													handleStatusChange(row.ids, status)
 												}
 											/>
 										</td>
 										<td className='px-5 py-4 text-right font-semibold text-ink-900'>
-											{formatPrice(order.total_amount)}
+											{formatPrice(row.total)}
 										</td>
 										<td className='px-5 py-4 text-ink-300'>
 											<HiChevronRight size={18} />
@@ -143,37 +217,47 @@ export const TableOrdersAdmin = ({ orders }: Props) => {
 
 					{/* Tarjetas — móvil */}
 					<div className='space-y-3 md:hidden'>
-						{realOrders.map(order => (
+						{realRows.map(row => (
 							<div
-								key={order.id}
+								key={row.key}
 								className='cursor-pointer rounded-2xl border border-ink-200/70 bg-white p-4 shadow-soft transition-all active:scale-[0.99]'
-								onClick={() => goTo(order.id)}
+								onClick={() => goToRow(row)}
 							>
 								<div className='flex items-start justify-between gap-3'>
 									<div className='min-w-0'>
 										<p className='flex items-center gap-2 truncate font-semibold text-ink-800'>
-											{customerName(order)}
-											{order.channel === 'ml' && (
+											{customerName(row.rep)}
+											{row.rep.channel === 'ml' && (
 												<span className='inline-flex shrink-0 items-center rounded-full bg-yellow-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-stone-900'>
 													ML
 												</span>
 											)}
+											{row.rep.channel === 'manual' && (
+												<span className='inline-flex shrink-0 items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-700'>
+													Manual
+												</span>
+											)}
+											{row.count > 1 && (
+												<span className='inline-flex shrink-0 items-center rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-600'>
+													{row.count} pedidos
+												</span>
+											)}
 										</p>
 										<p className='truncate text-xs text-ink-500'>
-											{customerSub(order)}
+											{rowSub(row)}
 										</p>
 										<p className='mt-1 text-xs text-ink-400'>
-											{formatDateLong(order.created_at)}
+											{formatDateLong(row.rep.created_at)}
 										</p>
 									</div>
 									<span className='shrink-0 font-bold text-ink-900'>
-										{formatPrice(order.total_amount)}
+										{formatPrice(row.total)}
 									</span>
 								</div>
 								<div className='mt-3' onClick={e => e.stopPropagation()}>
 									<StatusSelect
-										value={order.status}
-										onChange={status => handleStatusChange(order.id, status)}
+										value={row.rep.status}
+										onChange={status => handleStatusChange(row.ids, status)}
 									/>
 								</div>
 							</div>
@@ -209,7 +293,10 @@ export const TableOrdersAdmin = ({ orders }: Props) => {
 										{customerName(order)}
 									</p>
 									<p className='truncate text-xs text-ink-400'>
-										{customerSub(order)} · {formatDateLong(order.created_at)}
+										{order.customers?.email
+											? `${order.customers.email} · `
+											: ''}
+										{formatDateLong(order.created_at)}
 									</p>
 								</div>
 								<div className='flex shrink-0 items-center gap-3'>

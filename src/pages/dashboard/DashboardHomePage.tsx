@@ -5,14 +5,6 @@ import {
 	HiOutlineReceiptPercent,
 	HiOutlineArrowTrendingUp,
 	HiOutlineArrowTrendingDown,
-	HiOutlineUserPlus,
-	HiOutlineDocumentText,
-	HiOutlineCube,
-	HiOutlineSquares2X2,
-	HiOutlineExclamationTriangle,
-	HiOutlineExclamationCircle,
-	HiOutlineTag,
-	HiOutlineRectangleGroup,
 	HiOutlineArrowPath,
 	HiOutlineCalendarDays,
 } from 'react-icons/hi2';
@@ -104,48 +96,121 @@ const StatCard = ({
 	</div>
 );
 
-const ProfitCard = ({
+// Tarjeta de ganancia NETA real por moneda, con su desglose completo.
+const NetProfitCard = ({
 	label,
 	currency,
 	orders,
 	revenue,
 	cost,
+	commission,
+	shipping,
+	other,
 }: {
 	label: string;
 	currency: 'UYU' | 'USD';
 	orders: number;
 	revenue: number;
 	cost: number;
+	commission: number;
+	shipping: number;
+	other: number;
 }) => {
-	const margin = revenue - cost;
-	const marginPct = revenue > 0 ? (margin / revenue) * 100 : 0;
+	const gross = revenue - cost;
+	const net = gross - commission - shipping - other;
+	const netPct = revenue > 0 ? (net / revenue) * 100 : 0;
+	const Line = ({
+		label,
+		value,
+		minus,
+	}: {
+		label: string;
+		value: number;
+		minus?: boolean;
+	}) =>
+		value > 0 || !minus ? (
+			<div className='flex justify-between'>
+				<span className='text-ink-500'>{label}</span>
+				<span className={minus ? 'text-rose-600' : 'font-medium text-ink-700'}>
+					{minus ? '− ' : ''}
+					{formatMoneyCur(value, currency)}
+				</span>
+			</div>
+		) : null;
 	return (
-		<div className='rounded-xl border border-ink-100 bg-ink-50/40 p-4'>
+		<div className='rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50/80 to-white p-5 shadow-soft'>
 			<div className='flex items-center justify-between'>
 				<span className='text-sm font-semibold text-ink-700'>{label}</span>
 				<span className='text-xs text-ink-400'>{num(orders)} ventas</span>
 			</div>
-			<p className='mt-2 text-2xl font-bold text-emerald-600'>
-				{formatMoneyCur(margin, currency)}
+			<p className='mt-1 text-3xl font-extrabold text-emerald-600'>
+				{formatMoneyCur(net, currency)}
 			</p>
 			<p className='text-xs text-ink-500'>
-				ganancia
-				{revenue > 0 ? ` · ${marginPct.toFixed(1)}% de margen` : ''}
+				ganancia neta real
+				{revenue > 0 ? ` · ${netPct.toFixed(1)}% sobre venta` : ''}
 			</p>
-			<div className='mt-3 space-y-1 text-xs'>
-				<div className='flex justify-between'>
-					<span className='text-ink-500'>Vendido</span>
-					<span className='font-medium text-ink-700'>
-						{formatMoneyCur(revenue, currency)}
-					</span>
+			<div className='mt-4 space-y-1 border-t border-emerald-100 pt-3 text-xs'>
+				<Line label='Vendido' value={revenue} />
+				<Line label='Costo CDR c/IVA' value={cost} minus />
+				<Line label='Comisiones' value={commission} minus />
+				<Line label='Envíos' value={shipping} minus />
+				<Line label='Otros costos' value={other} minus />
+				<div className='mt-1 flex justify-between border-t border-emerald-100 pt-2 font-bold text-emerald-700'>
+					<span>Ganancia neta</span>
+					<span>{formatMoneyCur(net, currency)}</span>
 				</div>
-				<div className='flex justify-between'>
-					<span className='text-ink-500'>Costo CDR c/IVA</span>
-					<span className='font-medium text-ink-700'>
-						{formatMoneyCur(cost, currency)}
-					</span>
+				<div className='flex justify-between text-ink-400'>
+					<span>Ganancia bruta (s/costo)</span>
+					<span>{formatMoneyCur(gross, currency)}</span>
 				</div>
 			</div>
+		</div>
+	);
+};
+
+// Corte por forma de pago (ingreso en USD interno).
+const paymentLabels: Record<string, string> = {
+	mp: 'Mercado Pago',
+	transfer: 'Transferencia',
+	deposit: 'Depósito',
+	ml: 'Mercado Libre',
+	manual: 'Manual',
+	otro: 'Otro',
+};
+const PaymentBreakdown = ({
+	items,
+}: {
+	items: { method: string; count: number; revenue_usd: number }[];
+}) => {
+	if (!items.length)
+		return (
+			<p className='py-4 text-center text-sm text-ink-400'>
+				Sin ventas pagadas en el período.
+			</p>
+		);
+	const total = items.reduce((s, i) => s + Number(i.revenue_usd), 0) || 1;
+	return (
+		<div className='grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5'>
+			{items.map(i => {
+				const share = (Number(i.revenue_usd) / total) * 100;
+				return (
+					<div
+						key={i.method}
+						className='rounded-xl border border-ink-100 bg-ink-50/40 p-3'
+					>
+						<p className='text-xs font-medium text-ink-500'>
+							{paymentLabels[i.method] ?? i.method}
+						</p>
+						<p className='mt-0.5 text-lg font-bold text-ink-900'>
+							{formatPrice(Number(i.revenue_usd))}
+						</p>
+						<p className='text-xs text-ink-400'>
+							{num(i.count)} ventas · {share.toFixed(0)}%
+						</p>
+					</div>
+				);
+			})}
 		</div>
 	);
 };
@@ -354,7 +419,47 @@ export const DashboardHomePage = () => {
 				<MetricsSkeleton />
 			) : (
 				<>
-					{/* KPIs */}
+					{/* ===== GANANCIA primero: neta real + desglose, por moneda ===== */}
+					<section className='space-y-3'>
+						<div className='text-center'>
+							<h2 className='text-lg font-bold text-ink-900'>
+								Ganancia (moneda real de venta)
+							</h2>
+							<p className='text-xs text-ink-500'>
+								Neta real = venta − costo − comisiones − envíos − otros.
+								Pesos y dólares por separado.
+							</p>
+						</div>
+						<div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
+							<NetProfitCard
+								label='En pesos (UYU)'
+								currency='UYU'
+								orders={o.uyu_orders}
+								revenue={o.uyu_revenue}
+								cost={o.uyu_cost}
+								commission={o.uyu_commission}
+								shipping={o.uyu_shipping}
+								other={o.uyu_other}
+							/>
+							<NetProfitCard
+								label='En dólares (USD)'
+								currency='USD'
+								orders={o.usd_orders}
+								revenue={o.usd_revenue}
+								cost={o.usd_cost}
+								commission={o.usd_commission}
+								shipping={o.usd_shipping}
+								other={o.usd_other}
+							/>
+						</div>
+					</section>
+
+					{/* ===== Forma de pago ===== */}
+					<SectionCard title='Ventas por forma de pago'>
+						<PaymentBreakdown items={o.payment_breakdown ?? []} />
+					</SectionCard>
+
+					{/* ===== KPIs clave ===== */}
 					<div className='grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4'>
 						<StatCard
 							icon={<HiOutlineBanknotes size={20} />}
@@ -366,13 +471,6 @@ export const DashboardHomePage = () => {
 								o.prev_paid_revenue_period
 							)}
 							tone='emerald'
-						/>
-						<StatCard
-							icon={<HiOutlineDocumentText size={20} />}
-							label='Cotizado (pipeline)'
-							value={formatPrice(o.revenue_period)}
-							sub={`${num(o.orders_in_period)} cotizaciones`}
-							tone='brand'
 						/>
 						<StatCard
 							icon={<HiOutlineClipboardDocumentList size={20} />}
@@ -390,7 +488,6 @@ export const DashboardHomePage = () => {
 							value={formatPrice(o.avg_order_value)}
 							tone='slate'
 						/>
-
 						<StatCard
 							icon={<HiOutlineArrowTrendingUp size={20} />}
 							label='Conversión'
@@ -398,81 +495,7 @@ export const DashboardHomePage = () => {
 							sub={`${num(o.concretado_count)} concretadas`}
 							tone='emerald'
 						/>
-						<StatCard
-							icon={<HiOutlineUserPlus size={20} />}
-							label='Clientes nuevos'
-							value={num(o.customers_new_period)}
-							sub={`${num(o.customers_total)} en total`}
-							tone='brand'
-						/>
-						<StatCard
-							icon={<HiOutlineCube size={20} />}
-							label='Unidades en stock'
-							value={num(o.stock_units)}
-							tone='slate'
-						/>
-						<StatCard
-							icon={<HiOutlineSquares2X2 size={20} />}
-							label='Productos'
-							value={num(o.products_total)}
-							sub={`${num(o.products_local)} propios · ${num(
-								o.products_cdr
-							)} CDR`}
-							tone='brand'
-						/>
-
-						<StatCard
-							icon={<HiOutlineExclamationTriangle size={20} />}
-							label='Sin stock'
-							value={num(o.variants_out_of_stock)}
-							sub='variantes agotadas'
-							tone='rose'
-						/>
-						<StatCard
-							icon={<HiOutlineExclamationCircle size={20} />}
-							label='Bajo stock'
-							value={num(o.variants_low_stock)}
-							sub='menos de 5 unidades'
-							tone='amber'
-						/>
-						<StatCard
-							icon={<HiOutlineTag size={20} />}
-							label='Marcas'
-							value={num(o.brands_total)}
-							tone='slate'
-						/>
-						<StatCard
-							icon={<HiOutlineRectangleGroup size={20} />}
-							label='Categorías'
-							value={num(o.categories_total)}
-							tone='slate'
-						/>
 					</div>
-
-					{/* Ganancias por moneda real de venta (pesos y dólares por separado) */}
-					<SectionCard title='Ganancias (moneda real de venta)'>
-						<div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
-							<ProfitCard
-								label='En pesos (UYU)'
-								currency='UYU'
-								orders={o.uyu_orders}
-								revenue={o.uyu_revenue}
-								cost={o.uyu_cost}
-							/>
-							<ProfitCard
-								label='En dólares (USD)'
-								currency='USD'
-								orders={o.usd_orders}
-								revenue={o.usd_revenue}
-								cost={o.usd_cost}
-							/>
-						</div>
-						<p className='mt-3 text-xs text-ink-400'>
-							Cada venta se muestra en la moneda en que se cobró en
-							Mercado Libre. El costo CDR (en USD, con IVA 22% incluido) se
-							convierte a la moneda de la venta para calcular la ganancia.
-						</p>
-					</SectionCard>
 
 					{/* Gráfico + estados */}
 					<div className='grid grid-cols-1 gap-4 lg:grid-cols-3'>
@@ -579,11 +602,54 @@ export const DashboardHomePage = () => {
 							)}
 						</SectionCard>
 					</div>
+
+					{/* ===== Catálogo (secundario, compacto) ===== */}
+					<div>
+						<h3 className='mb-2 text-xs font-semibold uppercase tracking-wider text-ink-400'>
+							Catálogo y clientes
+						</h3>
+						<div className='grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6'>
+							<MiniStat label='Clientes nuevos' value={num(o.customers_new_period)} sub={`${num(o.customers_total)} total`} />
+							<MiniStat label='Productos' value={num(o.products_total)} sub={`${num(o.products_local)} propios`} />
+							<MiniStat label='Unid. en stock' value={num(o.stock_units)} />
+							<MiniStat label='Sin stock' value={num(o.variants_out_of_stock)} tone='rose' />
+							<MiniStat label='Bajo stock' value={num(o.variants_low_stock)} tone='amber' />
+							<MiniStat label='Marcas · Cat.' value={`${num(o.brands_total)} · ${num(o.categories_total)}`} />
+						</div>
+					</div>
 				</>
 			)}
 		</div>
 	);
 };
+
+const MiniStat = ({
+	label,
+	value,
+	sub,
+	tone,
+}: {
+	label: string;
+	value: string;
+	sub?: string;
+	tone?: 'rose' | 'amber';
+}) => (
+	<div className='rounded-xl border border-ink-200/70 bg-white p-3 shadow-soft'>
+		<p className='text-[11px] font-medium text-ink-500'>{label}</p>
+		<p
+			className={`mt-0.5 text-lg font-bold ${
+				tone === 'rose'
+					? 'text-rose-600'
+					: tone === 'amber'
+					? 'text-amber-600'
+					: 'text-ink-900'
+			}`}
+		>
+			{value}
+		</p>
+		{sub && <p className='text-[11px] text-ink-400'>{sub}</p>}
+	</div>
+);
 
 /* ---------- skeleton ---------- */
 const MetricsSkeleton = () => (

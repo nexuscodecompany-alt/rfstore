@@ -108,7 +108,16 @@
       "Bash(cat vercel.json)",
       "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1 | Select-Object -First 30)",
       "PowerShell(npx tsc --noEmit -p tsconfig.app.json; if \\($?\\) { \"TSC_OK\" })",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(xargs grep -l \"CREATE TABLE.*orders\")",
+      "Bash(xargs grep -l \"transferencia\\\\|número de cuenta\\\\|CBU\")",
+      "Bash(xargs grep -l \"checkout\\\\|payment.*method\\\\|método de pago\")",
+      "Bash(xargs grep -l \"dashboard_overview\\\\|place_order\\\\|order_items\")",
+      "Bash(npx eslint *)",
+      "Bash(npx vite *)",
+      "Bash(grep -rn \"TableOrdersAdmin\" src/components/dashboard/index.ts src/components/dashboard/orders/index.ts)",
+      "Bash(ls src/components/dashboard/orders/)",
+      "Bash(cat src/components/dashboard/orders/index.ts)"
     ]
   }
 }

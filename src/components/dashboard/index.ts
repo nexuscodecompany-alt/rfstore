@@ -2,6 +2,7 @@ export * from './Sidebar';
 
 // ORDENES
 export * from './orders/TableOrdersAdmin';
+export * from './orders/ManualSaleModal';
 
 // PRODUCTOS
 export * from './products/TableProduct';

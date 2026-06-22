@@ -1,4 +1,4 @@
-import { OrderInput } from '../interfaces';
+import { OrderInput, OrderWithCustomer } from '../interfaces';
 import { supabase } from '../supabase/client';
 
 export const createOrder = async (order: OrderInput) => {
@@ -146,16 +146,18 @@ export const getOrderById = async (orderId: number) => {
 /*            ADMINISTRADOR           */
 /* ********************************** */
 export const getAllOrders = async () => {
-	const { data, error } = await supabase
+	// Casteo a any: las columnas nuevas (manual_description, concept_id) aún no están
+	// en los tipos generados de Supabase.
+	const { data, error } = await (supabase as any)
 		.from('orders')
 		.select(
-			'id, total_amount, status, created_at, channel, ml_order_id, payment_method, payment_status, customers(full_name, email)'
+			'id, total_amount, status, created_at, channel, ml_order_id, ml_pack_id, payment_method, payment_status, concept_id, manual_description, customers(full_name, email), sale_concepts:concept_id(name)'
 		)
 		.order('created_at', { ascending: false });
 
 	if (error) throw new Error(error.message);
 
-	return data;
+	return data as OrderWithCustomer[];
 };
 
 export const updateOrderStatus = async ({
@@ -178,7 +180,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 		.from('orders')
 		.select(
 			`
-				id, total_amount, status, created_at, channel, ml_order_id,
+				id, total_amount, status, created_at, channel, ml_order_id, ml_pack_id,
 				payment_method, payment_status,
 				ml_currency, fx_rate, total_original,
 				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
@@ -191,6 +193,40 @@ export const getOrderByIdAdmin = async (id: number) => {
 		.single();
 
 	if (error) throw new Error(error.message);
+
+	// ── Ventas ML en "carrito" (pack): ML parte una compra de varios productos en
+	// una orden por producto, todas con el mismo ml_pack_id. Las unificamos acá:
+	// juntamos los items y sumamos totales/costos de todas las hermanas, así el admin
+	// ve UNA sola venta y carga margen/envío una vez. (Ver getOrderByIdAdmin.)
+	const packId = (order as { ml_pack_id?: string | null }).ml_pack_id ?? null;
+	let packOrderIds: number[] = [order.id];
+	if (packId) {
+		const { data: siblings, error: sibErr } = await (supabase as any)
+			.from('orders')
+			.select(
+				`
+					id, total_amount, total_original, ml_order_id,
+					ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
+					order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images)))
+				`
+			)
+			.eq('ml_pack_id', packId)
+			.eq('channel', 'ml')
+			.order('id', { ascending: true });
+		if (sibErr) throw new Error(sibErr.message);
+
+		if (siblings && siblings.length > 1) {
+			packOrderIds = siblings.map((s: any) => s.id);
+			// Items unificados de todo el pack.
+			order.order_items = siblings.flatMap((s: any) => s.order_items ?? []);
+			// Totales y costos sumados (total_amount: USD interno; total_original: moneda real).
+			order.total_amount = siblings.reduce((acc: number, s: any) => acc + Number(s.total_amount ?? 0), 0);
+			order.total_original = siblings.reduce((acc: number, s: any) => acc + Number(s.total_original ?? 0), 0);
+			order.ml_commission_usd = siblings.reduce((acc: number, s: any) => acc + Number(s.ml_commission_usd ?? 0), 0);
+			order.ml_shipping_cost_usd = siblings.reduce((acc: number, s: any) => acc + Number(s.ml_shipping_cost_usd ?? 0), 0);
+			order.ml_other_costs_usd = siblings.reduce((acc: number, s: any) => acc + Number(s.ml_other_costs_usd ?? 0), 0);
+		}
+	}
 
 	// Las órdenes de Mercado Libre no tienen dirección ni cliente local (address/customer null).
 	const addr = order.addresses as
@@ -208,6 +244,8 @@ export const getOrderByIdAdmin = async (id: number) => {
 		id: order.id,
 		channel: (order.channel as 'web' | 'ml' | null) ?? 'web',
 		ml_order_id: (order.ml_order_id as string | null) ?? null,
+		mlPackId: packId,
+		packOrderIds,
 		paymentMethod: (order.payment_method as string | null) ?? null,
 		paymentStatus: (order.payment_status as string | null) ?? null,
 		orderItems: (order.order_items as any[]).map((item: any) => ({
@@ -263,4 +301,31 @@ export const updateOrderMlCosts = async (
 		})
 		.eq('id', orderId);
 	if (error) throw new Error(error.message);
+};
+
+// Para una venta ML de varios productos (pack/carrito), los costos se cargan UNA vez
+// para toda la venta. Guardamos el total en la orden principal (la primera del pack) y
+// dejamos las demás en 0, así la suma del pack queda correcta sin duplicar.
+export const updatePackMlCosts = async (
+	packOrderIds: number[],
+	costs: { commission: number; shipping: number; other: number }
+): Promise<void> => {
+	if (!packOrderIds.length) return;
+	const [primaryId, ...rest] = [...packOrderIds].sort((a, b) => a - b);
+	const { error: primErr } = await (supabase as any)
+		.from('orders')
+		.update({
+			ml_commission_usd: costs.commission,
+			ml_shipping_cost_usd: costs.shipping,
+			ml_other_costs_usd: costs.other,
+		})
+		.eq('id', primaryId);
+	if (primErr) throw new Error(primErr.message);
+	if (rest.length) {
+		const { error: restErr } = await (supabase as any)
+			.from('orders')
+			.update({ ml_commission_usd: 0, ml_shipping_cost_usd: 0, ml_other_costs_usd: 0 })
+			.in('id', rest);
+		if (restErr) throw new Error(restErr.message);
+	}
 };

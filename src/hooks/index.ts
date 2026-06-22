@@ -52,3 +52,8 @@ export * from './settings/useShippingRates';
 /* ********************************** */
 export * from './dashboard/useDashboardMetrics';
 export * from './dashboard/useAdminNotifications';
+
+/* ********************************** */
+/*           VENTAS MANUALES          */
+/* ********************************** */
+export * from './sales/useManualSales';

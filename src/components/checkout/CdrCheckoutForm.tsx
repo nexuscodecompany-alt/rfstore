@@ -535,6 +535,17 @@ export const CdrCheckoutForm = () => {
 
 				{method === 'transfer' && (
 					<div className='bg-gray-50 p-3 rounded text-sm space-y-2'>
+						<div className='flex items-center justify-between rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2'>
+							<span className='font-semibold text-emerald-800'>Monto a transferir</span>
+							<span className='text-right'>
+								<span className='block font-bold text-base text-ink-900'>{formatPrice(grandTotalUsd)}</span>
+								{totalUyu !== null && (
+									<span className='block text-[11px] text-emerald-700'>
+										≈ UYU {totalUyu.toLocaleString('es-UY')} (al dólar BCU de hoy)
+									</span>
+								)}
+							</span>
+						</div>
 						{transferInfo.banco && (
 							<p><strong>Banco:</strong> {transferInfo.banco}</p>
 						)}

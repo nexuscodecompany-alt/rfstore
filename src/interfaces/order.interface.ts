@@ -29,8 +29,12 @@ export interface OrderWithCustomer {
 	created_at: string;
 	channel?: string | null;
 	ml_order_id?: string | null;
+	ml_pack_id?: string | null;
 	payment_method?: string | null;
 	payment_status?: string | null;
+	concept_id?: string | null;
+	manual_description?: string | null;
+	sale_concepts?: { name: string } | null;
 	customers: {
 		full_name: string;
 		email: string;
