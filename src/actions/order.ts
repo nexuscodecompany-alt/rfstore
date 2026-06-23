@@ -167,11 +167,12 @@ export const updateOrderStatus = async ({
 	id: number;
 	status: string;
 }) => {
-	const { error } = await supabase
-		.from('orders')
-		.update({ status })
-		.eq('id', id);
-
+	// Vía RPC: si el nuevo estado es de cancelación, devuelve el stock (RF + ML) de
+	// forma idempotente; si reactivás una orden cancelada, lo vuelve a descontar.
+	const { error } = await (supabase as any).rpc('change_order_status', {
+		p_order_id: id,
+		p_status: status,
+	});
 	if (error) throw new Error(error.message);
 };
 

@@ -8,9 +8,12 @@ export const useChangeStatusOrder = () => {
 	const { mutate, isPending } = useMutation({
 		mutationFn: updateOrderStatus,
 		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: ['orders', 'admin'],
-			});
+			queryClient.invalidateQueries({ queryKey: ['orders', 'admin'] });
+			// Cancelar/reactivar mueve stock y cambia las métricas.
+			queryClient.invalidateQueries({ queryKey: ['order', 'admin'] });
+			queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+			queryClient.invalidateQueries({ queryKey: ['admin-products'] });
+			queryClient.invalidateQueries({ queryKey: ['products'] });
 		},
 		onError: error => {
 			console.log(error);
