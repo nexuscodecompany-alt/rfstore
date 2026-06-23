@@ -151,7 +151,7 @@ export const getAllOrders = async () => {
 	const { data, error } = await (supabase as any)
 		.from('orders')
 		.select(
-			'id, total_amount, status, created_at, channel, ml_order_id, ml_pack_id, payment_method, payment_status, concept_id, manual_description, customers(full_name, email), sale_concepts:concept_id(name)'
+			'id, total_amount, total_original, ml_currency, fx_rate, status, created_at, channel, ml_order_id, ml_pack_id, payment_method, payment_status, concept_id, manual_description, customers(full_name, email), sale_concepts:concept_id(name)'
 		)
 		.order('created_at', { ascending: false });
 

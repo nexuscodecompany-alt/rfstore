@@ -3,6 +3,7 @@ import { HiChevronRight, HiOutlineShoppingCart } from 'react-icons/hi2';
 import {
 	formatDateLong,
 	formatPrice,
+	formatMoneyCur,
 	orderStatusBadge,
 	orderStatusOptions,
 } from '../../../helpers';
@@ -31,9 +32,16 @@ interface OrderRow {
 	key: string;
 	rep: OrderWithCustomer; // orden representativa (la más reciente del pack)
 	ids: number[]; // todas las órdenes que agrupa (1 si no es pack)
-	total: number; // total sumado del pack
+	realTotal: number; // total en la MONEDA REAL de la venta (pesos ML, USD web)
+	currency: 'UYU' | 'USD';
 	count: number; // cantidad de pedidos del pack
 }
+
+// Moneda y monto REAL de la venta: pesos para ML/UYU (total_original), dólares para web.
+const realCurrency = (o: OrderWithCustomer): 'UYU' | 'USD' =>
+	o.ml_currency === 'UYU' ? 'UYU' : 'USD';
+const realTotalOf = (o: OrderWithCustomer): number =>
+	o.total_original != null ? Number(o.total_original) : Number(o.total_amount ?? 0);
 
 const groupByPack = (list: OrderWithCustomer[]): OrderRow[] => {
 	const rows: OrderRow[] = [];
@@ -43,7 +51,7 @@ const groupByPack = (list: OrderWithCustomer[]): OrderRow[] => {
 		if (pack && packIndex.has(pack)) {
 			const row = rows[packIndex.get(pack)!];
 			row.ids.push(o.id);
-			row.total += Number(o.total_amount ?? 0);
+			row.realTotal += realTotalOf(o);
 			row.count += 1;
 			continue;
 		}
@@ -52,7 +60,8 @@ const groupByPack = (list: OrderWithCustomer[]): OrderRow[] => {
 			key: pack ? `pack-${pack}` : `order-${o.id}`,
 			rep: o,
 			ids: [o.id],
-			total: Number(o.total_amount ?? 0),
+			realTotal: realTotalOf(o),
+			currency: realCurrency(o),
 			count: 1,
 		});
 	}
@@ -204,7 +213,7 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 											/>
 										</td>
 										<td className='px-5 py-4 text-right font-semibold text-ink-900'>
-											{formatPrice(row.total)}
+											{formatMoneyCur(row.realTotal, row.currency)}
 										</td>
 										<td className='px-5 py-4 text-ink-300'>
 											<HiChevronRight size={18} />
@@ -251,7 +260,7 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 										</p>
 									</div>
 									<span className='shrink-0 font-bold text-ink-900'>
-										{formatPrice(row.total)}
+										{formatMoneyCur(row.realTotal, row.currency)}
 									</span>
 								</div>
 								<div className='mt-3' onClick={e => e.stopPropagation()}>

@@ -13,10 +13,9 @@ import { formatPriceCurrency, formatDateTime, orderStatusBadge } from '../../hel
 const orderFx = (o: { channel?: string | null; mlCurrency?: string | null; fxRate?: number }) =>
 	o.channel === 'ml' && o.mlCurrency === 'UYU' && (o.fxRate ?? 0) > 0 ? (o.fxRate as number) : 1;
 
-// El costo CDR se compra CON IVA (22%): el precio CDR que vemos es sin IVA y RF
-// paga el IVA al comprar. La ganancia real usa costo × 1.22.
-const CDR_IVA_FACTOR = 1.22;
-const costWithIva = (cost: number) => cost * CDR_IVA_FACTOR;
+// La ganancia usa el costo CDR tal cual (el IVA ya se resuelve en el módulo de
+// precios). costWithIva se mantiene por compatibilidad pero NO suma IVA.
+const costWithIva = (cost: number) => cost;
 
 export const DashboardOrderPage = () => {
 	const navigate = useNavigate();
@@ -219,7 +218,7 @@ export const DashboardOrderPage = () => {
 										</p>
 										{item.cost != null && (
 											<p className='mt-0.5 text-xs text-emerald-700'>
-												Costo CDR c/IVA {money(costWithIva(item.cost))} · Margen{' '}
+												Costo CDR {money(costWithIva(item.cost))} · Margen{' '}
 												{money((item.price - costWithIva(item.cost)) * item.quantity)}
 												{item.cost > 0 &&
 													` (${Math.round(((item.price - costWithIva(item.cost)) / costWithIva(item.cost)) * 100)}%)`}
@@ -256,7 +255,7 @@ export const DashboardOrderPage = () => {
 								{hasCost && (
 									<>
 										<div className='flex justify-between text-ink-500'>
-											<span>Costo CDR c/IVA</span>
+											<span>Costo CDR</span>
 											<span>{money(totalCost)}</span>
 										</div>
 										<div className='flex justify-between text-ink-600'>

@@ -26,6 +26,9 @@ export interface OrderWithCustomer {
 	id: number;
 	status: string;
 	total_amount: number;
+	total_original?: number | null;
+	ml_currency?: 'USD' | 'UYU' | string | null;
+	fx_rate?: number | null;
 	created_at: string;
 	channel?: string | null;
 	ml_order_id?: string | null;

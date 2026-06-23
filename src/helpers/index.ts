@@ -23,13 +23,14 @@ export const formatMoney = (price: number) => {
 	return `USD ${formatted}`;
 };
 
-// Dinero real en su moneda original. UYU -> "$ 21.460,45"; USD -> "USD 188,95".
+// Dinero real en su moneda original. UYU -> "$U 21.460,45"; USD -> "USD 188,95".
+// Usamos "$U" para pesos (no "$") para que no se confunda con dólares.
 export const formatMoneyCur = (price: number, currency: 'UYU' | 'USD') => {
 	const formatted = new Intl.NumberFormat('es-UY', {
 		minimumFractionDigits: 2,
 		maximumFractionDigits: 2,
 	}).format(price ?? 0);
-	return currency === 'UYU' ? `$ ${formatted}` : `USD ${formatted}`;
+	return currency === 'UYU' ? `$U ${formatted}` : `USD ${formatted}`;
 };
 
 /* ====================================================================== */
@@ -154,7 +155,7 @@ export const mlPriceFromConfig = (
 
 export const formatPriceCurrency = (price: number, currency: 'USD' | 'UYU'): string => {
 	if (currency === 'UYU') {
-		return `$ ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(price)}`;
+		return `$U ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(price)}`;
 	}
 	return `USD ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.ceil(price))}`;
 };

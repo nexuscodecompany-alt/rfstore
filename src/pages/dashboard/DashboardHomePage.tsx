@@ -152,17 +152,17 @@ const NetProfitCard = ({
 			</p>
 			<div className='mt-4 space-y-1 border-t border-emerald-100 pt-3 text-xs'>
 				<Line label='Vendido' value={revenue} />
-				<Line label='Costo CDR c/IVA' value={cost} minus />
-				<Line label='Comisiones' value={commission} minus />
+				<Line label='Costo CDR de los productos' value={cost} minus />
+				<div className='flex justify-between text-ink-400'>
+					<span>= Ganancia bruta (antes de comisión y envío)</span>
+					<span>{formatMoneyCur(gross, currency)}</span>
+				</div>
+				<Line label='Comisión Mercado Libre' value={commission} minus />
 				<Line label='Envíos' value={shipping} minus />
 				<Line label='Otros costos' value={other} minus />
 				<div className='mt-1 flex justify-between border-t border-emerald-100 pt-2 font-bold text-emerald-700'>
-					<span>Ganancia neta</span>
+					<span>= Ganancia neta real</span>
 					<span>{formatMoneyCur(net, currency)}</span>
-				</div>
-				<div className='flex justify-between text-ink-400'>
-					<span>Ganancia bruta (s/costo)</span>
-					<span>{formatMoneyCur(gross, currency)}</span>
 				</div>
 			</div>
 		</div>
