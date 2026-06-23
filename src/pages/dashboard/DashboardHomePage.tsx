@@ -9,8 +9,9 @@ import {
 	HiOutlineCalendarDays,
 } from 'react-icons/hi2';
 import { useDashboardMetrics } from '../../hooks/dashboard/useDashboardMetrics';
+import { useUsdUyuRate } from '../../hooks';
 import { formatPrice, formatMoneyCur } from '../../helpers';
-import type { TopProduct } from '../../actions/dashboard';
+import type { TopProduct, DashboardOverview } from '../../actions/dashboard';
 
 /* ---------- helpers de fecha ---------- */
 const toISODate = (d: Date) => d.toISOString().slice(0, 10);
@@ -152,7 +153,7 @@ const NetProfitCard = ({
 			</p>
 			<div className='mt-4 space-y-1 border-t border-emerald-100 pt-3 text-xs'>
 				<Line label='Vendido' value={revenue} />
-				<Line label='Costo CDR de los productos' value={cost} minus />
+				<Line label='Costo CDR (con IVA 22%)' value={cost} minus />
 				<div className='flex justify-between text-ink-400'>
 					<span>= Ganancia bruta (antes de comisión y envío)</span>
 					<span>{formatMoneyCur(gross, currency)}</span>
@@ -165,6 +166,51 @@ const NetProfitCard = ({
 					<span>{formatMoneyCur(net, currency)}</span>
 				</div>
 			</div>
+		</div>
+	);
+};
+
+// Suma pesos + dólares en UN total (en pesos), convirtiendo los USD al dólar BCU.
+const CombinedTotalCard = ({
+	o,
+	rate,
+}: {
+	o: DashboardOverview;
+	rate: number;
+}) => {
+	const uyuNet =
+		o.uyu_revenue - o.uyu_cost - o.uyu_commission - o.uyu_shipping - o.uyu_other;
+	const usdNet =
+		o.usd_revenue - o.usd_cost - o.usd_commission - o.usd_shipping - o.usd_other;
+	const canConvert = rate > 0;
+	const totalNet = uyuNet + (canConvert ? usdNet * rate : 0);
+	const totalRev = o.uyu_revenue + (canConvert ? o.usd_revenue * rate : 0);
+	const pct = totalRev > 0 ? (totalNet / totalRev) * 100 : 0;
+	const hasUsd = o.usd_orders > 0;
+	return (
+		<div className='rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-700 p-5 text-white shadow-card-hover'>
+			<div className='flex items-center justify-between'>
+				<span className='text-sm font-semibold'>
+					Ganancia neta TOTAL (todo convertido a pesos)
+				</span>
+				<span className='text-xs text-emerald-100'>
+					{num(o.uyu_orders + o.usd_orders)} ventas
+				</span>
+			</div>
+			<p className='mt-1 text-4xl font-extrabold tracking-tight'>
+				{formatMoneyCur(totalNet, 'UYU')}
+			</p>
+			<p className='text-xs text-emerald-100'>
+				{totalRev > 0 ? `${pct.toFixed(1)}% sobre venta · ` : ''}
+				vendido {formatMoneyCur(totalRev, 'UYU')}
+			</p>
+			{hasUsd && (
+				<p className='mt-2 border-t border-white/20 pt-2 text-xs text-emerald-50'>
+					{canConvert
+						? `Incluye ${formatMoneyCur(usdNet, 'USD')} de ganancia en dólares, convertidos al dólar BCU de hoy ($U ${rate.toFixed(2)} por US$).`
+						: 'No se pudo traer el dólar BCU — mostrando solo pesos por ahora.'}
+				</p>
+			)}
 		</div>
 	);
 };
@@ -323,6 +369,10 @@ export const DashboardHomePage = () => {
 	const { data, isLoading, isError, refetch, isFetching } =
 		useDashboardMetrics(fromISO, toISO);
 
+	// Dólar BCU para combinar pesos + dólares en un solo total (en pesos).
+	const { data: fx } = useUsdUyuRate();
+	const usdRate = fx?.rate ?? 0;
+
 	const o = data?.overview;
 
 	const conversion = useMemo(() => {
@@ -423,13 +473,17 @@ export const DashboardHomePage = () => {
 					<section className='space-y-3'>
 						<div className='text-center'>
 							<h2 className='text-lg font-bold text-ink-900'>
-								Ganancia (moneda real de venta)
+								Ganancia
 							</h2>
 							<p className='text-xs text-ink-500'>
 								Neta real = venta − costo − comisiones − envíos − otros.
-								Pesos y dólares por separado.
 							</p>
 						</div>
+
+						{/* Total combinado (pesos + dólares al dólar BCU) */}
+						<CombinedTotalCard o={o} rate={usdRate} />
+
+						{/* Detalle por moneda real de venta */}
 						<div className='grid grid-cols-1 gap-4 sm:grid-cols-2'>
 							<NetProfitCard
 								label='En pesos (UYU)'
