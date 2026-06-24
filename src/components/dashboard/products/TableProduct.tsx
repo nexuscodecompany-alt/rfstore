@@ -158,7 +158,7 @@ export const TableProduct = () => {
   return (
     <div className="flex flex-col flex-1 border border-ink-200/70 rounded-2xl p-5 bg-white shadow-soft">
       <div className="mb-6 flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative flex-1 sm:max-w-md">
             <input
               type="text"
@@ -286,7 +286,7 @@ export const TableProduct = () => {
                 setSearchParams({}, { replace: true });
                 setPage(1);
               }}
-              className="text-xs font-semibold text-brand-700 hover:text-brand-900"
+              className="whitespace-nowrap text-xs font-semibold text-brand-700 hover:text-brand-900"
             >
               Limpiar filtros
             </button>
@@ -598,7 +598,7 @@ const MlReadinessCell = ({ product, stockThreshold, mlUrl }: ReadinessCellProps)
             target="_blank"
             rel="noopener noreferrer"
             title="Ver la publicación en Mercado Libre"
-            className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 hover:bg-sky-100"
+            className="inline-flex items-center gap-1 whitespace-nowrap rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 hover:bg-sky-100"
           >
             Ver en ML
             <HiOutlineExternalLink size={12} className="inline-block" />
@@ -623,7 +623,7 @@ const MlReadinessCell = ({ product, stockThreshold, mlUrl }: ReadinessCellProps)
               ? `Listo para publicar. Recomendado agregar: ${recomend}`
               : 'Listo para publicar en Mercado Libre'
           }
-          className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"
+          className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"
         >
           ✓ Listo{r.percent < 100 ? ` · ${r.percent}%` : ''}
         </span>
