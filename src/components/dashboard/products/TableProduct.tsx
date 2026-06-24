@@ -54,6 +54,9 @@ export const TableProduct = () => {
   const [mlFilter, setMlFilter] = useState<'' | 'in' | 'out'>(
     (searchParams.get('ml') as '' | 'in' | 'out') || ''
   );
+  const [minReadiness, setMinReadiness] = useState<number>(
+    Number(searchParams.get('listo')) || 0
+  );
 
   // Si vienen filtros por query string (ej desde /dashboard/cdr), persistirlos en estado
   useEffect(() => {
@@ -97,7 +100,8 @@ export const TableProduct = () => {
     sourceFilter,
     activeFilter,
     newOnly,
-    mlFilter
+    mlFilter,
+    minReadiness
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -252,7 +256,23 @@ export const TableProduct = () => {
             <option value="out">No publicados en ML</option>
           </select>
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter) && (
+          <select
+            value={minReadiness}
+            onChange={(e) => {
+              setMinReadiness(Number(e.target.value));
+              setPage(1);
+            }}
+            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+            title="Filtrar por qué tan listo está el producto para publicar en Mercado Libre"
+          >
+            <option value={0}>Listo ML: cualquiera</option>
+            <option value={50}>≥ 50% listo</option>
+            <option value={70}>≥ 70% listo</option>
+            <option value={90}>≥ 90% listo</option>
+            <option value={100}>100% (listos para publicar)</option>
+          </select>
+
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0) && (
             <button
               type="button"
               onClick={() => {
@@ -262,6 +282,7 @@ export const TableProduct = () => {
                 setActiveFilter('');
                 setNewOnly(false);
                 setMlFilter('');
+                setMinReadiness(0);
                 setSearchParams({}, { replace: true });
                 setPage(1);
               }}

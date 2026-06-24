@@ -9,12 +9,13 @@ export const useAdminProducts = (
 	source: '' | 'local' | 'cdr' = '',
 	activeFilter: '' | 'active' | 'inactive' = '',
 	newOnly = false,
-	mlFilter: '' | 'in' | 'out' = ''
+	mlFilter: '' | 'in' | 'out' = '',
+	minReadiness = 0
 ) => {
 	const { data, isLoading } = useQuery({
-		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter],
+		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness],
 		queryFn: () =>
-			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter),
+			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness),
 	});
 
 	return {

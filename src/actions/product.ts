@@ -169,7 +169,8 @@ export const getAdminProducts = async (
     source: '' | 'local' | 'cdr' = '',
     activeFilter: '' | 'active' | 'inactive' = '',
     newOnly = false,
-    mlFilter: '' | 'in' | 'out' = ''
+    mlFilter: '' | 'in' | 'out' = '',
+    minReadiness = 0
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
@@ -209,6 +210,10 @@ export const getAdminProducts = async (
     else if (activeFilter === 'inactive') query = query.eq('active', false);
 
     if (newOnly) query = query.is('seen_at', null);
+
+    // Filtro por "% listo para ML": columna computada ml_ready_percent (función SQL).
+    // Filtra a nivel base => respeta paginación y total, no solo la página visible.
+    if (minReadiness > 0) query = query.gte('ml_ready_percent', minReadiness);
 
     const { data: products, error, count } = await query.range(from, to);
     if (error) throw new Error(error.message);
