@@ -177,9 +177,12 @@ export const getAdminProducts = async (
 
     let query = supabase
         .from('products')
-        .select('*, variants(*), brand:brands(*), category:categories(*)', {
-            count: 'exact',
-        })
+        .select(
+            '*, variants(*), brand:brands(*), category:categories(*), ml_item_mapping(ml_item_id, permalink, status)',
+            {
+                count: 'exact',
+            }
+        )
         .order('created_at', { ascending: false })
         .order('id', { ascending: true });
 

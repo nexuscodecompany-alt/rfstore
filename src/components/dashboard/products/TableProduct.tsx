@@ -14,8 +14,9 @@ import {
 } from '../../../hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Loader } from '../../shared/Loader';
-import { formatDate, formatPrice, salePrice, mlMarginFor, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
+import { formatDate, formatPrice, salePrice, mlMarginFor, getMlReadiness, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
 import { getMlPricingConfig } from '../../../actions/ml-pricing';
+import { getMlSettings } from '../../../actions/ml';
 import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
 
@@ -30,6 +31,7 @@ const tableHeaders = [
   'Precio ML',
   'Stock',
   'Estado',
+  'Listo ML',
   'Fecha',
   '',
 ];
@@ -68,6 +70,11 @@ export const TableProduct = () => {
     queryFn: getMlPricingConfig,
   });
   const mlCfg = mlPricingCfg ?? DEFAULT_ML_PRICING;
+  const { data: mlSettings } = useQuery({
+    queryKey: ['ml-settings'],
+    queryFn: getMlSettings,
+  });
+  const stockThreshold = mlSettings?.stock_threshold ?? 3;
   const newCount = useNewProductsCount();
   const { mutate: markSeen, isPending: markingSeen } = useMarkProductsSeen();
 
@@ -97,19 +104,17 @@ export const TableProduct = () => {
   const { mutate: toggleActive } = useSetProductActive();
   const { publish, isPublishing, publishingVars } = usePublishMlItem();
 
-  const handlePublishMl = (
-    id: string,
-    name: string,
-    variantId: string | undefined,
-    isInMl: boolean,
-    active: boolean
-  ) => {
+  const handlePublishMl = (product: any, variantId: string | undefined) => {
     setOpenMenuIndex(null);
-    if (isInMl) return;
-    if (!active) {
-      toast.error('Activá el producto antes de publicarlo en Mercado Libre', {
-        position: 'bottom-right',
-      });
+    if (product.is_in_ml) return;
+    const r = getMlReadiness(product, stockThreshold);
+    if (!r.canPublish) {
+      toast.error(
+        `Falta para publicar: ${r.missingHard
+          .map((m) => m.label.toLowerCase())
+          .join(', ')}`,
+        { position: 'bottom-right' }
+      );
       return;
     }
     if (!variantId) {
@@ -120,10 +125,10 @@ export const TableProduct = () => {
     }
     if (
       window.confirm(
-        `¿Publicar "${name}" en Mercado Libre?\n\nSe crea una publicación nueva en tu cuenta de ML con el precio y stock actuales.`
+        `¿Publicar "${product.name}" en Mercado Libre?\n\nSe crea una publicación nueva en tu cuenta de ML con el precio y stock actuales.`
       )
     ) {
-      publish({ productId: id, variantId });
+      publish({ productId: product.id, variantId });
     }
   };
 
@@ -340,6 +345,13 @@ export const TableProduct = () => {
           <tbody>
             {products.map((product, index) => {
               const selectedVariant = product.variants[0] || {};
+              const mlMapping = (product as any).ml_item_mapping?.[0];
+              const mlItemId: string | null = mlMapping?.ml_item_id ?? null;
+              const mlUrl: string | null =
+                mlMapping?.permalink ??
+                (mlItemId
+                  ? `https://articulo.mercadolibre.com.uy/${mlItemId.replace(/^MLU/, 'MLU-')}`
+                  : null);
 
               return (
                 <tr key={index}>
@@ -412,6 +424,7 @@ export const TableProduct = () => {
                       </span>
                     )}
                   </td>
+                  <MlReadinessCell product={product} stockThreshold={stockThreshold} mlUrl={mlUrl} />
                   <CellTableProduct content={formatDate(product.created_at)} />
                   <td className="relative">
                     <button
@@ -448,9 +461,21 @@ export const TableProduct = () => {
                           {product.active ? 'Inactivar' : 'Activar'}
                         </button>
                         {(product as any).is_in_ml ? (
-                          <span className="block w-full text-left px-4 py-2 text-xs font-medium text-emerald-700">
-                            ✓ En Mercado Libre
-                          </span>
+                          mlUrl ? (
+                            <a
+                              href={mlUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-1 w-full text-left px-4 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50"
+                            >
+                              Ver en Mercado Libre
+                              <HiOutlineExternalLink size={13} className="inline-block" />
+                            </a>
+                          ) : (
+                            <span className="block w-full text-left px-4 py-2 text-xs font-medium text-emerald-700">
+                              ✓ En Mercado Libre
+                            </span>
+                          )
                         ) : (
                           <button
                             disabled={
@@ -458,13 +483,7 @@ export const TableProduct = () => {
                             }
                             className="block w-full text-left px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
                             onClick={() =>
-                              handlePublishMl(
-                                product.id,
-                                product.name,
-                                selectedVariant?.id,
-                                Boolean((product as any).is_in_ml),
-                                Boolean(product.active)
-                              )
+                              handlePublishMl(product, selectedVariant?.id)
                             }
                           >
                             {isPublishing && publishingVars?.productId === product.id
@@ -529,5 +548,78 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
         {cost > 0 ? formatPrice(mlUsd) : '—'}
       </td>
     </>
+  );
+};
+
+// Celda "Listo ML": muestra si el producto está 100% listo para publicar en
+// Mercado Libre o, si no, el % y qué le falta (para que el cliente lo complete).
+// Los ya publicados muestran "—".
+interface ReadinessCellProps {
+  product: {
+    is_in_ml?: boolean;
+    active?: boolean | null;
+    price_usd?: number | null;
+    images?: unknown[] | null;
+    brand_id?: string | null;
+    category_id?: string | null;
+    variants?: ({ stock?: number | null } | null)[] | null;
+  };
+  stockThreshold: number;
+  mlUrl: string | null;
+}
+const MlReadinessCell = ({ product, stockThreshold, mlUrl }: ReadinessCellProps) => {
+  if (product.is_in_ml) {
+    return (
+      <td className="p-4 align-middle">
+        {mlUrl ? (
+          <a
+            href={mlUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            title="Ver la publicación en Mercado Libre"
+            className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 ring-1 ring-sky-200 hover:bg-sky-100"
+          >
+            Ver en ML
+            <HiOutlineExternalLink size={12} className="inline-block" />
+          </a>
+        ) : (
+          <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
+            ✓ En ML
+          </span>
+        )}
+      </td>
+    );
+  }
+  const r = getMlReadiness(product, stockThreshold);
+
+  if (r.canPublish) {
+    const recomend = r.missing.map((m) => m.label.toLowerCase()).join(', ');
+    return (
+      <td className="p-4 align-middle">
+        <span
+          title={
+            recomend
+              ? `Listo para publicar. Recomendado agregar: ${recomend}`
+              : 'Listo para publicar en Mercado Libre'
+          }
+          className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"
+        >
+          ✓ Listo{r.percent < 100 ? ` · ${r.percent}%` : ''}
+        </span>
+      </td>
+    );
+  }
+
+  const faltan = r.missingHard.map((m) => m.label.toLowerCase()).join(', ');
+  return (
+    <td className="p-4 align-middle">
+      <span
+        title={`Falta para publicar: ${faltan}`}
+        className="inline-flex flex-col items-start gap-0.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200"
+      >
+        <span>{r.percent}% listo</span>
+        <span className="font-normal">falta: {faltan}</span>
+      </span>
+    </td>
   );
 };

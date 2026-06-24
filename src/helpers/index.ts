@@ -160,6 +160,58 @@ export const formatPriceCurrency = (price: number, currency: 'USD' | 'UYU'): str
 	return `USD ${new Intl.NumberFormat('es-UY', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.ceil(price))}`;
 };
 
+/* ====================================================================== */
+/*  PUBLICABILIDAD EN ML: checklist por producto. Dice si está 100% listo  */
+/*  para publicar y, si no, qué le falta (para que el cliente lo complete). */
+/*  Los "hard" son los que la edge ml-publish-item / ML rechazan si faltan; */
+/*  los "recomendados" mejoran la publicación pero no la bloquean.          */
+/* ====================================================================== */
+export interface MlReadinessCheck {
+	key: string;
+	label: string;
+	ok: boolean;
+	hard: boolean; // true => si falta, NO se puede publicar
+}
+
+export interface MlReadiness {
+	canPublish: boolean; // todos los "hard" cumplidos
+	percent: number; // % del checklist completo cumplido
+	checks: MlReadinessCheck[];
+	missing: MlReadinessCheck[];
+	missingHard: MlReadinessCheck[];
+}
+
+interface ReadinessProductInput {
+	active?: boolean | null;
+	price_usd?: number | null;
+	images?: unknown[] | null;
+	brand_id?: string | null;
+	category_id?: string | null;
+	variants?: ({ stock?: number | null } | null)[] | null;
+}
+
+// stockThreshold = ml_stock_threshold (la edge function exige stock > umbral; default 3).
+export const getMlReadiness = (
+	product: ReadinessProductInput,
+	stockThreshold = 3
+): MlReadiness => {
+	const stock = Number(product.variants?.[0]?.stock ?? 0);
+	const cost = Number(product.price_usd ?? 0);
+	const checks: MlReadinessCheck[] = [
+		{ key: 'active', label: 'Activo', ok: !!product.active, hard: true },
+		{ key: 'cost', label: 'Costo', ok: cost > 0, hard: true },
+		{ key: 'stock', label: 'Stock', ok: stock > stockThreshold, hard: true },
+		{ key: 'images', label: 'Imágenes', ok: (product.images?.length ?? 0) >= 1, hard: true },
+		{ key: 'brand', label: 'Marca', ok: !!product.brand_id, hard: false },
+		{ key: 'category', label: 'Categoría', ok: !!product.category_id, hard: false },
+	];
+	const done = checks.filter(c => c.ok).length;
+	const percent = Math.round((done / checks.length) * 100);
+	const missing = checks.filter(c => !c.ok);
+	const missingHard = missing.filter(c => c.hard);
+	return { canPublish: missingHard.length === 0, percent, checks, missing, missingHard };
+};
+
 // Función para preparar los productos - (CELULARES)
 export const prepareProducts = (products: Product[]) => {
 	return products.map(product => {
