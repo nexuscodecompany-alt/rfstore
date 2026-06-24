@@ -150,6 +150,8 @@ export interface PublishResult {
 	error?: string;
 	detail?: unknown;
 	payload_sent?: unknown;
+	// Atributos obligatorios de la categoría ML que el producto no tiene (para avisar al cliente).
+	missing_attributes?: { id: string; name: string }[];
 }
 
 export interface DryRunResult {
@@ -169,6 +171,26 @@ export interface DryRunResult {
 
 export const publishMlItem = (product_id: string, variant_id: string, dry_run = false) =>
 	invokeMlFn<PublishResult | DryRunResult>('ml-publish-item', { product_id, variant_id, dry_run });
+
+// --------- Readiness (% real listo para ML) ---------
+export interface ReadinessResult {
+	ok: boolean;
+	product_id?: string;
+	percent?: number;
+	missing?: string[];
+	category_id?: string | null;
+	error?: string;
+}
+
+// Recalcula y guarda el % real de un producto (consulta categoría + atributos en ML).
+export const recalcMlReadiness = (product_id: string) =>
+	invokeMlFn<ReadinessResult>('ml-readiness', { product_id });
+
+// Recalcula varios (ej: la página actual del listado). El backend procesa hasta 60.
+export const recalcMlReadinessIds = (product_ids: string[]) =>
+	invokeMlFn<{ ok: boolean; processed: number; results: ReadinessResult[] }>('ml-readiness', {
+		product_ids,
+	});
 
 export interface RepriceResult {
 	ok: boolean;

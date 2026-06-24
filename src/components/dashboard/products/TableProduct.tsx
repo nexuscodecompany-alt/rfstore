@@ -9,6 +9,7 @@ import {
   useMarkProductsSeen,
   useNewProductsCount,
   usePublishMlItem,
+  useRecalcMlReadiness,
   useSetProductActive,
   useTaxonomiesAdmin,
 } from '../../../hooks';
@@ -107,18 +108,20 @@ export const TableProduct = () => {
   const { mutate, isPending } = useDeleteProduct();
   const { mutate: toggleActive } = useSetProductActive();
   const { publish, isPublishing, publishingVars } = usePublishMlItem();
+  const { recalc, isRecalculating, recalcVars } = useRecalcMlReadiness();
 
   const handlePublishMl = (product: any, variantId: string | undefined) => {
     setOpenMenuIndex(null);
     if (product.is_in_ml) return;
-    const r = getMlReadiness(product, stockThreshold);
-    if (!r.canPublish) {
-      toast.error(
-        `Falta para publicar: ${r.missingHard
-          .map((m) => m.label.toLowerCase())
-          .join(', ')}`,
-        { position: 'bottom-right' }
-      );
+    // Si ya tiene el % real calculado, usamos esos faltantes (incluyen atributos de ML);
+    // si no, caemos al chequeo básico del lado del cliente.
+    const missing: string[] = product.ml_ready_checked_at
+      ? ((product.ml_ready_missing as string[]) ?? [])
+      : getMlReadiness(product, stockThreshold).missingHard.map((m) => m.label);
+    if (missing.length > 0) {
+      toast.error(`Falta para publicar: ${missing.join(', ')}`, {
+        position: 'bottom-right',
+      });
       return;
     }
     if (!variantId) {
@@ -329,6 +332,18 @@ export const TableProduct = () => {
               Marcar todos como vistos
             </button>
           )}
+
+          <button
+            type="button"
+            disabled={isRecalculating || !products || products.length === 0}
+            onClick={() => recalc({ productIds: products.map((p: any) => p.id) })}
+            title="Recalcular el % listo para ML de los productos de esta página (consulta a Mercado Libre)"
+            className="inline-flex items-center gap-1 rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition-all hover:bg-sky-100 disabled:opacity-50"
+          >
+            {isRecalculating && recalcVars?.productIds
+              ? 'Recalculando…'
+              : 'Recalcular % (página)'}
+          </button>
         </div>
 
         <p className="text-sm text-gray-500">
@@ -445,7 +460,14 @@ export const TableProduct = () => {
                       </span>
                     )}
                   </td>
-                  <MlReadinessCell product={product} stockThreshold={stockThreshold} mlUrl={mlUrl} />
+                  <MlReadinessCell
+                    product={product as any}
+                    mlUrl={mlUrl}
+                    onRecalc={() => recalc({ productId: product.id })}
+                    recalculating={
+                      isRecalculating && recalcVars?.productId === product.id
+                    }
+                  />
                   <CellTableProduct content={formatDate(product.created_at)} />
                   <td className="relative">
                     <button
@@ -512,6 +534,22 @@ export const TableProduct = () => {
                               : 'Publicar en ML'}
                           </button>
                         )}
+                        {!(product as any).is_in_ml && (
+                          <button
+                            disabled={
+                              isRecalculating && recalcVars?.productId === product.id
+                            }
+                            className="block w-full text-left px-4 py-2 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                            onClick={() => {
+                              setOpenMenuIndex(null);
+                              recalc({ productId: product.id });
+                            }}
+                          >
+                            {isRecalculating && recalcVars?.productId === product.id
+                              ? 'Recalculando…'
+                              : 'Recalcular %'}
+                          </button>
+                        )}
                         {(product as any).seen_at === null && (
                           <button
                             className="block w-full text-left px-4 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50"
@@ -572,23 +610,21 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
   );
 };
 
-// Celda "Listo ML": muestra si el producto está 100% listo para publicar en
-// Mercado Libre o, si no, el % y qué le falta (para que el cliente lo complete).
-// Los ya publicados muestran "—".
+// Celda "Listo ML": muestra el % REAL guardado (ml_ready_percent, calculado por la edge
+// function ml-readiness consultando ML) y qué le falta. Si todavía no se calculó, ofrece
+// un botón "Calcular". Los ya publicados muestran el link a la publicación.
 interface ReadinessCellProps {
   product: {
     is_in_ml?: boolean;
-    active?: boolean | null;
-    price_usd?: number | null;
-    images?: unknown[] | null;
-    brand_id?: string | null;
-    category_id?: string | null;
-    variants?: ({ stock?: number | null } | null)[] | null;
+    ml_ready_percent?: number | null;
+    ml_ready_missing?: string[] | null;
+    ml_ready_checked_at?: string | null;
   };
-  stockThreshold: number;
   mlUrl: string | null;
+  onRecalc: () => void;
+  recalculating: boolean;
 }
-const MlReadinessCell = ({ product, stockThreshold, mlUrl }: ReadinessCellProps) => {
+const MlReadinessCell = ({ product, mlUrl, onRecalc, recalculating }: ReadinessCellProps) => {
   if (product.is_in_ml) {
     return (
       <td className="p-4 align-middle">
@@ -611,35 +647,48 @@ const MlReadinessCell = ({ product, stockThreshold, mlUrl }: ReadinessCellProps)
       </td>
     );
   }
-  const r = getMlReadiness(product, stockThreshold);
 
-  if (r.canPublish) {
-    const recomend = r.missing.map((m) => m.label.toLowerCase()).join(', ');
+  // Aún sin calcular el % real.
+  if (!product.ml_ready_checked_at || product.ml_ready_percent == null) {
+    return (
+      <td className="p-4 align-middle">
+        <button
+          type="button"
+          onClick={onRecalc}
+          disabled={recalculating}
+          title="Calcular el % real consultando a Mercado Libre"
+          className="inline-flex items-center whitespace-nowrap rounded-full border border-ink-200 bg-white px-2.5 py-1 text-xs font-semibold text-ink-600 hover:bg-ink-50 disabled:opacity-50"
+        >
+          {recalculating ? 'Calculando…' : 'Calcular %'}
+        </button>
+      </td>
+    );
+  }
+
+  const percent = product.ml_ready_percent;
+  const missing = product.ml_ready_missing ?? [];
+
+  if (missing.length === 0) {
     return (
       <td className="p-4 align-middle">
         <span
-          title={
-            recomend
-              ? `Listo para publicar. Recomendado agregar: ${recomend}`
-              : 'Listo para publicar en Mercado Libre'
-          }
+          title="Listo para publicar en Mercado Libre (cumple los atributos que pide la categoría)"
           className="inline-flex items-center whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200"
         >
-          ✓ Listo{r.percent < 100 ? ` · ${r.percent}%` : ''}
+          ✓ Listo
         </span>
       </td>
     );
   }
 
-  const faltan = r.missingHard.map((m) => m.label.toLowerCase()).join(', ');
   return (
     <td className="p-4 align-middle">
       <span
-        title={`Falta para publicar: ${faltan}`}
+        title={`Falta para publicar: ${missing.join(', ')}`}
         className="inline-flex flex-col items-start gap-0.5 rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 ring-1 ring-amber-200"
       >
-        <span>{r.percent}% listo</span>
-        <span className="font-normal">falta: {faltan}</span>
+        <span>{percent}% listo</span>
+        <span className="font-normal">falta: {missing.join(', ')}</span>
       </span>
     </td>
   );

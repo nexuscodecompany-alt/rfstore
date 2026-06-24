@@ -30,6 +30,16 @@ export const usePublishMlItem = () => {
 				queryClient.invalidateQueries({ queryKey: ['admin-products'] });
 				queryClient.invalidateQueries({ queryKey: ['ml-published'] });
 				toast.success('Publicado en Mercado Libre ✅', { position: 'bottom-right' });
+			} else if (
+				data?.error === 'missing_required_attributes' &&
+				Array.isArray(data.missing_attributes) &&
+				data.missing_attributes.length > 0
+			) {
+				const names = data.missing_attributes.map((a) => a.name).join(', ');
+				toast.error(
+					`Mercado Libre pide estos datos de la categoría: ${names}. Agregalos en el nombre o la descripción del producto y reintentá.`,
+					{ position: 'bottom-right', duration: 9000 }
+				);
 			} else {
 				toast.error(friendlyMlError(data?.error), {
 					position: 'bottom-right',
