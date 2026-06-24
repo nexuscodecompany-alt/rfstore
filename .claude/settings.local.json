@@ -117,7 +117,8 @@
       "Bash(npx vite *)",
       "Bash(grep -rn \"TableOrdersAdmin\" src/components/dashboard/index.ts src/components/dashboard/orders/index.ts)",
       "Bash(ls src/components/dashboard/orders/)",
-      "Bash(cat src/components/dashboard/orders/index.ts)"
+      "Bash(cat src/components/dashboard/orders/index.ts)",
+      "WebFetch(domain:api.mercadolibre.com)"
     ]
   }
 }
