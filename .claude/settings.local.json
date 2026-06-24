@@ -118,7 +118,8 @@
       "Bash(grep -rn \"TableOrdersAdmin\" src/components/dashboard/index.ts src/components/dashboard/orders/index.ts)",
       "Bash(ls src/components/dashboard/orders/)",
       "Bash(cat src/components/dashboard/orders/index.ts)",
-      "WebFetch(domain:api.mercadolibre.com)"
+      "WebFetch(domain:api.mercadolibre.com)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")"
     ]
   }
 }

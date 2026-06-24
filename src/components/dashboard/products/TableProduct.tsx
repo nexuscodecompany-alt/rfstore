@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { FaEllipsis } from 'react-icons/fa6';
 import { HiOutlineExternalLink } from 'react-icons/hi';
 import { Link, useSearchParams } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import {
   useAdminProducts,
   useDeleteProduct,
   useMarkProductsSeen,
   useNewProductsCount,
+  usePublishMlItem,
   useSetProductActive,
   useTaxonomiesAdmin,
 } from '../../../hooks';
@@ -93,6 +95,37 @@ export const TableProduct = () => {
 
   const { mutate, isPending } = useDeleteProduct();
   const { mutate: toggleActive } = useSetProductActive();
+  const { publish, isPublishing, publishingVars } = usePublishMlItem();
+
+  const handlePublishMl = (
+    id: string,
+    name: string,
+    variantId: string | undefined,
+    isInMl: boolean,
+    active: boolean
+  ) => {
+    setOpenMenuIndex(null);
+    if (isInMl) return;
+    if (!active) {
+      toast.error('Activá el producto antes de publicarlo en Mercado Libre', {
+        position: 'bottom-right',
+      });
+      return;
+    }
+    if (!variantId) {
+      toast.error('El producto no tiene una variante para publicar', {
+        position: 'bottom-right',
+      });
+      return;
+    }
+    if (
+      window.confirm(
+        `¿Publicar "${name}" en Mercado Libre?\n\nSe crea una publicación nueva en tu cuenta de ML con el precio y stock actuales.`
+      )
+    ) {
+      publish({ productId: id, variantId });
+    }
+  };
 
   const handleMenuToggle = (index: number) => {
     setOpenMenuIndex(openMenuIndex === index ? null : index);
@@ -389,7 +422,7 @@ export const TableProduct = () => {
                     </button>
                     {openMenuIndex === index && (
                       <div
-                        className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-xl z-10 w-[120px]"
+                        className="absolute right-0 mt-2 bg-white border border-gray-200 rounded-md shadow-xl z-10 w-[170px]"
                         role="menu"
                       >
                         <Link
@@ -414,6 +447,31 @@ export const TableProduct = () => {
                         >
                           {product.active ? 'Inactivar' : 'Activar'}
                         </button>
+                        {(product as any).is_in_ml ? (
+                          <span className="block w-full text-left px-4 py-2 text-xs font-medium text-emerald-700">
+                            ✓ En Mercado Libre
+                          </span>
+                        ) : (
+                          <button
+                            disabled={
+                              isPublishing && publishingVars?.productId === product.id
+                            }
+                            className="block w-full text-left px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                            onClick={() =>
+                              handlePublishMl(
+                                product.id,
+                                product.name,
+                                selectedVariant?.id,
+                                Boolean((product as any).is_in_ml),
+                                Boolean(product.active)
+                              )
+                            }
+                          >
+                            {isPublishing && publishingVars?.productId === product.id
+                              ? 'Publicando…'
+                              : 'Publicar en ML'}
+                          </button>
+                        )}
                         {(product as any).seen_at === null && (
                           <button
                             className="block w-full text-left px-4 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50"
