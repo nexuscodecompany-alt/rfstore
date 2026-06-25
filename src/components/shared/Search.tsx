@@ -19,6 +19,15 @@ export const Search = () => {
   const navigate = useNavigate();
   const pricing = usePricingConfig();
 
+  // Enter (o botón "Ver todos") => lleva a la tienda filtrada por el término, con
+  // TODOS los resultados y paginación. La tienda lee el ?q= y arma la búsqueda.
+  const goToStore = () => {
+    const term = searchTerm.trim();
+    if (term.length < 2) return;
+    navigate(`/tienda?q=${encodeURIComponent(term)}`);
+    closeSheet();
+  };
+
   useEffect(() => {
     const term = searchTerm.trim();
     if (term.length < 2) {
@@ -51,12 +60,15 @@ export const Search = () => {
       <div className="sticky top-0 z-10 flex items-center gap-4 sm:gap-6 py-4 border-b border-slate-200 px-4 sm:px-7 bg-white">
         <form
           className="flex items-center flex-1 min-w-0 gap-3"
-          onSubmit={e => e.preventDefault()}
+          onSubmit={e => {
+            e.preventDefault();
+            goToStore();
+          }}
         >
           <HiOutlineSearch size={22} className="shrink-0" />
           <input
             type="text"
-            placeholder="¿Qué busca?"
+            placeholder="¿Qué busca? (Enter para ver todos)"
             className="w-full min-w-0 text-sm outline-none bg-transparent"
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
@@ -116,6 +128,16 @@ export const Search = () => {
               );
             })}
           </ul>
+        )}
+
+        {searchTerm.trim().length >= 2 && status !== 'searching' && (
+          <button
+            onClick={goToStore}
+            className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-ink-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-ink-800"
+          >
+            <HiOutlineSearch size={18} />
+            Ver todos los resultados de "{searchTerm.trim()}"
+          </button>
         )}
       </div>
     </>

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { HiOutlineArrowDown, HiOutlineArrowUp, HiOutlineSearch } from 'react-icons/hi';
 import { CardProduct } from '../components/products/CardProduct';
 import { ContainerFilter } from '../components/products/ContainerFilter';
@@ -51,9 +52,17 @@ export const CellPhonesPage = () => {
 	const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
 	const [priceMin, setPriceMin] = useState<number | undefined>(undefined);
 	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
-	const [searchTerm, setSearchTerm] = useState('');
+	// Búsqueda inicial desde el ?q= (cuando se llega con Enter desde el buscador del header).
+	const [searchParams] = useSearchParams();
+	const qParam = searchParams.get('q') ?? '';
+	const [searchTerm, setSearchTerm] = useState(qParam);
 	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
 	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
+
+	// Si cambia el ?q= (otra búsqueda desde el header estando ya en la tienda), sincronizar.
+	useEffect(() => {
+		setSearchTerm(qParam);
+	}, [qParam]);
 
 	const { categories, subcategories } = useTaxonomies();
 
