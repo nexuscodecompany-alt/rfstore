@@ -95,8 +95,9 @@ export const mlPrice = (
 	const iva = opts.ivaPercent ?? 22;
 	const threshold = opts.usdThreshold ?? 100;
 	const withMarkupIva = cost * (1 + markup / 100) * (1 + iva / 100);
-	if (cost > threshold) return { price: Math.round(withMarkupIva * 100) / 100, currency: 'USD' };
-	return { price: Math.round(withMarkupIva * fxRate), currency: 'UYU' };
+	// Precio redondo: siempre entero hacia arriba, sin decimales/milesimas.
+	if (cost > threshold) return { price: Math.ceil(withMarkupIva), currency: 'USD' };
+	return { price: Math.ceil(withMarkupIva * fxRate), currency: 'UYU' };
 };
 
 /* ====================================================================== */
@@ -149,8 +150,9 @@ export const mlPriceFromConfig = (
 	if (!cost || cost <= 0 || !fxRate || fxRate <= 0) return { price: 0, currency: 'UYU' };
 	const markup = mlMarginFor(cost, categoryId, subcategoryId, cfg);
 	const withMarkupIva = cost * (1 + markup / 100) * (1 + cfg.iva_percent / 100);
-	if (cost > cfg.usd_threshold) return { price: Math.round(withMarkupIva * 100) / 100, currency: 'USD' };
-	return { price: Math.round(withMarkupIva * fxRate), currency: 'UYU' };
+	// Precio redondo: siempre entero hacia arriba, sin decimales/milesimas.
+	if (cost > cfg.usd_threshold) return { price: Math.ceil(withMarkupIva), currency: 'USD' };
+	return { price: Math.ceil(withMarkupIva * fxRate), currency: 'UYU' };
 };
 
 export const formatPriceCurrency = (price: number, currency: 'USD' | 'UYU'): string => {

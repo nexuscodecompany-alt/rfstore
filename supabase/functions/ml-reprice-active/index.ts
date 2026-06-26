@@ -25,8 +25,9 @@ function resolveMlMargin(cfg: any, cost: number, categoryId: string | null, subc
 
 function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: number, threshold: number): { price: number; currency_id: 'USD' | 'UYU' } {
   const withIva = cost * (1 + markup / 100) * (1 + iva / 100);
-  if (cost > threshold) return { price: Math.round(withIva * 100) / 100, currency_id: 'USD' };
-  return { price: Math.round(withIva * fx), currency_id: 'UYU' };
+  // Precio redondo: siempre entero hacia arriba, sin decimales/milesimas
+  if (cost > threshold) return { price: Math.ceil(withIva), currency_id: 'USD' };
+  return { price: Math.ceil(withIva * fx), currency_id: 'UYU' };
 }
 
 async function getFxRate(): Promise<number> {

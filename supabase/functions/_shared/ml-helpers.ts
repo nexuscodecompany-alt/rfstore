@@ -92,8 +92,8 @@ export function computeMlPriceUyu({ cost_usd, markup_percent, iva_percent, fx_ra
 	const withMarkup = cost_usd * (1 + markup_percent / 100);
 	const withIva = withMarkup * (1 + iva_percent / 100);
 	const inUyu = withIva * fx_rate;
-	// ML acepta números enteros para UYU sin decimales; redondeamos al peso
-	return Math.round(inUyu);
+	// Precio redondo: ML acepta enteros para UYU; siempre hacia arriba, sin decimales
+	return Math.ceil(inUyu);
 }
 
 // ---------- Description HTML → plain text ----------

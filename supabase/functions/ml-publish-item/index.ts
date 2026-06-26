@@ -37,14 +37,12 @@ function computePriceAndCurrency(input: { cost_usd: number; markup_percent: numb
   const withMarkup = cost_usd * (1 + markup_percent / 100);
   const withIva = withMarkup * (1 + iva_percent / 100);
   if (cost_usd > usd_threshold) {
-    // ML acepta hasta 2 decimales en USD
-    return { price: Math.round(withIva * 100) / 100, currency_id: 'USD', basis_usd: withIva };
+    // Precio redondo: siempre entero hacia arriba, sin decimales/milesimas
+    return { price: Math.ceil(withIva), currency_id: 'USD', basis_usd: withIva };
   }
-  return { price: Math.round(withIva * fx_rate), currency_id: 'UYU', basis_usd: withIva };
+  return { price: Math.ceil(withIva * fx_rate), currency_id: 'UYU', basis_usd: withIva };
 }
 
-// Margen ML configurable: subcategoria > categoria > tramo por costo.
-// Si no hay ml_pricing_config, cae al margen plano historico (fallbackMarkup).
 function resolveMlMargin(cfg: any, cost: number, categoryId: string | null, subcategoryId: string | null, fallbackMarkup: number): number {
   if (!cfg || typeof cfg !== 'object') return fallbackMarkup;
   const subOv = cfg.subcategory_overrides || {};
@@ -54,6 +52,65 @@ function resolveMlMargin(cfg: any, cost: number, categoryId: string | null, subc
   const tiers = Array.isArray(cfg.tiers) ? cfg.tiers : [];
   for (const t of tiers) { if (t.max == null) return Number(t.pct); if (cost < Number(t.max)) return Number(t.pct); }
   return fallbackMarkup;
+}
+
+function escapeRegExp(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// MODEL para ML: usamos el "Modelo:" explicito de las features (CDR lo manda en ~80%);
+// si no, lo derivamos del nombre (sacando marca y color). Asi MODEL nunca falta.
+const MODEL_COLOR_WORDS = ['negro', 'negra', 'blanco', 'blanca', 'azul', 'rojo', 'roja', 'verde', 'amarillo', 'amarilla', 'rosa', 'rosado', 'rosada', 'dorado', 'dorada', 'plateado', 'plateada', 'gris', 'violeta', 'morado', 'morada', 'celeste', 'naranja', 'marron', 'marrón', 'beige', 'turquesa', 'plata', 'silver', 'black', 'white', 'blue', 'red', 'green', 'grey', 'gray'];
+function deriveModelFromName(name: string, brand: string | null): string {
+  let m = (name || '').trim();
+  if (brand) m = m.replace(new RegExp(`\\b${escapeRegExp(brand)}\\b`, 'ig'), ' ');
+  const words = m.split(/\s+/).filter(w => w && !MODEL_COLOR_WORDS.includes(w.toLowerCase()));
+  const cleaned = words.join(' ').replace(/\s+/g, ' ').trim();
+  return (cleaned || (name || '').trim()).slice(0, 60);
+}
+function resolveModel(explicit: string | undefined, name: string, brand: string | null): string {
+  const ex = (explicit ?? '').trim();
+  if (ex) return ex.slice(0, 60);
+  return deriveModelFromName(name, brand);
+}
+
+// Atributos tecnicos (procesador / voltaje) derivados del texto. Se mandan SOLO si la
+// categoria de ML los define. Cubre PCs/notebooks, que piden datos del procesador.
+function extractTechAttributes(text: string): Record<string, string> {
+  const t = (text || '').toLowerCase();
+  const out: Record<string, string> = {};
+  if (/\bryzen\b|\bathlon\b|\bamd\b/.test(t)) out.PROCESSOR_BRAND = 'AMD';
+  else if (/\bcore\s*(ultra\s*)?i[3579]\b|\bcore\s*ultra\b|\bceleron\b|\bpentium\b|\bintel\b/.test(t)) out.PROCESSOR_BRAND = 'Intel';
+  let line: string | null = null;
+  let model: string | null = null;
+  let m: RegExpMatchArray | null;
+  if ((m = t.match(/ryzen\s*(?:ai\s*)?([3579])\s*([0-9]{3,4}[a-z]{0,2})?/))) { line = `Ryzen ${m[1]}`; if (m[2]) model = m[2].toUpperCase(); }
+  else if ((m = t.match(/core\s*ultra\s*([3579])\s*([0-9]{2,4}[a-z]{0,2})?/))) { line = `Core Ultra ${m[1]}`; if (m[2]) model = m[2].toUpperCase(); }
+  else if ((m = t.match(/core\s*(i[3579])[\s-]*([0-9]{3,5}[a-z]{0,2})?/))) { line = `Core ${m[1]}`; if (m[2]) model = m[2].toUpperCase(); }
+  else if (/celeron/.test(t)) line = 'Celeron';
+  else if (/pentium/.test(t)) line = 'Pentium';
+  if (line) out.PROCESSOR_LINE = line;
+  if (model) out.PROCESSOR_MODEL = model;
+  out.VOLTAGE = /\b110\s*v\b/.test(t) ? '110V' : '220V';
+  return out;
+}
+
+// Atributos obligatorios de la categoria de ML (para auto-completar / avisar faltantes).
+async function getCategoryRequired(catId: string, token: string): Promise<{ ids: Set<string>; required: { id: string; name: string }[] }> {
+  try {
+    const r = await mlFetch(`/categories/${catId}/attributes`, { token });
+    if (!r.ok || !Array.isArray(r.data)) return { ids: new Set(), required: [] };
+    const ids = new Set<string>();
+    const required: { id: string; name: string }[] = [];
+    for (const a of r.data) {
+      if (!a?.id) continue;
+      ids.add(a.id);
+      const tags = a.tags || {};
+      // obligatorios que NO completa ML solo (excluimos read_only / fixed / variation).
+      if ((tags.required || tags.catalog_required) && !tags.read_only && !tags.fixed && !tags.variation_attribute) {
+        required.push({ id: a.id, name: a.name || a.id });
+      }
+    }
+    return { ids, required };
+  } catch { return { ids: new Set(), required: [] }; }
 }
 
 interface Body { product_id: string; variant_id: string; dry_run?: boolean; }
@@ -89,7 +146,6 @@ Deno.serve(async (req: Request) => {
     const ivaPercent = Number(pricingConfig?.iva_percent ?? 22);
     const usdThreshold = Number(settings.get('ml_usd_threshold') ?? 100);
 
-    // Reglas de margen ML (tramos + override categoria/subcategoria). Sin config => 30% plano.
     const mlPricingCfg: any = settings.get('ml_pricing_config') ?? null;
     const hasCfg = mlPricingCfg && typeof mlPricingCfg === 'object';
     const effIva = hasCfg && mlPricingCfg.iva_percent != null ? Number(mlPricingCfg.iva_percent) : ivaPercent;
@@ -119,9 +175,11 @@ Deno.serve(async (req: Request) => {
       if (pred.ok && Array.isArray(pred.data) && pred.data[0]?.category_id) mlCategoryId = pred.data[0].category_id;
     } catch (_) {}
 
+    const modelValue = resolveModel(featuresExtracted.model, product.name, brandName);
+
     const attributes: any[] = [];
     if (brandName) attributes.push({ id: 'BRAND', value_name: brandName });
-    if (featuresExtracted.model) attributes.push({ id: 'MODEL', value_name: featuresExtracted.model });
+    if (modelValue) attributes.push({ id: 'MODEL', value_name: modelValue });
     if (featuresExtracted.gtin) attributes.push({ id: 'GTIN', value_name: featuresExtracted.gtin });
     const color = attrsFromText.color || (variant.color_name && variant.color_name !== 'Unico' ? variant.color_name : null);
     if (color) attributes.push({ id: 'COLOR', value_name: color });
@@ -130,6 +188,25 @@ Deno.serve(async (req: Request) => {
     if (attrsFromText.ram) attributes.push({ id: 'RAM', value_name: attrsFromText.ram });
     if (attrsFromText.is_dual_sim != null) attributes.push({ id: 'IS_DUAL_SIM', value_name: attrsFromText.is_dual_sim ? 'Sí' : 'No' });
     attributes.push({ id: 'CARRIER', value_name: 'Liberado' });
+
+    // Atributos obligatorios de la categoria: auto-completamos los tecnicos que podamos
+    // derivar (procesador/voltaje, solo si la categoria los pide) y, si aun faltan
+    // obligatorios, avisamos EXACTAMENTE cuales (en vez de un 400 opaco de ML).
+    let missingAttrs: { id: string; name: string }[] = [];
+    const catReq = await getCategoryRequired(mlCategoryId, token);
+    if (catReq.ids.size > 0) {
+      const tech = extractTechAttributes(`${product.name}\n${rawDescText}`);
+      for (const [id, value_name] of Object.entries(tech)) {
+        if (value_name && catReq.ids.has(id) && !attributes.some(a => a.id === id)) attributes.push({ id, value_name });
+      }
+      const have = new Set(attributes.map(a => a.id));
+      missingAttrs = catReq.required.filter(r => !have.has(r.id));
+      if (!dry_run && missingAttrs.length > 0) {
+        await logEvent('ml_publish_missing_attrs', { product_id, variant_id, category: mlCategoryId, missing: missingAttrs }, missingAttrs.map(x => x.id).join(','));
+        // 200 a proposito: el front lee missing_attributes y le dice al cliente que cargar.
+        return json({ ok: false, error: 'missing_required_attributes', missing_attributes: missingAttrs, category_id: mlCategoryId }, 200);
+      }
+    }
 
     const sale_terms = [
       { id: 'WARRANTY_TYPE', value_name: warranty.type === 'manufacturer' ? 'Garantía de fábrica' : 'Garantía del vendedor' },
@@ -171,7 +248,7 @@ Deno.serve(async (req: Request) => {
     };
 
     if (dry_run) {
-      return json({ ok: true, dry_run: true, payload: itemPayload, meta: { fxRate, costUsd, markupPercent: effMargin, usdThreshold: effThreshold, price: priceCalc.price, currency: priceCalc.currency_id, priceUyu: priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.round(priceCalc.basis_usd * fxRate), warranty, featuresExtracted, attrsFromText, predictedCategory: mlCategoryId, uploadedPictureIds, uploadErrors, descriptionPreview: finalDescription, descriptionLength: finalDescription.length } });
+      return json({ ok: true, dry_run: true, payload: itemPayload, meta: { fxRate, costUsd, markupPercent: effMargin, usdThreshold: effThreshold, price: priceCalc.price, currency: priceCalc.currency_id, priceUyu: priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.ceil(priceCalc.basis_usd * fxRate), warranty, featuresExtracted, modelValue, attrsFromText, predictedCategory: mlCategoryId, missingAttributes: missingAttrs, uploadedPictureIds, uploadErrors, descriptionPreview: finalDescription, descriptionLength: finalDescription.length } });
     }
 
     const post = await mlFetch('/items', { method: 'POST', token, body: itemPayload });
@@ -191,7 +268,7 @@ Deno.serve(async (req: Request) => {
       }
     } catch (de: any) { descCheck = { ok: false, error: de?.message }; }
 
-    const priceForDb = priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.round(priceCalc.basis_usd * fxRate);
+    const priceForDb = priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.ceil(priceCalc.basis_usd * fxRate);
     const { error: mapErr } = await supabase.from('ml_item_mapping').insert({
       product_id, variant_id, ml_item_id: mlItem.id, ml_category_id: mlCategoryId, ml_listing_type: listingType,
       status: 'active', last_known_stock: Number(variant.stock), last_known_price_uyu: priceForDb,
