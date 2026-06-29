@@ -119,7 +119,14 @@
       "Bash(ls src/components/dashboard/orders/)",
       "Bash(cat src/components/dashboard/orders/index.ts)",
       "WebFetch(domain:api.mercadolibre.com)",
-      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")"
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")",
+      "Bash(echo \"exit:$?\")",
+      "Bash(cat)",
+      "Bash(bash /tmp/drain_ml.sh)",
+      "Bash(pkill -f drain_ml.sh)",
+      "Bash(echo \"loop detenido \\(exit pkill: $?\\)\")",
+      "Bash(cat hooks/index.ts)",
+      "Bash(ls hooks *)"
     ]
   }
 }

@@ -8,6 +8,7 @@ import {
   useDeleteProduct,
   useMarkProductsSeen,
   useNewProductsCount,
+  usePricingConfig,
   usePublishMlItem,
   useRecalcMlReadiness,
   useSetProductActive,
@@ -589,8 +590,10 @@ interface PriceCellsProps {
   mlCfg: MlPricingConfig;
 }
 const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
+  const pricing = usePricingConfig();
   const cost = Number(product.price_usd ?? 0);
-  const web = salePrice(cost);
+  // Mismo cálculo que la web pública: usa la config de márgenes guardada (no el default).
+  const web = salePrice(cost, pricing);
   // Precio ML en USD (mismo criterio que la web), aunque el listing real pueda ir
   // en pesos al BCU: costo × (1 + margen) × (1 + IVA).
   const mlMarginPct = mlMarginFor(cost, product.category_id ?? null, product.subcategory_id ?? null, mlCfg);
