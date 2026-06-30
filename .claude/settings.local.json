@@ -126,7 +126,11 @@
       "Bash(pkill -f drain_ml.sh)",
       "Bash(echo \"loop detenido \\(exit pkill: $?\\)\")",
       "Bash(cat hooks/index.ts)",
-      "Bash(ls hooks *)"
+      "Bash(ls hooks *)",
+      "WebFetch(domain:uy.dolarapi.com)",
+      "WebFetch(domain:www.brou.com.uy)",
+      "WebFetch(domain:r.jina.ai)",
+      "WebFetch(domain:bwjptocnkqedakdibosu.supabase.co)"
     ]
   }
 }

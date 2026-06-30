@@ -37,7 +37,8 @@ export const formatMoneyCur = (price: number, currency: 'UYU' | 'USD') => {
 /*  PRECIOS: margen por tramo (sobre el costo) + IVA -> precio de venta   */
 /* ====================================================================== */
 export interface PricingTier {
-	// Tramo aplica cuando el costo es < max. max=null => "en adelante".
+	// Tramo aplica cuando el costo es <= max (tope INCLUSIVO). max=null => "en adelante".
+	// Ej.: max=18 incluye el 18 en este tramo; el siguiente arranca en 19.
 	max: number | null;
 	pct: number;
 }
@@ -62,7 +63,7 @@ export const DEFAULT_PRICING: PricingConfig = {
 export const marginForCost = (cost: number, cfg: PricingConfig): number => {
 	for (const tier of cfg.tiers) {
 		if (tier.max === null) return tier.pct;
-		if (cost < tier.max) return tier.pct;
+		if (cost <= tier.max) return tier.pct;
 	}
 	return 0;
 };
@@ -141,7 +142,7 @@ export const mlMarginFor = (
 	}
 	// El tramo del margen ML se decide por el costo CON IVA (no el costo base), igual que
 	// las edge functions ml-reprice-active / ml-publish-item. Los tramos se piensan en
-	// precio con IVA: ej. costo 15.8 → 15.8×1.22=19.27 → entra al tramo 18–25.
+	// precio con IVA: ej. costo 15.8 → 15.8×1.22=19.27 → entra al tramo 19–25.
 	const ivaCost = cost * (1 + cfg.iva_percent / 100);
 	return marginForCost(ivaCost, { iva_percent: cfg.iva_percent, tiers: cfg.tiers });
 };

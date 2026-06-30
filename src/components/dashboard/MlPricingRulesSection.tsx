@@ -56,15 +56,15 @@ export const MlPricingRulesSection = () => {
 
 	const updateTier = (i: number, patch: Partial<{ max: number | null; pct: number }>) =>
 		setCfg(c => ({ ...c, tiers: c.tiers.map((t, idx) => (idx === i ? { ...t, ...patch } : t)) }));
-	const tierFrom = (i: number) => (i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0);
-	// Rango EFECTIVO del tramo. El "Hasta" no se incluye (regla `costo < Hasta`):
-	// un costo igual a ese número cae en el tramo siguiente.
+	// El "Desde" arranca en el "Hasta" del tramo anterior + 1 (rangos sin solape).
+	const tierFrom = (i: number) => (i === 0 ? 0 : (cfg.tiers[i - 1].max ?? 0) + 1);
+	// Rango EFECTIVO del tramo. El "Hasta" SÍ se incluye (regla `costo <= Hasta`):
+	// un costo igual a ese número cae en ESTE tramo.
 	const tierRangeText = (i: number) => {
 		const from = tierFrom(i);
 		const max = cfg.tiers[i].max;
 		if (max == null) return `Aplica a costos de USD ${from} o más`;
-		if (i === 0) return `Aplica a costos menores a USD ${max}`;
-		return `Aplica a costos de USD ${from} a menos de USD ${max}`;
+		return `Aplica a costos de USD ${from} a USD ${max}`;
 	};
 	const addTier = () =>
 		setCfg(c => {
@@ -108,7 +108,7 @@ export const MlPricingRulesSection = () => {
 				<h2 className='font-semibold'>Margenes de Mercado Libre</h2>
 				<p className='text-xs text-gray-500 mt-1'>
 					Reglas propias de ML (separadas de la web). Precio ML = costo x (1 + margen/100) x (1 + IVA/100).
-					Si el costo supera el umbral USD, el precio va en USD; sino en pesos al BCU. Precedencia del margen:
+					Si el costo supera el umbral USD, el precio va en USD; sino en pesos al BROU. Precedencia del margen:
 					<b> subcategoria &rarr; categoria &rarr; tramo por costo</b>.
 				</p>
 			</div>
@@ -142,7 +142,7 @@ export const MlPricingRulesSection = () => {
 						<div key={i} className='flex flex-wrap items-center gap-3 rounded-lg border border-gray-100 bg-gray-50/60 p-3'>
 							<label className='flex items-center gap-1.5 text-xs text-gray-500'>
 								Desde USD
-								<input type='number' value={tierFrom(i)} readOnly disabled title='Se ajusta solo con el "Hasta" del tramo anterior' className='w-20 rounded border border-gray-200 bg-gray-100 px-2 py-1.5 text-sm text-gray-500' />
+								<input type='number' value={tierFrom(i)} readOnly disabled title='Se ajusta solo: es el "Hasta" del tramo anterior + 1' className='w-20 rounded border border-gray-200 bg-gray-100 px-2 py-1.5 text-sm text-gray-500' />
 							</label>
 							{tier.max !== null ? (
 								<label className='flex items-center gap-1.5 text-xs text-gray-500'>
@@ -165,8 +165,9 @@ export const MlPricingRulesSection = () => {
 					))}
 				</div>
 				<p className='mt-2 text-[11px] text-gray-500'>
-					ℹ️ El monto <b>“Hasta”</b> no se incluye: un costo igual a ese número entra en el
-					tramo siguiente. Ej.: un costo de exactamente USD 18 cae en el tramo <b>“18 – 25”</b>, no en el <b>“0 – 18”</b>.
+					ℹ️ El monto <b>“Hasta”</b> se incluye en el tramo. El siguiente arranca en ese número + 1,
+					así los rangos no se pisan. Ej.: con un tramo <b>“0 – 18”</b>, un costo de USD 18 cae ahí;
+					a partir de USD 19 entra en el siguiente.
 				</p>
 			</div>
 
@@ -261,7 +262,7 @@ export const MlPricingRulesSection = () => {
 					</label>
 					<div className='text-sm text-gray-700'>
 						Precio ML: <span className='text-lg font-bold text-gray-900'>{formatPriceCurrency(previewResult.price, previewResult.currency)}</span>
-						<span className='text-xs text-gray-500'> ({previewResult.currency === 'UYU' ? 'pesos al BCU ~40' : 'USD'})</span>
+						<span className='text-xs text-gray-500'> ({previewResult.currency === 'UYU' ? 'pesos al BROU ~41' : 'USD'})</span>
 					</div>
 				</div>
 			</div>

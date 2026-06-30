@@ -54,7 +54,7 @@ function renderEmail(opts: {
 	const safeName = escapeHtml(customerName || 'Cliente');
 	const totalUsdLabel = `USD ${totalUsd.toFixed(0)}`;
 	const totalUyuLabel = totalUyu !== null
-		? `\u2248 UYU ${totalUyu.toLocaleString('es-UY')} (al BCU de hoy)`
+		? `\u2248 UYU ${totalUyu.toLocaleString('es-UY')} (al BROU de hoy)`
 		: '';
 	const montoLine = totalUyu !== null
 		? `${totalUsdLabel} <span style="color:#666;font-weight:400;">${totalUyuLabel}</span>`
@@ -114,7 +114,7 @@ function renderEmail(opts: {
     </table></body></html>`;
 
 	const totalTextLine = totalUyu !== null
-		? `${totalUsdLabel} (\u2248 UYU ${totalUyu.toLocaleString('es-UY')} al BCU de hoy)`
+		? `${totalUsdLabel} (\u2248 UYU ${totalUyu.toLocaleString('es-UY')} al BROU de hoy)`
 		: totalUsdLabel;
 	const text = `Gracias por tu compra, ${customerName || 'Cliente'}!\n\nPedido #${orderId} \u2014 Total: ${totalTextLine}\n\nDatos para transferir:\nBanco: ${transfer.banco || '\u2014'}\nCuenta: ${transfer.cuenta || '\u2014'}\nTitular: ${transfer.titular || '\u2014'}\nRUT: ${transfer.rut || '\u2014'}\nConcepto: Pedido ${orderId}\n\nDespues de transferir, mandanos el comprobante por:\n- Web: ${SITE_URL}/checkout/${orderId}/thank-you?status=pending\n- Mail: ${SALES_EMAIL}\n- WhatsApp: ${SALES_WHATSAPP_LABEL}`;
 
@@ -263,7 +263,7 @@ Deno.serve(async req => {
 			});
 		}
 
-		// Cotizaci\u00f3n BCU para mostrar el equivalente en UYU. Si falla, mandamos
+		// Cotizaci\u00f3n BROU para mostrar el equivalente en UYU. Si falla, mandamos
 		// el mail sin UYU (mejor eso que romper el env\u00edo del comprobante).
 		let totalUyu: number | null = null;
 		try {

@@ -541,7 +541,7 @@ export const CdrCheckoutForm = () => {
 								<span className='block font-bold text-base text-ink-900'>{formatPrice(grandTotalUsd)}</span>
 								{totalUyu !== null && (
 									<span className='block text-[11px] text-emerald-700'>
-										≈ UYU {totalUyu.toLocaleString('es-UY')} (al dólar BCU de hoy)
+										≈ UYU {totalUyu.toLocaleString('es-UY')} (al dólar BROU de hoy)
 									</span>
 								)}
 							</span>
@@ -688,7 +688,7 @@ export const CdrCheckoutForm = () => {
 							<p className='text-[11px] text-gray-500'>
 								≈ UYU {totalUyu.toLocaleString('es-UY')}{' '}
 								<span title={`Cotización: ${fx.rate.toFixed(2)} (${fx.source})`}>
-									(al dólar BCU oficial de hoy)
+									(al dólar BROU de hoy)
 								</span>
 							</p>
 						)}

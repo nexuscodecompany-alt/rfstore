@@ -50,7 +50,7 @@ function resolveMlMargin(cfg: any, cost: number, categoryId: string | null, subc
   if (subcategoryId && subOv[subcategoryId] != null) return Number(subOv[subcategoryId]);
   if (categoryId && catOv[categoryId] != null) return Number(catOv[categoryId]);
   const tiers = Array.isArray(cfg.tiers) ? cfg.tiers : [];
-  for (const t of tiers) { if (t.max == null) return Number(t.pct); if (cost < Number(t.max)) return Number(t.pct); }
+  for (const t of tiers) { if (t.max == null) return Number(t.pct); if (cost <= Number(t.max)) return Number(t.pct); }
   return fallbackMarkup;
 }
 

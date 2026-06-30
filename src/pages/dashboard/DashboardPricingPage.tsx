@@ -44,15 +44,16 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 		});
 	const removeTier = (i: number) =>
 		setCfg(c => ({ ...c, tiers: c.tiers.filter((_, idx) => idx !== i) }));
-	const tierFrom = (i: number) => (i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0);
-	// Texto del rango EFECTIVO de cada tramo. El borde "Hasta" no se incluye:
-	// un costo igual a ese número cae en el tramo siguiente (regla `costo < Hasta`).
+	// El "Desde" del tramo arranca en el "Hasta" del anterior + 1 (los rangos no se
+	// solapan: si el anterior termina en 18, este arranca en 19).
+	const tierFrom = (i: number) => (i === 0 ? 0 : (cfg.tiers[i - 1].max ?? 0) + 1);
+	// Texto del rango EFECTIVO de cada tramo. El borde "Hasta" SÍ se incluye
+	// (regla `costo <= Hasta`): un costo igual a ese número cae en ESTE tramo.
 	const tierRangeText = (i: number) => {
 		const from = tierFrom(i);
 		const max = cfg.tiers[i].max;
 		if (max === null) return `Aplica a costos de USD ${from} o más`;
-		if (i === 0) return `Aplica a costos menores a USD ${max}`;
-		return `Aplica a costos de USD ${from} a menos de USD ${max}`;
+		return `Aplica a costos de USD ${from} a USD ${max}`;
 	};
 
 	const previewCost = Number(preview) || 0;
@@ -107,7 +108,7 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 									value={tierFrom(i)}
 									readOnly
 									disabled
-									title='Se ajusta solo con el "Hasta" del tramo anterior'
+									title='Se ajusta solo: es el "Hasta" del tramo anterior + 1'
 									className='w-20 rounded-lg border border-ink-200 bg-ink-100 px-2 py-1.5 text-sm text-ink-500'
 								/>
 							</label>
@@ -148,9 +149,9 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 				</div>
 
 				<p className='mt-3 text-[11px] text-ink-500'>
-					ℹ️ El monto <b>“Hasta”</b> no se incluye en el tramo: un costo igual a ese
-					número entra en el tramo siguiente. Ej.: un costo de exactamente USD 20 cae
-					en el tramo <b>“20 – 270”</b>, no en el <b>“0 – 20”</b>.
+					ℹ️ El monto <b>“Hasta”</b> se incluye en el tramo. El siguiente tramo arranca
+					en ese número + 1, así los rangos no se pisan. Ej.: con un tramo <b>“0 – 18”</b>,
+					un costo de USD 18 cae ahí; a partir de USD 19 entra en el siguiente.
 				</p>
 			</div>
 
