@@ -74,7 +74,11 @@ export const salePrice = (
 	cfg: PricingConfig = DEFAULT_PRICING
 ): number => {
 	if (cost === null || cost === undefined || isNaN(cost)) return 0;
-	const pct = marginForCost(cost, cfg);
+	// El tramo del margen se decide por el costo CON IVA (no el costo base), igual que ML.
+	// Solo elige el tramo; el precio final se calcula con el costo real. Debe coincidir
+	// con la función SQL public.rf_sale_price.
+	const ivaCost = cost * (1 + cfg.iva_percent / 100);
+	const pct = marginForCost(ivaCost, cfg);
 	const final = cost * (1 + pct / 100) * (1 + cfg.iva_percent / 100);
 	return Math.ceil(final);
 };
@@ -135,7 +139,11 @@ export const mlMarginFor = (
 	if (categoryId && cfg.category_overrides && cfg.category_overrides[categoryId] != null) {
 		return Number(cfg.category_overrides[categoryId]);
 	}
-	return marginForCost(cost, { iva_percent: cfg.iva_percent, tiers: cfg.tiers });
+	// El tramo del margen ML se decide por el costo CON IVA (no el costo base), igual que
+	// las edge functions ml-reprice-active / ml-publish-item. Los tramos se piensan en
+	// precio con IVA: ej. costo 15.8 → 15.8×1.22=19.27 → entra al tramo 18–25.
+	const ivaCost = cost * (1 + cfg.iva_percent / 100);
+	return marginForCost(ivaCost, { iva_percent: cfg.iva_percent, tiers: cfg.tiers });
 };
 
 // Precio ML usando las reglas configurables. Misma regla USD/UYU por umbral que mlPrice.

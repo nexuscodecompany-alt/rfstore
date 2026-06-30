@@ -57,6 +57,15 @@ export const MlPricingRulesSection = () => {
 	const updateTier = (i: number, patch: Partial<{ max: number | null; pct: number }>) =>
 		setCfg(c => ({ ...c, tiers: c.tiers.map((t, idx) => (idx === i ? { ...t, ...patch } : t)) }));
 	const tierFrom = (i: number) => (i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0);
+	// Rango EFECTIVO del tramo. El "Hasta" no se incluye (regla `costo < Hasta`):
+	// un costo igual a ese número cae en el tramo siguiente.
+	const tierRangeText = (i: number) => {
+		const from = tierFrom(i);
+		const max = cfg.tiers[i].max;
+		if (max == null) return `Aplica a costos de USD ${from} o más`;
+		if (i === 0) return `Aplica a costos menores a USD ${max}`;
+		return `Aplica a costos de USD ${from} a menos de USD ${max}`;
+	};
 	const addTier = () =>
 		setCfg(c => {
 			const tiers = [...c.tiers];
@@ -151,9 +160,14 @@ export const MlPricingRulesSection = () => {
 							{tier.max !== null && (
 								<button onClick={() => removeTier(i)} className='text-xs text-rose-600 hover:text-rose-800'>Quitar</button>
 							)}
+							<p className='w-full text-[11px] text-gray-400'>{tierRangeText(i)}</p>
 						</div>
 					))}
 				</div>
+				<p className='mt-2 text-[11px] text-gray-500'>
+					ℹ️ El monto <b>“Hasta”</b> no se incluye: un costo igual a ese número entra en el
+					tramo siguiente. Ej.: un costo de exactamente USD 18 cae en el tramo <b>“18 – 25”</b>, no en el <b>“0 – 18”</b>.
+				</p>
 			</div>
 
 			<div>

@@ -78,7 +78,11 @@ Deno.serve(async (req: Request) => {
       const cost = Number(prod?.price_usd);
       if (!cost || cost <= 0) { skippedNoCost++; continue; }
       if (pendingSet.has((m as any).variant_id)) { skippedPending++; continue; }
-      const margin = resolveMlMargin(cfg, cost, prod?.category_id ?? null, prod?.subcategory_id ?? null, fallbackMarkup);
+      // El tramo del margen se decide por el costo CON IVA (no el costo base): los tramos
+      // se definen pensando en el precio con IVA. ivaCost solo elige el tramo; el precio
+      // final se sigue calculando con el costo real.
+      const ivaCost = cost * (1 + iva / 100);
+      const margin = resolveMlMargin(cfg, ivaCost, prod?.category_id ?? null, prod?.subcategory_id ?? null, fallbackMarkup);
       const calc = computePriceAndCurrency(cost, margin, iva, fx, threshold);
       // Si queda igual al ultimo precio conocido (en UYU), no encolar.
       if (calc.currency_id === 'UYU' && Number((m as any).last_known_price_uyu) === calc.price) { skippedSamePrice++; continue; }

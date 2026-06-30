@@ -45,6 +45,15 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 	const removeTier = (i: number) =>
 		setCfg(c => ({ ...c, tiers: c.tiers.filter((_, idx) => idx !== i) }));
 	const tierFrom = (i: number) => (i === 0 ? 0 : cfg.tiers[i - 1].max ?? 0);
+	// Texto del rango EFECTIVO de cada tramo. El borde "Hasta" no se incluye:
+	// un costo igual a ese número cae en el tramo siguiente (regla `costo < Hasta`).
+	const tierRangeText = (i: number) => {
+		const from = tierFrom(i);
+		const max = cfg.tiers[i].max;
+		if (max === null) return `Aplica a costos de USD ${from} o más`;
+		if (i === 0) return `Aplica a costos menores a USD ${max}`;
+		return `Aplica a costos de USD ${from} a menos de USD ${max}`;
+	};
 
 	const previewCost = Number(preview) || 0;
 
@@ -133,9 +142,16 @@ export const DashboardPricingPage = ({ embedded = false }: { embedded?: boolean 
 									Quitar
 								</button>
 							)}
+							<p className='w-full text-[11px] text-ink-400'>{tierRangeText(i)}</p>
 						</div>
 					))}
 				</div>
+
+				<p className='mt-3 text-[11px] text-ink-500'>
+					ℹ️ El monto <b>“Hasta”</b> no se incluye en el tramo: un costo igual a ese
+					número entra en el tramo siguiente. Ej.: un costo de exactamente USD 20 cae
+					en el tramo <b>“20 – 270”</b>, no en el <b>“0 – 20”</b>.
+				</p>
 			</div>
 
 			{/* Vista previa */}

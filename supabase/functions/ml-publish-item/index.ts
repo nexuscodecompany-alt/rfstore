@@ -158,7 +158,11 @@ Deno.serve(async (req: Request) => {
     const costUsd = Number(product.price_usd);
     if (!costUsd || costUsd <= 0) throw new Error(`invalid_price_usd: ${product.price_usd}`);
 
-    const effMargin = resolveMlMargin(mlPricingCfg, costUsd, product.category_id ?? null, product.subcategory_id ?? null, markup);
+    // El tramo del margen se decide por el costo CON IVA (no el base): los tramos se
+    // definen pensando en el precio con IVA. Solo afecta la eleccion del tramo; el precio
+    // final se sigue calculando con el costo real (costUsd) en computePriceAndCurrency.
+    const ivaCostUsd = costUsd * (1 + effIva / 100);
+    const effMargin = resolveMlMargin(mlPricingCfg, ivaCostUsd, product.category_id ?? null, product.subcategory_id ?? null, markup);
     const priceCalc = computePriceAndCurrency({ cost_usd: costUsd, markup_percent: effMargin, iva_percent: effIva, fx_rate: fxRate, usd_threshold: effThreshold });
 
     const title = buildTitle(product.name, brandName, 60);
