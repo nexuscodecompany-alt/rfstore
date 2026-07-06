@@ -71,11 +71,12 @@ export const CdrCheckoutForm = () => {
 		emptyShippingSelection
 	);
 
-	// Regla: dentro de Montevideo, envío gratis a partir de USD 100. Aplicamos
-	// override sobre el costo calculado por zona (centro/periferia/costa).
-	const qualifiesForFreeMvd =
-		shipping.zone === 'montevideo' && totalAmount >= FREE_SHIPPING_MIN_USD;
-	const shippingCostUsd = qualifiesForFreeMvd ? 0 : shipping.cost_usd;
+	// Regla: en Montevideo y en la zona metropolitana (agencia), envío gratis a
+	// partir de USD 100. El interior (DAC) no aplica: lo paga el cliente al retirar.
+	const chargesShipping =
+		shipping.zone === 'montevideo' || shipping.zone === 'metropolitana';
+	const qualifiesForFree = chargesShipping && totalAmount >= FREE_SHIPPING_MIN_USD;
+	const shippingCostUsd = qualifiesForFree ? 0 : shipping.cost_usd;
 
 	// --- Cupón ---
 	const [couponInput, setCouponInput] = useState('');
@@ -134,8 +135,8 @@ export const CdrCheckoutForm = () => {
 	}, [setSummary, effectiveShippingUsd, discountUsd, coupon, grandTotalUsd]);
 	useEffect(() => {
 		let label = 'A coordinar';
-		if (shipping.zone === 'montevideo') {
-			if (qualifiesForFreeMvd) label = 'Gratis';
+		if (chargesShipping) {
+			if (qualifiesForFree) label = 'Gratis';
 			else if (shipping.barrio) label = formatPrice(shipping.cost_usd);
 		} else if (shipping.zone === 'interior') {
 			label = 'Pago en agencia';
@@ -146,7 +147,8 @@ export const CdrCheckoutForm = () => {
 		shipping.zone,
 		shipping.barrio,
 		shipping.cost_usd,
-		qualifiesForFreeMvd,
+		chargesShipping,
+		qualifiesForFree,
 		setShippingLabel,
 		resetShippingLabel,
 	]);
@@ -162,11 +164,18 @@ export const CdrCheckoutForm = () => {
 				state: 'Montevideo',
 				city: 'Montevideo',
 			}));
+		} else if (shipping.zone === 'metropolitana') {
+			// Zona metropolitana: departamento Canelones y ciudad = la localidad detectada.
+			setForm(f => ({
+				...f,
+				state: shipping.department ?? 'Canelones',
+				city: shipping.barrio ?? '',
+			}));
 		} else if (shipping.zone === 'interior') {
 			setForm(f => ({
 				...f,
 				state: shipping.department ?? '',
-				city: f.state === 'Montevideo' ? '' : f.city,
+				city: f.state === 'Montevideo' || f.state === 'Canelones' ? '' : f.city,
 			}));
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -361,7 +370,7 @@ export const CdrCheckoutForm = () => {
 				p_shipping_zone: shipping.zone,
 				p_shipping_barrio: shipping.barrio,
 				p_shipping_department: shipping.department,
-				p_shipping_cost_usd: shipping.cost_usd,
+				p_shipping_cost_usd: shippingCostUsd,
 					p_coupon_code: coupon?.valid ? coupon.code : null,
 			});
 			if (rpcErr) throw new Error(rpcErr.message);
@@ -649,11 +658,18 @@ export const CdrCheckoutForm = () => {
 					<span>{formatPrice(totalAmount)}</span>
 				</div>
 				<div className='flex items-center justify-between text-sm text-ink-600'>
-					<span>Envío {shipping.zone === 'interior' ? '(DAC)' : ''}</span>
+					<span>
+						Envío{' '}
+						{shipping.zone === 'interior'
+							? '(DAC)'
+							: shipping.zone === 'metropolitana'
+							? '(agencia)'
+							: ''}
+					</span>
 					<span>
 						{shipping.zone === 'interior'
 							? 'Pago en agencia'
-							: qualifiesForFreeMvd
+							: qualifiesForFree
 							? 'Gratis'
 							: shippingCostUsd > 0
 							? formatPrice(shippingCostUsd)
@@ -662,10 +678,10 @@ export const CdrCheckoutForm = () => {
 							: '—'}
 					</span>
 				</div>
-				{shipping.zone === 'montevideo' && !qualifiesForFreeMvd && totalAmount < FREE_SHIPPING_MIN_USD && (
+				{chargesShipping && !qualifiesForFree && totalAmount < FREE_SHIPPING_MIN_USD && (
 					<p className='text-[11px] text-amber-700'>
 						Sumá USD {(FREE_SHIPPING_MIN_USD - totalAmount).toFixed(0)} más para
-						obtener envío gratis dentro de Montevideo.
+						obtener envío gratis.
 					</p>
 				)}
 {discountUsd > 0 && (

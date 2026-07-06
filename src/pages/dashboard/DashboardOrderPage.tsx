@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { IoChevronBack } from 'react-icons/io5';
-import { HiOutlineMapPin, HiOutlineUser } from 'react-icons/hi2';
+import { HiOutlineMapPin, HiOutlineUser, HiOutlineTruck } from 'react-icons/hi2';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useOrderAdmin } from '../../hooks';
 import { updateOrderMlCosts, updatePackMlCosts } from '../../actions';
@@ -347,6 +347,37 @@ export const DashboardOrderPage = () => {
 								</p>
 							)}
 						</div>
+
+						{/* Modalidad de envío: agencia (cobrar) vs DAC (no cobrar) */}
+						{order.channel !== 'ml' && order.shippingZone && (
+							<div className='mt-3 border-t border-ink-100 pt-3'>
+								{order.shippingZone === 'interior' ? (
+									<div className='flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800'>
+										<HiOutlineTruck className='mt-0.5 shrink-0' size={14} />
+										<span>
+											<b>Interior · DAC.</b> El cliente paga el envío en la agencia
+											al retirar. <b>No se le cobró envío.</b>
+										</span>
+									</div>
+								) : (
+									<div className='flex items-start gap-2 rounded-md border border-emerald-200 bg-emerald-50 p-2 text-xs text-emerald-800'>
+										<HiOutlineTruck className='mt-0.5 shrink-0' size={14} />
+										<span>
+											<b>
+												{order.shippingZone === 'metropolitana'
+													? 'Zona metropolitana · agencia'
+													: 'Montevideo · a domicilio'}
+											</b>
+											{order.shippingBarrio ? ` (${order.shippingBarrio})` : ''}.{' '}
+											Envío{' '}
+											{order.shippingCostUsd > 0
+												? `cobrado: ${money(order.shippingCostUsd)}`
+												: 'gratis (compra ≥ USD 100).'}
+										</span>
+									</div>
+								)}
+							</div>
+						)}
 					</div>
 				</div>
 			</div>

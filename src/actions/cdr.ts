@@ -90,7 +90,7 @@ export const createMpPreference = (payload: {
 	};
 	customer_email?: string;
 	customer_name?: string;
-	shipping_zone?: 'montevideo' | 'interior';
+	shipping_zone?: 'montevideo' | 'metropolitana' | 'interior';
 	shipping_barrio?: string;
 	shipping_department?: string;
 	shipping_cost_usd?: number;

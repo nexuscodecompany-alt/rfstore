@@ -39,7 +39,7 @@ export const DashboardShippingPage = () => {
 	const tierLabel: Record<keyof ShippingRates['montevideo'], string> = {
 		centro: 'Centro / Costa este (Zonas 5, 6, 7)',
 		periferia: 'Periferia (Zonas 1, 2, 3, 4)',
-		costa: 'Costa de oro / Canelones (Zonas 8, 9, 10, 11)',
+		costa: 'Zona metropolitana — agencia (Zonas 8-11: Las Piedras, Ciudad de la Costa, Pando, Canelones)',
 	};
 
 	const setMvd = (tier: keyof ShippingRates['montevideo'], v: string) =>

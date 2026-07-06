@@ -185,6 +185,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 				payment_method, payment_status,
 				ml_currency, fx_rate, total_original,
 				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
+				shipping_zone, shipping_barrio, shipping_department, shipping_cost_usd,
 				addresses:addresses(*),
 				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images))),
 				customers:customers(full_name, email)
@@ -269,6 +270,16 @@ export const getOrderByIdAdmin = async (id: number) => {
 		mlCommissionUsd: Number((order as { ml_commission_usd?: number }).ml_commission_usd ?? 0),
 		mlShippingCostUsd: Number((order as { ml_shipping_cost_usd?: number }).ml_shipping_cost_usd ?? 0),
 		mlOtherCostsUsd: Number((order as { ml_other_costs_usd?: number }).ml_other_costs_usd ?? 0),
+		shippingZone:
+			((order as { shipping_zone?: string | null }).shipping_zone as
+				| 'montevideo'
+				| 'metropolitana'
+				| 'interior'
+				| null) ?? null,
+		shippingBarrio: (order as { shipping_barrio?: string | null }).shipping_barrio ?? null,
+		shippingDepartment:
+			(order as { shipping_department?: string | null }).shipping_department ?? null,
+		shippingCostUsd: Number((order as { shipping_cost_usd?: number | null }).shipping_cost_usd ?? 0),
 		status: order.status,
 		created_at: order.created_at,
 		address: addr

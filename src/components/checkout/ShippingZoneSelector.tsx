@@ -5,17 +5,21 @@ import {
 	URUGUAY_DEPARTMENTS_INTERIOR,
 	MONTEVIDEO_ZONES,
 	findZoneByBarrio,
-	searchBarrios,
+	searchMontevideoBarrios,
+	searchMetroLocalities,
+	METRO_DEPARTMENT,
 	DEFAULT_SHIPPING_RATES,
 } from '../../constants/shipping';
 
-export type ShippingZone = 'montevideo' | 'interior';
+// 'metropolitana' = localidad de Canelones (Las Piedras, Ciudad de la Costa, etc.)
+// a la que la agencia llega: se cobra igual que Montevideo. 'interior' = DAC.
+export type ShippingZone = 'montevideo' | 'metropolitana' | 'interior';
 
 export interface ShippingSelection {
 	zone: ShippingZone;
-	barrio: string | null;       // sólo para Mvd
-	tier: 'centro' | 'periferia' | 'costa' | null; // sólo para Mvd
-	department: string | null;   // sólo para Interior
+	barrio: string | null;       // barrio (Mvd) o localidad (metropolitana)
+	tier: 'centro' | 'periferia' | 'costa' | null; // Mvd/metro (metro = 'costa')
+	department: string | null;   // Interior/metropolitana
 	cost_uyu: number;            // 0 para Interior (DAC)
 	cost_usd: number;            // ya convertido (UYU / fx)
 }
@@ -30,19 +34,32 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 	const { data: fx } = useUsdUyuRate();
 	const fxRate = fx?.rate ?? 0;
 
-	const [barrioQuery, setBarrioQuery] = useState(value.barrio ?? '');
+	const [barrioQuery, setBarrioQuery] = useState(
+		value.zone === 'montevideo' ? value.barrio ?? '' : ''
+	);
 	const [suggestions, setSuggestions] = useState<
-		ReturnType<typeof searchBarrios>
+		ReturnType<typeof searchMontevideoBarrios>
 	>([]);
 	const [showSuggestions, setShowSuggestions] = useState(false);
 	const [showZoneList, setShowZoneList] = useState(false);
+	// Buscador de localidad metropolitana (dentro de la pestaña Interior).
+	const [metroQuery, setMetroQuery] = useState(
+		value.zone === 'metropolitana' ? value.barrio ?? '' : ''
+	);
+	const [metroSuggestions, setMetroSuggestions] = useState<
+		ReturnType<typeof searchMetroLocalities>
+	>([]);
+	const [showMetroSuggestions, setShowMetroSuggestions] = useState(false);
 	const containerRef = useRef<HTMLDivElement | null>(null);
 
-	// Agrupar barrios por tier para la lista de zonas
+	const interiorTabActive =
+		value.zone === 'interior' || value.zone === 'metropolitana';
+
+	// Agrupar barrios por tier para la lista de zonas (solo Montevideo real: la
+	// zona 'costa' es metropolitana y se elige en la pestaña Interior).
 	const zonesByTier = {
 		centro: MONTEVIDEO_ZONES.filter(z => z.tier === 'centro').flatMap(z => z.barrios),
 		periferia: MONTEVIDEO_ZONES.filter(z => z.tier === 'periferia').flatMap(z => z.barrios),
-		costa: MONTEVIDEO_ZONES.filter(z => z.tier === 'costa').flatMap(z => z.barrios),
 	};
 
 	// Recalcular costo cuando cambian rates o fxRate o el barrio detectado
@@ -50,6 +67,15 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 		if (value.zone === 'interior') {
 			const cost_uyu = rates.interior_uyu;
 			const cost_usd = fxRate > 0 ? +(cost_uyu / fxRate).toFixed(2) : 0;
+			if (value.cost_uyu !== cost_uyu || value.cost_usd !== cost_usd) {
+				onChange({ ...value, cost_uyu, cost_usd });
+			}
+			return;
+		}
+		if (value.zone === 'metropolitana') {
+			// Tarifa de agencia = tarifa "costa" (misma que Montevideo zonas 8-11).
+			const cost_uyu = rates.montevideo.costa;
+			const cost_usd = fxRate > 0 && cost_uyu > 0 ? +(cost_uyu / fxRate).toFixed(2) : 0;
 			if (value.cost_uyu !== cost_uyu || value.cost_usd !== cost_usd) {
 				onChange({ ...value, cost_uyu, cost_usd });
 			}
@@ -64,14 +90,23 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [rates, fxRate, value.zone, value.tier]);
 
-	// Debounce búsqueda de barrios
+	// Debounce búsqueda de barrios (Montevideo real)
 	useEffect(() => {
 		if (value.zone !== 'montevideo') return;
 		const id = setTimeout(() => {
-			setSuggestions(searchBarrios(barrioQuery));
+			setSuggestions(searchMontevideoBarrios(barrioQuery));
 		}, 80);
 		return () => clearTimeout(id);
 	}, [barrioQuery, value.zone]);
+
+	// Debounce búsqueda de localidades metropolitanas (dentro de Interior)
+	useEffect(() => {
+		if (!interiorTabActive) return;
+		const id = setTimeout(() => {
+			setMetroSuggestions(searchMetroLocalities(metroQuery));
+		}, 80);
+		return () => clearTimeout(id);
+	}, [metroQuery, interiorTabActive]);
 
 	// Cerrar dropdown al click fuera
 	useEffect(() => {
@@ -81,6 +116,7 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 				!containerRef.current.contains(e.target as Node)
 			) {
 				setShowSuggestions(false);
+				setShowMetroSuggestions(false);
 			}
 		};
 		document.addEventListener('mousedown', onClick);
@@ -103,19 +139,55 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 		setShowSuggestions(false);
 	};
 
-	const setZoneMontevideo = () =>
+	const handlePickMetro = (localidad: string) => {
+		const cost_uyu = rates.montevideo.costa;
+		setMetroQuery(localidad);
+		onChange({
+			zone: 'metropolitana',
+			barrio: localidad,
+			tier: 'costa',
+			department: METRO_DEPARTMENT,
+			cost_uyu,
+			cost_usd: fxRate > 0 ? +(cost_uyu / fxRate).toFixed(2) : 0,
+		});
+		setShowMetroSuggestions(false);
+	};
+
+	// Vuelve de "metropolitana" (agencia) a "interior" (DAC).
+	const clearMetro = () => {
+		setMetroQuery('');
+		onChange({
+			zone: 'interior',
+			barrio: null,
+			tier: null,
+			department: value.department === METRO_DEPARTMENT ? null : value.department,
+			cost_uyu: 0,
+			cost_usd: 0,
+		});
+	};
+
+	const setZoneMontevideo = () => {
+		setMetroQuery('');
 		onChange({
 			...value,
 			zone: 'montevideo',
+			// Si venía de metropolitana, la localidad/tier no aplican a Mvd.
+			barrio: value.zone === 'montevideo' ? value.barrio : null,
+			tier: value.zone === 'montevideo' ? value.tier : null,
 			department: null,
 		});
-	const setZoneInterior = () =>
+	};
+	const setZoneInterior = () => {
+		setMetroQuery('');
 		onChange({
 			...value,
 			zone: 'interior',
 			barrio: null,
 			tier: null,
+			cost_uyu: 0,
+			cost_usd: 0,
 		});
+	};
 
 	return (
 		<div className='space-y-3' ref={containerRef}>
@@ -138,7 +210,7 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 					type='button'
 					onClick={setZoneInterior}
 					className={`flex items-center gap-2 p-3 rounded-lg border text-sm font-semibold transition-all ${
-						value.zone === 'interior'
+						interiorTabActive
 							? 'border-brand-600 bg-brand-50 text-brand-700 ring-2 ring-brand-200'
 							: 'border-ink-200 bg-white text-ink-700 hover:border-ink-300'
 					}`}
@@ -222,45 +294,100 @@ export const ShippingZoneSelector = ({ value, onChange }: Props) => {
 									barrios={zonesByTier.periferia}
 									onPick={handlePickBarrio}
 								/>
-								<ZoneRow
-									title='Costa'
-									cost={rates.montevideo.costa}
-									barrios={zonesByTier.costa}
-									onPick={handlePickBarrio}
-								/>
 							</div>
 						)}
 					</div>
 				</div>
 			)}
 
-			{/* Interior: dropdown departamento */}
-			{value.zone === 'interior' && (
-				<div>
-					<label className='text-xs font-medium text-ink-600'>
-						Departamento
-					</label>
-					<select
-						className='mt-1 w-full border rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white'
-						value={value.department ?? ''}
-						onChange={e =>
-							onChange({ ...value, department: e.target.value || null })
-						}
-					>
-						<option value=''>Seleccioná un departamento…</option>
-						{URUGUAY_DEPARTMENTS_INTERIOR.map(d => (
-							<option key={d} value={d}>
-								{d}
-							</option>
-						))}
-					</select>
-					<div className='mt-2 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2'>
-						<HiOutlineTruck size={16} />
-						<span>
-							Envío al interior por <b>DAC</b>. El costo lo abona el cliente al
-							retirar en la agencia.
-						</span>
+			{/* Interior: primero detectamos si la localidad es zona metropolitana
+			    (llega agencia, mismo costo que Montevideo); si no, va por DAC. */}
+			{interiorTabActive && (
+				<div className='space-y-3'>
+					{/* Buscador de localidad metropolitana */}
+					<div className='relative'>
+						<label className='text-xs font-medium text-ink-600'>
+							¿Tu localidad es Las Piedras, Ciudad de la Costa, Pando, Canelones u
+							otra de la zona metropolitana? Buscala acá.
+						</label>
+						<input
+							type='text'
+							className='mt-1 w-full border rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300'
+							placeholder='Ej: Las Piedras, Solymar, Pando…'
+							value={metroQuery}
+							onChange={e => {
+								setMetroQuery(e.target.value);
+								setShowMetroSuggestions(true);
+							}}
+							onFocus={() => setShowMetroSuggestions(true)}
+						/>
+						{showMetroSuggestions && metroSuggestions.length > 0 && (
+							<ul className='absolute z-10 mt-1 w-full max-h-60 overflow-auto rounded-lg border border-ink-200 bg-white shadow-card'>
+								{metroSuggestions.map(s => (
+									<li key={s.name}>
+										<button
+											type='button'
+											className='w-full text-left px-3 py-2 text-sm hover:bg-brand-50'
+											onClick={() => handlePickMetro(s.name)}
+										>
+											{s.name}
+											<span className='ml-2 text-xs text-ink-400'>· agencia</span>
+										</button>
+									</li>
+								))}
+							</ul>
+						)}
 					</div>
+
+					{value.zone === 'metropolitana' ? (
+						/* Localidad metropolitana detectada: se cobra por agencia. */
+						<div className='flex items-start gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-md p-2'>
+							<HiOutlineCheckCircle size={16} className='mt-0.5 shrink-0' />
+							<div>
+								<span>
+									Zona metropolitana: <b>{value.barrio}</b> · Llega por{' '}
+									<b>agencia</b> a domicilio · Envío <b>UYU {value.cost_uyu}</b>
+									{value.cost_usd > 0 && ` (≈ USD ${value.cost_usd.toFixed(2)})`}{' '}
+									(igual que Montevideo).
+								</span>
+								<button
+									type='button'
+									onClick={clearMetro}
+									className='mt-1 block text-brand-600 underline'
+								>
+									Mi localidad no está / es interior lejano (envío por DAC)
+								</button>
+							</div>
+						</div>
+					) : (
+						/* Interior lejano: DAC. */
+						<div>
+							<label className='text-xs font-medium text-ink-600'>
+								Departamento
+							</label>
+							<select
+								className='mt-1 w-full border rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300 bg-white'
+								value={value.department ?? ''}
+								onChange={e =>
+									onChange({ ...value, department: e.target.value || null })
+								}
+							>
+								<option value=''>Seleccioná un departamento…</option>
+								{URUGUAY_DEPARTMENTS_INTERIOR.map(d => (
+									<option key={d} value={d}>
+										{d}
+									</option>
+								))}
+							</select>
+							<div className='mt-2 flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2'>
+								<HiOutlineTruck size={16} />
+								<span>
+									Envío al interior por <b>DAC</b>. El costo lo abona el cliente al
+									retirar en la agencia.
+								</span>
+							</div>
+						</div>
+					)}
 				</div>
 			)}
 		</div>

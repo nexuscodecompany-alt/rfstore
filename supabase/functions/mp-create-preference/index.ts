@@ -42,7 +42,7 @@ interface ReqBody {
 	address: { line1: string; line2?: string; city: string; state: string; postal_code: string; country: string; };
 	customer_email?: string;
 	customer_name?: string;
-	shipping_zone?: 'montevideo' | 'interior';
+	shipping_zone?: 'montevideo' | 'metropolitana' | 'interior';
 	shipping_barrio?: string;
 	shipping_department?: string;
 	shipping_cost_usd?: number;
@@ -89,9 +89,13 @@ Deno.serve(async req => {
 
 		const requestedShipping = Number(body.shipping_cost_usd ?? 0);
 		const isMvd = body.shipping_zone === 'montevideo';
+		const isMetro = body.shipping_zone === 'metropolitana';
 		const isInterior = body.shipping_zone === 'interior';
-		const qualifiesFreeMvd = isMvd && subtotal >= FREE_SHIPPING_MIN_USD;
-		const shippingBase = isInterior || qualifiesFreeMvd ? 0 : Math.max(0, Number(requestedShipping.toFixed(2)));
+		// Montevideo y zona metropolitana (agencia) cobran envío; interior = DAC (0).
+		// Envío gratis a partir de FREE_SHIPPING_MIN_USD en las zonas que cobran.
+		const chargesShipping = isMvd || isMetro;
+		const qualifiesFree = chargesShipping && subtotal >= FREE_SHIPPING_MIN_USD;
+		const shippingBase = !chargesShipping || qualifiesFree ? 0 : Math.max(0, Number(requestedShipping.toFixed(2)));
 
 		// Cupon (server-side, anti-manipulacion). El descuento se calcula contra el subtotal REAL cobrado.
 		let couponDiscount = 0, couponFree = false, couponId: string | null = null, couponValid = false, couponCodeNorm: string | null = null;
@@ -118,7 +122,11 @@ Deno.serve(async req => {
 
 		const mpItems: Array<{ title: string; quantity: number; currency_id: string; unit_price: number }> = lineTotals.map(l => ({ title: l.title, quantity: l.quantity, currency_id: 'USD', unit_price: Math.max(0.01, Number((l.unit_final_usd * priceFactor).toFixed(2))) }));
 		if (shippingCharge > 0) {
-			const zoneLabel = isMvd ? `Montevideo${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}` : 'Envío';
+			const zoneLabel = isMvd
+				? `Montevideo${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}`
+				: isMetro
+				? `Zona metropolitana${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}`
+				: 'Envío';
 			mpItems.push({ title: `Envío (${zoneLabel})`, quantity: 1, currency_id: 'USD', unit_price: shippingCharge });
 		}
 		const preferenceBody = { items: mpItems, payer: { email: body.customer_email ?? customer.email ?? userData.user.email, name: body.customer_name ?? customer.full_name ?? undefined }, back_urls: { success: `${SITE_URL}/checkout/${orderRow.id}/thank-you?status=success`, failure: `${SITE_URL}/checkout/${orderRow.id}/thank-you?status=failure`, pending: `${SITE_URL}/checkout/${orderRow.id}/thank-you?status=pending` }, auto_return: 'approved', external_reference: String(orderRow.id), notification_url: `${SUPABASE_URL}/functions/v1/mp-webhook`, statement_descriptor: 'RFSTORE' };

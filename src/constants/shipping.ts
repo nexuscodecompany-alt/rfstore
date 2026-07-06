@@ -162,6 +162,52 @@ export const searchBarrios = (q: string, limit = 8) => {
 	return ALL_BARRIOS.filter(b => normalize(b.name).includes(target)).slice(0, limit);
 };
 
+// --- Montevideo real (zonas 1-7) vs Zona Metropolitana (zonas 8-11, Canelones) ---
+// OJO: las zonas 8-11 (tier 'costa') NO son Montevideo. Son localidades de
+// Canelones (Las Piedras, La Paz, Progreso, Pando, Ciudad de la Costa, Ciudad de
+// Canelones…) a las que la agencia llega y se cobra la MISMA tarifa que
+// Montevideo. El resto del interior va por DAC (el cliente paga al retirar).
+export const METRO_TIER: ShippingTier = 'costa';
+// Departamento al que pertenecen todas las localidades metropolitanas.
+export const METRO_DEPARTMENT = 'Canelones';
+
+const MONTEVIDEO_BARRIOS = ALL_BARRIOS.filter(b => b.tier !== METRO_TIER);
+const METRO_LOCALITIES = ALL_BARRIOS.filter(b => b.tier === METRO_TIER);
+
+// Autocomplete SOLO de barrios de Montevideo real (zonas 1-7).
+export const searchMontevideoBarrios = (q: string, limit = 8) => {
+	const target = normalize(q);
+	if (target.length < 1) return [];
+	return MONTEVIDEO_BARRIOS.filter(b => normalize(b.name).includes(target)).slice(0, limit);
+};
+
+// Autocomplete de localidades de la zona metropolitana (zonas 8-11, agencia).
+export const searchMetroLocalities = (q: string, limit = 8) => {
+	const target = normalize(q);
+	if (target.length < 1) return [];
+	return METRO_LOCALITIES.filter(b => normalize(b.name).includes(target)).slice(0, limit);
+};
+
+// ¿La localidad ingresada es de la zona metropolitana (llega agencia)?
+export const findMetroLocality = (
+	name: string
+): { localidad: string; zoneId: string } | null => {
+	if (!name) return null;
+	const target = normalize(name);
+	// Exacto primero
+	for (const b of METRO_LOCALITIES) {
+		if (normalize(b.name) === target) return { localidad: b.name, zoneId: b.zoneId };
+	}
+	// Contains (parcial)
+	for (const b of METRO_LOCALITIES) {
+		const nb = normalize(b.name);
+		if (nb.includes(target) || target.includes(nb)) {
+			return { localidad: b.name, zoneId: b.zoneId };
+		}
+	}
+	return null;
+};
+
 export interface ShippingRates {
 	montevideo: {
 		centro: number; // UYU
