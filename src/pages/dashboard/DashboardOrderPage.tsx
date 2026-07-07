@@ -372,7 +372,7 @@ export const DashboardOrderPage = () => {
 											Envío{' '}
 											{order.shippingCostUsd > 0
 												? `cobrado: ${money(order.shippingCostUsd)}`
-												: 'gratis (compra ≥ USD 100).'}
+												: 'gratis (compra ≥ USD 150).'}
 										</span>
 									</div>
 								)}

@@ -24,13 +24,13 @@ export const Banner = () => {
 			<div className='relative z-10 container py-24 lg:py-32 flex flex-col items-center text-center'>
 				<span className='chip-dark mb-6 animate-fade-in-up'>
 					<HiOutlineSparkles className='text-brand-400' />
-					Tecnología para todos en Uruguay
+					Soluciones tecnológicas en Uruguay
 				</span>
 
 				<h1 className='text-4xl font-bold tracking-tight leading-[1.05] mb-5 lg:text-6xl xl:text-7xl max-w-4xl animate-fade-in-up [animation-delay:80ms]'>
-					Equipamiento informático{' '}
+					Tecnología para{' '}
 					<span className='bg-gradient-to-br from-brand-300 via-brand-400 to-brand-600 bg-clip-text text-transparent'>
-						al mejor precio
+						empresas y hogares
 					</span>
 				</h1>
 
@@ -48,12 +48,12 @@ export const Banner = () => {
 						<HiArrowRight />
 					</Link>
 					<a
-						href={`https://wa.me/59894116299?text=${encodeURIComponent('Hola, me gustaría solicitar una cotización.')}`}
+						href={`https://wa.me/59894116299?text=${encodeURIComponent('Hola, me gustaría solicitar asesoramiento.')}`}
 						target='_blank'
 						rel='noopener noreferrer'
 						className='btn-ghost-dark px-6 py-3'
 					>
-						Solicitar cotización
+						Solicitar asesoramiento
 					</a>
 				</div>
 

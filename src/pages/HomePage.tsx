@@ -54,7 +54,7 @@ export const HomePage = () => {
 							to='/contacto'
 							className='inline-flex items-center justify-center gap-2 bg-white text-ink-900 py-3 px-6 rounded-lg font-semibold text-sm hover:bg-brand-50 transition-all'
 						>
-							Solicitar cotización
+							Solicitar asesoramiento
 							<HiArrowRight />
 						</Link>
 						<Link to='/tienda' className='btn-ghost-dark px-6 py-3'>

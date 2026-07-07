@@ -24,8 +24,8 @@ import { ImSpinner2 } from 'react-icons/im';
 import { supabase } from '../../supabase/client';
 
 // Mismo umbral que en FormCheckout (cotización): envío gratis en Montevideo
-// con compras desde USD 100.
-const FREE_SHIPPING_MIN_USD = 100;
+// y zona metropolitana con compras desde USD 150.
+const FREE_SHIPPING_MIN_USD = 150;
 
 type Method = 'mercadopago' | 'transfer' | 'deposit';
 

@@ -5,7 +5,7 @@ const features = [
 	{
 		icon: MdLocalShipping,
 		title: 'Envíos a todo el país',
-		desc: 'Envío gratis en Montevideo en compras desde USD 100. Resto del país a coordinar.',
+		desc: 'Envío gratis en Montevideo y alrededores en compras desde USD 150. Resto del país a coordinar.',
 	},
 	{
 		icon: BiWorld,

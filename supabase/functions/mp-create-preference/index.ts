@@ -48,7 +48,7 @@ interface ReqBody {
 	shipping_cost_usd?: number;
 	coupon_code?: string;
 }
-const FREE_SHIPPING_MIN_USD = 100;
+const FREE_SHIPPING_MIN_USD = 150;
 
 Deno.serve(async req => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -79,12 +79,23 @@ Deno.serve(async req => {
 		const { data: customer } = await supabaseAdmin.from('customers').select('id, full_name, email').eq('user_id', userData.user.id).single();
 		if (!customer) return new Response(JSON.stringify({ error: 'cliente no encontrado' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-		const { data: markupRow } = await supabaseAdmin.from('app_settings').select('value').eq('key', 'cdr_markup_percent_global').single();
-		const markup = Number(markupRow?.value ?? 0);
-		const factor = 1 + markup / 100;
-		const { data: productsMeta } = await supabaseAdmin.from('products').select('external_code, markup_percent').in('external_code', codes);
-		const perProductMarkup = new Map((productsMeta ?? []).map(p => [p.external_code, p.markup_percent]));
-		const lineTotals = body.items.map(it => { const own = perProductMarkup.get(it.external_code); const f = own != null ? 1 + Number(own) / 100 : factor; const unitFinal = Number((it.unit_price_usd * f).toFixed(2)); return { ...it, unit_final_usd: unitFinal, line_total: unitFinal * it.quantity }; });
+		// Precio de venta CANONICO server-side: margen por tramo + IVA, identico al
+		// storefront (SQL rf_sale_price). NO se aplica ningun markup extra ni se confia
+		// en el precio enviado por el cliente. ANTES se multiplicaba por
+		// cdr_markup_percent_global -> DOBLE MARKUP: el cliente veia 62 y se le cobraba 74.4.
+		const { data: priceRows } = await supabaseAdmin.from('products').select('external_code, price_usd').in('external_code', codes);
+		const costByCode = new Map((priceRows ?? []).map((p: any) => [p.external_code, Number(p.price_usd) || 0]));
+		const saleByCode = new Map<string, number>();
+		for (const code of new Set(codes)) {
+			const cost = costByCode.get(code) ?? 0;
+			const { data: sp } = await supabaseAdmin.rpc('rf_sale_price', { cost });
+			saleByCode.set(code, Number(sp) || 0);
+		}
+		const lineTotals = body.items.map(it => {
+			const sp = saleByCode.get(it.external_code) ?? 0;
+			const unitFinal = sp > 0 ? sp : Number(Number(it.unit_price_usd).toFixed(2));
+			return { ...it, unit_final_usd: unitFinal, line_total: unitFinal * it.quantity };
+		});
 		const subtotal = lineTotals.reduce((acc, l) => acc + l.line_total, 0);
 
 		const requestedShipping = Number(body.shipping_cost_usd ?? 0);
@@ -109,6 +120,17 @@ Deno.serve(async req => {
 		const priceFactor = subtotal > 0 ? discountedProducts / subtotal : 1;
 		const totalAmount = Number((discountedProducts + shippingCharge).toFixed(2));
 
+		// Cotizacion USD->UYU (BCU) cacheada: la MISMA que muestra el checkout. La
+		// preference se crea en UYU para que el cobro coincida EXACTO con lo mostrado.
+		// (Si se mandara en USD, MP convierte a su propia tasa y cobra de mas.)
+		// Sin cache valida, cae a USD para no romper el checkout.
+		const { data: fxRow } = await supabaseAdmin.from('app_settings').select('value').eq('key', 'usd_uyu_rate_cache').maybeSingle();
+		const fxRate = Number((fxRow?.value as any)?.rate) || 0;
+		const useUyu = fxRate > 0;
+		const curId = useUyu ? 'UYU' : 'USD';
+		const toCharge = (usd: number) => (useUyu ? Math.round(usd * fxRate) : Number(usd.toFixed(2)));
+		const minUnit = useUyu ? 1 : 0.01;
+
 		const { data: addressRow, error: addrErr } = await supabaseAdmin.from('addresses').insert({ address_line1: body.address.line1, address_line2: body.address.line2 ?? null, city: body.address.city, state: body.address.state, postal_code: body.address.postal_code, country: body.address.country, customer_id: customer.id }).select().single();
 		if (addrErr) throw new Error(`addresses: ${addrErr.message}`);
 
@@ -120,14 +142,14 @@ Deno.serve(async req => {
 
 		for (const l of lineTotals) { const { data: v } = await supabaseAdmin.from('variants').select('stock').eq('id', l.variant_id).single(); if (!v) continue; await supabaseAdmin.from('variants').update({ stock: Math.max(0, Number(v.stock) - l.quantity) }).eq('id', l.variant_id); }
 
-		const mpItems: Array<{ title: string; quantity: number; currency_id: string; unit_price: number }> = lineTotals.map(l => ({ title: l.title, quantity: l.quantity, currency_id: 'USD', unit_price: Math.max(0.01, Number((l.unit_final_usd * priceFactor).toFixed(2))) }));
+		const mpItems: Array<{ title: string; quantity: number; currency_id: string; unit_price: number }> = lineTotals.map(l => ({ title: l.title, quantity: l.quantity, currency_id: curId, unit_price: Math.max(minUnit, toCharge(l.unit_final_usd * priceFactor)) }));
 		if (shippingCharge > 0) {
 			const zoneLabel = isMvd
 				? `Montevideo${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}`
 				: isMetro
 				? `Zona metropolitana${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}`
 				: 'Envío';
-			mpItems.push({ title: `Envío (${zoneLabel})`, quantity: 1, currency_id: 'USD', unit_price: shippingCharge });
+			mpItems.push({ title: `Envío (${zoneLabel})`, quantity: 1, currency_id: curId, unit_price: Math.max(minUnit, toCharge(shippingCharge)) });
 		}
 		const preferenceBody = { items: mpItems, payer: { email: body.customer_email ?? customer.email ?? userData.user.email, name: body.customer_name ?? customer.full_name ?? undefined }, back_urls: { success: `${SITE_URL}/checkout/${orderRow.id}/thank-you?status=success`, failure: `${SITE_URL}/checkout/${orderRow.id}/thank-you?status=failure`, pending: `${SITE_URL}/checkout/${orderRow.id}/thank-you?status=pending` }, auto_return: 'approved', external_reference: String(orderRow.id), notification_url: `${SUPABASE_URL}/functions/v1/mp-webhook`, statement_descriptor: 'RFSTORE' };
 		const mpResp = await fetch('https://api.mercadopago.com/checkout/preferences', { method: 'POST', headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(preferenceBody) });

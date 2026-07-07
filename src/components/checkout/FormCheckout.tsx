@@ -11,9 +11,9 @@ import { URUGUAY_DEPARTMENTS_INTERIOR } from "../../constants/shipping";
 
 const FORMSPREE_ID = "mvgqddop";
 
-// Regla: envío gratis SOLO en Montevideo con compras desde USD 100.
+// Regla: envío gratis SOLO en Montevideo con compras desde USD 150.
 // Cualquier otro caso queda "a coordinar" — el agente confirma por WhatsApp.
-const FREE_SHIPPING_MIN_USD = 100;
+const FREE_SHIPPING_MIN_USD = 150;
 
 const computeShippingLabel = (
   department: string,
@@ -284,7 +284,7 @@ export const FormCheckout = () => {
           className="bg-black text-white py-3.5 font-bold tracking-wide rounded-md mt-2 disabled:opacity-70"
           disabled={submitting}
         >
-          {submitting ? "Enviando..." : "Solicitar Cotización"}
+          {submitting ? "Enviando..." : "Solicitar asesoramiento"}
         </button>
       </form>
     </div>
