@@ -697,6 +697,10 @@ export type Database = {
           brand_id: string | null
           category_id: string | null
           created_at: string
+          cdr_content_changed_at: string | null
+          cdr_content_hash: string | null
+          content_locked: boolean
+          ml_content_dirty: boolean
           description: Json
           external_code: string | null
           features: string[]
@@ -716,6 +720,10 @@ export type Database = {
           brand_id?: string | null
           category_id?: string | null
           created_at?: string
+          cdr_content_changed_at?: string | null
+          cdr_content_hash?: string | null
+          content_locked?: boolean
+          ml_content_dirty?: boolean
           description: Json
           external_code?: string | null
           features: string[]
@@ -735,6 +743,10 @@ export type Database = {
           brand_id?: string | null
           category_id?: string | null
           created_at?: string
+          cdr_content_changed_at?: string | null
+          cdr_content_hash?: string | null
+          content_locked?: boolean
+          ml_content_dirty?: boolean
           description?: Json
           external_code?: string | null
           features?: string[]
