@@ -172,6 +172,25 @@ export interface DryRunResult {
 export const publishMlItem = (product_id: string, variant_id: string, dry_run = false) =>
 	invokeMlFn<PublishResult | DryRunResult>('ml-publish-item', { product_id, variant_id, dry_run });
 
+// --------- Actualizar contenido (título + descripción) de una publicación ML existente ---------
+export interface UpdateMlContentResult {
+	ok: boolean;
+	ml_item_id?: string;
+	title?: string;
+	title_updated?: boolean;
+	description_updated?: boolean;
+	error?: string;
+	ml_status?: string;
+	sub_status?: string[];
+	detail?: unknown;
+	desc_error?: unknown;
+}
+
+// Empuja a ML el título + descripción actuales del producto (que se sincronizan de CDR).
+// Disparo MANUAL desde el panel (botón "Actualizar en ML"). No toca precio/stock.
+export const updateMlContent = (product_id: string, variant_id?: string) =>
+	invokeMlFn<UpdateMlContentResult>('ml-update-content', { product_id, variant_id });
+
 // --------- Readiness (% real listo para ML) ---------
 export interface ReadinessResult {
 	ok: boolean;

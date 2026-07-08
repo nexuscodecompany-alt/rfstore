@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAdminProducts, getNewProductsCount, markProductsSeen } from '../../actions';
+import { getAdminProducts, getContentDirtyCount, getNewProductsCount, markProductsSeen } from '../../actions';
 
 export const useAdminProducts = (
 	page: number,
@@ -10,12 +10,13 @@ export const useAdminProducts = (
 	activeFilter: '' | 'active' | 'inactive' = '',
 	newOnly = false,
 	mlFilter: '' | 'in' | 'out' = '',
-	minReadiness = 0
+	minReadiness = 0,
+	contentDirtyOnly = false
 ) => {
 	const { data, isLoading } = useQuery({
-		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness],
+		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly],
 		queryFn: () =>
-			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness),
+			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly),
 	});
 
 	return {
@@ -23,6 +24,16 @@ export const useAdminProducts = (
 		totalProducts: data?.count ?? 0,
 		isLoading,
 	};
+};
+
+// Cantidad de productos en ML con cambios de contenido de CDR pendientes de actualizar.
+export const useContentDirtyCount = () => {
+	const { data } = useQuery({
+		queryKey: ['content-dirty-count'],
+		queryFn: getContentDirtyCount,
+		refetchInterval: 60_000,
+	});
+	return data ?? 0;
 };
 
 export const useNewProductsCount = () => {

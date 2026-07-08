@@ -170,7 +170,8 @@ export const getAdminProducts = async (
     activeFilter: '' | 'active' | 'inactive' = '',
     newOnly = false,
     mlFilter: '' | 'in' | 'out' = '',
-    minReadiness = 0
+    minReadiness = 0,
+    contentDirtyOnly = false
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
@@ -211,6 +212,10 @@ export const getAdminProducts = async (
 
     if (newOnly) query = query.is('seen_at', null);
 
+    // Filtro "Cambió en CDR (pendiente ML)": productos publicados en ML cuyo contenido
+    // (nombre/descripción) cambió en CDR y todavía no se empujó a la publicación.
+    if (contentDirtyOnly) query = query.eq('ml_content_dirty', true);
+
     // Filtro por "% listo para ML": columna computada ml_ready_percent (función SQL).
     // Filtra a nivel base => respeta paginación y total, no solo la página visible.
     if (minReadiness > 0) query = query.gte('ml_ready_percent', minReadiness);
@@ -226,6 +231,17 @@ export const getNewProductsCount = async (): Promise<number> => {
     return Number(data ?? 0);
 };
 
+// Cuántos productos publicados en ML tienen cambios de contenido de CDR sin aplicar
+// (para el chip "Cambió en CDR" del listado admin).
+export const getContentDirtyCount = async (): Promise<number> => {
+    const { count, error } = await supabase
+        .from('products')
+        .select('id', { count: 'exact', head: true })
+        .eq('ml_content_dirty', true);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
+};
+
 export const markProductsSeen = async (ids?: string[]): Promise<number> => {
     const { data, error } = await (supabase.rpc as any)('mark_products_seen', {
         p_ids: ids && ids.length > 0 ? ids : null,
@@ -239,6 +255,16 @@ export const setProductActive = async (id: string, active: boolean) => {
     const { error } = await supabase
         .from('products')
         .update({ active })
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
+// Candado de contenido: cuando está en true, el sync de CDR NO pisa
+// nombre/descripción/features de este producto (para no perder ediciones manuales).
+export const setProductContentLocked = async (id: string, locked: boolean) => {
+    const { error } = await supabase
+        .from('products')
+        .update({ content_locked: locked })
         .eq('id', id);
     if (error) throw new Error(error.message);
 };

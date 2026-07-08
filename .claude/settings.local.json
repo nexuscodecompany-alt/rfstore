@@ -130,7 +130,8 @@
       "WebFetch(domain:uy.dolarapi.com)",
       "WebFetch(domain:www.brou.com.uy)",
       "WebFetch(domain:r.jina.ai)",
-      "WebFetch(domain:bwjptocnkqedakdibosu.supabase.co)"
+      "WebFetch(domain:bwjptocnkqedakdibosu.supabase.co)",
+      "Bash(node *)"
     ]
   }
 }

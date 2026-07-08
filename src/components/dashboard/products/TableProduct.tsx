@@ -8,8 +8,11 @@ import {
   useDeleteProduct,
   useMarkProductsSeen,
   useNewProductsCount,
+  useContentDirtyCount,
   usePricingConfig,
   usePublishMlItem,
+  useUpdateMlContent,
+  useSetProductContentLocked,
   useRecalcMlReadiness,
   useSetProductActive,
   useTaxonomiesAdmin,
@@ -53,6 +56,7 @@ export const TableProduct = () => {
     (searchParams.get('estado') as '' | 'active' | 'inactive') || ''
   );
   const [newOnly, setNewOnly] = useState<boolean>(searchParams.get('nuevos') === '1');
+  const [contentDirtyOnly, setContentDirtyOnly] = useState<boolean>(searchParams.get('mlcambios') === '1');
   const [mlFilter, setMlFilter] = useState<'' | 'in' | 'out'>(
     (searchParams.get('ml') as '' | 'in' | 'out') || ''
   );
@@ -81,6 +85,7 @@ export const TableProduct = () => {
   });
   const stockThreshold = mlSettings?.stock_threshold ?? 3;
   const newCount = useNewProductsCount();
+  const dirtyCount = useContentDirtyCount();
   const { mutate: markSeen, isPending: markingSeen } = useMarkProductsSeen();
 
   useEffect(() => {
@@ -103,13 +108,28 @@ export const TableProduct = () => {
     activeFilter,
     newOnly,
     mlFilter,
-    minReadiness
+    minReadiness,
+    contentDirtyOnly
   );
 
   const { mutate, isPending } = useDeleteProduct();
   const { mutate: toggleActive } = useSetProductActive();
   const { publish, isPublishing, publishingVars } = usePublishMlItem();
+  const { updateContent, isUpdatingContent, updatingContentVars } = useUpdateMlContent();
+  const { setContentLocked } = useSetProductContentLocked();
   const { recalc, isRecalculating, recalcVars } = useRecalcMlReadiness();
+
+  const handleUpdateMlContent = (product: any, variantId: string | undefined) => {
+    setOpenMenuIndex(null);
+    if (!product.is_in_ml) return;
+    if (
+      window.confirm(
+        `¿Actualizar el título y la descripción de "${product.name}" en Mercado Libre?\n\nSe empuja el contenido actual de RF Store (sincronizado de CDR). No cambia precio ni stock.`
+      )
+    ) {
+      updateContent({ productId: product.id, variantId });
+    }
+  };
 
   const handlePublishMl = (product: any, variantId: string | undefined) => {
     setOpenMenuIndex(null);
@@ -276,7 +296,7 @@ export const TableProduct = () => {
             <option value={100}>100% (listos para publicar)</option>
           </select>
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0) && (
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly) && (
             <button
               type="button"
               onClick={() => {
@@ -287,6 +307,7 @@ export const TableProduct = () => {
                 setNewOnly(false);
                 setMlFilter('');
                 setMinReadiness(0);
+                setContentDirtyOnly(false);
                 setSearchParams({}, { replace: true });
                 setPage(1);
               }}
@@ -315,6 +336,28 @@ export const TableProduct = () => {
             {newCount > 0 && (
               <span className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
                 {newCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setContentDirtyOnly((v) => !v);
+              setPage(1);
+            }}
+            title="Productos publicados en Mercado Libre cuyo nombre/descripción cambió en CDR y todavía no se actualizó la publicación"
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+              contentDirtyOnly
+                ? 'border-blue-300 bg-blue-50 text-blue-800'
+                : 'border-ink-200 bg-white text-ink-700 hover:bg-ink-50'
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${dirtyCount > 0 ? 'bg-blue-500' : 'bg-ink-300'}`} />
+            Cambió en CDR (pendiente ML)
+            {dirtyCount > 0 && (
+              <span className="inline-flex items-center justify-center rounded-full bg-blue-500 px-1.5 text-[10px] font-bold text-white">
+                {dirtyCount}
               </span>
             )}
           </button>
@@ -412,6 +455,22 @@ export const TableProduct = () => {
                       {(product as any).seen_at === null && (
                         <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 ring-1 ring-amber-300">
                           Nuevo
+                        </span>
+                      )}
+                      {(product as any).content_locked && (
+                        <span
+                          title="Contenido bloqueado: el sync de CDR no pisa el nombre/descripción de este producto"
+                          className="inline-flex items-center rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-700 ring-1 ring-ink-300"
+                        >
+                          🔒 Candado
+                        </span>
+                      )}
+                      {(product as any).ml_content_dirty && (product as any).is_in_ml && (
+                        <span
+                          title="CDR cambió el título o la descripción. Actualizá la publicación de Mercado Libre desde el menú."
+                          className="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-blue-800 ring-1 ring-blue-300"
+                        >
+                          Cambió en CDR
                         </span>
                       )}
                     </div>
@@ -533,6 +592,38 @@ export const TableProduct = () => {
                             {isPublishing && publishingVars?.productId === product.id
                               ? 'Publicando…'
                               : 'Publicar en ML'}
+                          </button>
+                        )}
+                        {(product as any).is_in_ml && (product as any).ml_content_dirty && (
+                          <button
+                            disabled={
+                              isUpdatingContent &&
+                              updatingContentVars?.productId === product.id
+                            }
+                            className="block w-full text-left px-4 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                            onClick={() => handleUpdateMlContent(product, selectedVariant?.id)}
+                          >
+                            {isUpdatingContent &&
+                            updatingContentVars?.productId === product.id
+                              ? 'Actualizando…'
+                              : 'Actualizar en ML'}
+                          </button>
+                        )}
+                        {product.source === 'cdr' && (
+                          <button
+                            className="block w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
+                            onClick={() => {
+                              setContentLocked({
+                                id: product.id,
+                                locked: !(product as any).content_locked,
+                              });
+                              setOpenMenuIndex(null);
+                            }}
+                            title="Si bloqueás el contenido, el sync de CDR no pisa el nombre ni la descripción de este producto"
+                          >
+                            {(product as any).content_locked
+                              ? 'Desbloquear contenido (CDR)'
+                              : 'Bloquear contenido (CDR)'}
                           </button>
                         )}
                         {!(product as any).is_in_ml && (
