@@ -134,26 +134,27 @@ export const TableProduct = () => {
   const handlePublishMl = (product: any, variantId: string | undefined) => {
     setOpenMenuIndex(null);
     if (product.is_in_ml) return;
-    // Si ya tiene el % real calculado, usamos esos faltantes (incluyen atributos de ML);
-    // si no, caemos al chequeo básico del lado del cliente.
-    const missing: string[] = product.ml_ready_checked_at
-      ? ((product.ml_ready_missing as string[]) ?? [])
-      : getMlReadiness(product, stockThreshold).missingHard.map((m) => m.label);
-    if (missing.length > 0) {
-      toast.error(`Falta para publicar: ${missing.join(', ')}`, {
-        position: 'bottom-right',
-      });
-      return;
-    }
+    // Sin variante no podemos armar la publicación: esto sí es un impedimento técnico.
     if (!variantId) {
       toast.error('El producto no tiene una variante para publicar', {
         position: 'bottom-right',
       });
       return;
     }
+    // Qué le falta al producto (informativo). Si ya tiene el % real calculado, usamos
+    // esos faltantes (incluyen atributos de ML); si no, el chequeo básico del cliente.
+    // Ya NO bloqueamos: el admin decide si publicar igual aunque no esté 100% listo.
+    // La edge function ml-publish-item validará lo realmente obligatorio para ML.
+    const missing: string[] = product.ml_ready_checked_at
+      ? ((product.ml_ready_missing as string[]) ?? [])
+      : getMlReadiness(product, stockThreshold).missing.map((m) => m.label);
+    const warn =
+      missing.length > 0
+        ? `\n\n⚠️ Todavía no está 100% listo. Falta: ${missing.join(', ')}.\nMercado Libre puede rechazar la publicación si le falta algo obligatorio.`
+        : '';
     if (
       window.confirm(
-        `¿Publicar "${product.name}" en Mercado Libre?\n\nSe crea una publicación nueva en tu cuenta de ML con el precio y stock actuales.`
+        `¿Publicar "${product.name}" en Mercado Libre?\n\nSe crea una publicación nueva en tu cuenta de ML con el precio y stock actuales.${warn}`
       )
     ) {
       publish({ productId: product.id, variantId });

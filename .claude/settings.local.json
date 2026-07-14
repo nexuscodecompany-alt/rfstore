@@ -131,7 +131,12 @@
       "WebFetch(domain:www.brou.com.uy)",
       "WebFetch(domain:r.jina.ai)",
       "WebFetch(domain:bwjptocnkqedakdibosu.supabase.co)",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(git commit -m '@ *)",
+      "Bash(echo \"---commit_exit=$?---\")",
+      "Bash(git commit *)",
+      "PowerShell(npx tsc -b --noEmit 2>&1 | Select-Object -First 40)",
+      "PowerShell(npx tsc -b; if \\($?\\) { \"TYPECHECK OK\" } else { \"TYPECHECK FAILED\" })"
     ]
   }
 }
