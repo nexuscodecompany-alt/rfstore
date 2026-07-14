@@ -19,11 +19,12 @@ import {
 } from '../../../hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Loader } from '../../shared/Loader';
-import { formatDate, formatPrice, salePrice, mlMarginFor, getMlReadiness, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
+import { formatDate, formatPrice, salePrice, mlMarginFor, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
 import { getMlPricingConfig } from '../../../actions/ml-pricing';
-import { getMlSettings } from '../../../actions/ml';
+import type { MlAttrInput, MlMissingAttr } from '../../../actions/ml';
 import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
+import { MlPublishAttributesModal } from './MlPublishAttributesModal';
 
 const tableHeaders = [
   '',
@@ -43,6 +44,10 @@ const tableHeaders = [
 
 export const TableProduct = () => {
   const [openMenuIndex, setOpenMenuIndex] = useState<number | null>(null);
+  // Form manual de atributos que pide ML (se abre cuando ML rechaza por datos faltantes).
+  const [mlAttrModal, setMlAttrModal] = useState<
+    { productId: string; variantId: string; productName: string; missing: MlMissingAttr[] } | null
+  >(null);
   const [page, setPage] = useState(1);
   const [searchTerm, setSearchTerm] = useState('');
   const [inputValue, setInputValue] = useState('');
@@ -79,11 +84,6 @@ export const TableProduct = () => {
     queryFn: getMlPricingConfig,
   });
   const mlCfg = mlPricingCfg ?? DEFAULT_ML_PRICING;
-  const { data: mlSettings } = useQuery({
-    queryKey: ['ml-settings'],
-    queryFn: getMlSettings,
-  });
-  const stockThreshold = mlSettings?.stock_threshold ?? 3;
   const newCount = useNewProductsCount();
   const dirtyCount = useContentDirtyCount();
   const { mutate: markSeen, isPending: markingSeen } = useMarkProductsSeen();
@@ -114,7 +114,14 @@ export const TableProduct = () => {
 
   const { mutate, isPending } = useDeleteProduct();
   const { mutate: toggleActive } = useSetProductActive();
-  const { publish, isPublishing, publishingVars } = usePublishMlItem();
+  const { publish, isPublishing, publishingVars } = usePublishMlItem({
+    // ML pidió atributos que no pudimos completar solos -> abrimos el form para cargarlos.
+    onNeedAttributes: ({ productId, variantId, missing }) => {
+      const p = products?.find((x: any) => x.id === productId);
+      setMlAttrModal({ productId, variantId, productName: p?.name ?? 'este producto', missing });
+    },
+    onPublished: () => setMlAttrModal(null),
+  });
   const { updateContent, isUpdatingContent, updatingContentVars } = useUpdateMlContent();
   const { setContentLocked } = useSetProductContentLocked();
   const { recalc, isRecalculating, recalcVars } = useRecalcMlReadiness();
@@ -141,20 +148,12 @@ export const TableProduct = () => {
       });
       return;
     }
-    // Qué le falta al producto (informativo). Si ya tiene el % real calculado, usamos
-    // esos faltantes (incluyen atributos de ML); si no, el chequeo básico del cliente.
-    // Ya NO bloqueamos: el admin decide si publicar igual aunque no esté 100% listo.
-    // La edge function ml-publish-item validará lo realmente obligatorio para ML.
-    const missing: string[] = product.ml_ready_checked_at
-      ? ((product.ml_ready_missing as string[]) ?? [])
-      : getMlReadiness(product, stockThreshold).missing.map((m) => m.label);
-    const warn =
-      missing.length > 0
-        ? `\n\n⚠️ Todavía no está 100% listo. Falta: ${missing.join(', ')}.\nMercado Libre puede rechazar la publicación si le falta algo obligatorio.`
-        : '';
+    // Publicamos directo. Si a ML le falta algún dato obligatorio, la edge function lo intenta
+    // auto-completar del texto y, lo que no pueda, lo devuelve -> se abre el form manual
+    // (onNeedAttributes) para que el admin lo cargue y reintente.
     if (
       window.confirm(
-        `¿Publicar "${product.name}" en Mercado Libre?\n\nSe crea una publicación nueva en tu cuenta de ML con el precio y stock actuales.${warn}`
+        `¿Publicar "${product.name}" en Mercado Libre?\n\nSe crea una publicación nueva en tu cuenta de ML con el precio y stock actuales. Si ML pide algún dato, te lo vamos a pedir en pantalla.`
       )
     ) {
       publish({ productId: product.id, variantId });
@@ -585,14 +584,19 @@ export const TableProduct = () => {
                             disabled={
                               isPublishing && publishingVars?.productId === product.id
                             }
-                            className="block w-full text-left px-4 py-2 text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                            className="flex w-full items-center gap-1.5 px-4 py-2 text-left text-xs font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-50"
                             onClick={() =>
                               handlePublishMl(product, selectedVariant?.id)
                             }
                           >
-                            {isPublishing && publishingVars?.productId === product.id
-                              ? 'Publicando…'
-                              : 'Publicar en ML'}
+                            {isPublishing && publishingVars?.productId === product.id ? (
+                              <>
+                                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+                                Publicando…
+                              </>
+                            ) : (
+                              'Publicar en ML'
+                            )}
                           </button>
                         )}
                         {(product as any).is_in_ml && (product as any).ml_content_dirty && (
@@ -672,6 +676,23 @@ export const TableProduct = () => {
 
           <Pagination page={page} setPage={setPage} totalItems={totalProducts} />
         </>
+      )}
+
+      {mlAttrModal && (
+        <MlPublishAttributesModal
+          open
+          productName={mlAttrModal.productName}
+          missing={mlAttrModal.missing}
+          submitting={isPublishing}
+          onClose={() => setMlAttrModal(null)}
+          onSubmit={(attrs: MlAttrInput[]) =>
+            publish({
+              productId: mlAttrModal.productId,
+              variantId: mlAttrModal.variantId,
+              extraAttributes: attrs,
+            })
+          }
+        />
       )}
     </div>
   );

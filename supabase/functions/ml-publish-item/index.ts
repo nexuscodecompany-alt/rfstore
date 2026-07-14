@@ -93,34 +93,116 @@ function extractTechAttributes(text: string): Record<string, string> {
   return out;
 }
 
-// Atributos obligatorios de la categoria de ML (para auto-completar / avisar faltantes).
-async function getCategoryRequired(catId: string, token: string): Promise<{ ids: Set<string>; required: { id: string; name: string }[] }> {
+// Definición de un atributo de la categoría ML (con sus valores permitidos).
+interface MlAttrDef { id: string; name: string; value_type: string; values: { id?: string; name?: string }[]; }
+
+// Atributos de la categoria de ML: ids que existen, cuáles son obligatorios y la definición
+// completa (con value_type + valores permitidos) para poder auto-completar / armar el form.
+async function getCategoryAttrs(catId: string, token: string): Promise<{ ids: Set<string>; required: { id: string; name: string }[]; defs: Map<string, MlAttrDef> }> {
   try {
     const r = await mlFetch(`/categories/${catId}/attributes`, { token });
-    if (!r.ok || !Array.isArray(r.data)) return { ids: new Set(), required: [] };
+    if (!r.ok || !Array.isArray(r.data)) return { ids: new Set(), required: [], defs: new Map() };
     const ids = new Set<string>();
     const required: { id: string; name: string }[] = [];
+    const defs = new Map<string, MlAttrDef>();
     for (const a of r.data) {
       if (!a?.id) continue;
       ids.add(a.id);
+      defs.set(a.id, { id: a.id, name: a.name || a.id, value_type: a.value_type || 'string', values: Array.isArray(a.values) ? a.values : [] });
       const tags = a.tags || {};
       // obligatorios que NO completa ML solo (excluimos read_only / fixed / variation).
       if ((tags.required || tags.catalog_required) && !tags.read_only && !tags.fixed && !tags.variation_attribute) {
         required.push({ id: a.id, name: a.name || a.id });
       }
     }
-    return { ids, required };
-  } catch { return { ids: new Set(), required: [] }; }
+    return { ids, required, defs };
+  } catch { return { ids: new Set(), required: [], defs: new Map() }; }
 }
 
-interface Body { product_id: string; variant_id: string; dry_run?: boolean; }
+// Normaliza texto para matchear (minusculas, sin acentos, comillas unificadas).
+function normText(s: string): string {
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[“”‘’"']/g, '"');
+}
+
+// Intenta derivar el valor de UN atributo obligatorio buscándolo en el texto del producto
+// (nombre + descripción + features). Prioriza los "values" que ML acepta para ese atributo,
+// así el formato es EXACTO (mandamos value_id). Devuelve null si no lo encuentra.
+function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_id?: string; value_name: string } | null {
+  const text = normText(rawText);
+  const values = Array.isArray(def.values) ? def.values.filter(v => v?.name) : [];
+  // 1) Lista fija de ML: elegimos el valor (más específico primero) cuyos tokens estén TODOS
+  //    en el texto. Números se matchean como token exacto (15.6 no matchea con 156 ni 15).
+  if (values.length) {
+    const sorted = [...values].sort((a, b) => (b.name as string).length - (a.name as string).length);
+    for (const v of sorted) {
+      const toks = normText(v.name as string).replace(/"/g, ' ').split(/[^a-z0-9.]+/).filter(t => t && t !== '.' && (t.length >= 2 || /[0-9]/.test(t)));
+      if (!toks.length) continue;
+      const allPresent = toks.every(t => {
+        if (/^[0-9]+(?:\.[0-9]+)?$/.test(t)) {
+          const re = new RegExp(`(?:^|[^0-9.])${t.replace('.', '\\.')}(?:[^0-9]|$)`);
+          return re.test(text);
+        }
+        return text.includes(t);
+      });
+      if (allPresent) return { id: def.id, value_id: v.id, value_name: v.name as string };
+    }
+    return null;
+  }
+  // 2) Texto libre / número: extractores puntuales por id / nombre del atributo.
+  const idu = def.id.toUpperCase();
+  const nm = normText(def.name);
+  // Modelo del procesador (ej. "Core i7-1255U" -> "1255U", "Ryzen 5 5500U" -> "5500U").
+  if (idu === 'PROCESSOR_MODEL' || nm.includes('modelo del procesador')) {
+    const m = text.match(/(?:core\s*ultra\s*[3579]|core\s*i[3579]|ryzen\s*(?:ai\s*)?[3579]|athlon|celeron|pentium)[\s-]*([0-9]{3,5}[a-z]{0,3})/);
+    if (m) return { id: def.id, value_name: m[1].toUpperCase() };
+  }
+  // Tamaño de la pantalla (ej. 15.6" -> "15.6").
+  if (idu.includes('SCREEN') || idu.includes('DISPLAY') || nm.includes('pantalla')) {
+    const m = text.match(/([0-9]{1,2}(?:[.,][0-9])?)\s*(?:"|''|pulgadas?|inch)/);
+    if (m) { const n = m[1].replace(',', '.'); return { id: def.id, value_name: `${n}"` }; }
+  }
+  return null;
+}
+
+// A partir de las "causes" que devuelve ML al rechazar, arma la lista EXACTA de atributos
+// que ML reclama (con su definicion para el form). Cubre "[GTIN]" (id entre corchetes) y
+// 'El campo "Modelo del procesador" ...' (nombre entre comillas). Es lo mas confiable: usamos
+// lo que ML realmente pide, no una adivinanza por tags.
+function missingFromMlCauses(causes: any, defs: Map<string, MlAttrDef>): { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }[] {
+  const out = new Map<string, { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }>();
+  for (const c of Array.isArray(causes) ? causes : []) {
+    const code = String((c && c.code) || '');
+    if (!/required/i.test(code)) continue;
+    const msg = String((c && c.message) || '');
+    const bracket = msg.match(/\[([A-Z0-9_,\s]+)\]/);
+    if (bracket) {
+      for (const raw of bracket[1].split(',')) {
+        const id = raw.trim();
+        if (!id) continue;
+        const d = defs.get(id);
+        out.set(id, { id, name: (d && d.name) || id, value_type: (d && d.value_type) || 'string', values: ((d && d.values) || []).slice(0, 80) });
+      }
+      continue;
+    }
+    const q = msg.match(/"([^"]+)"/);
+    if (q) {
+      const nm = q[1].trim().toLowerCase();
+      for (const d of defs.values()) {
+        if ((d.name || '').toLowerCase() === nm) { out.set(d.id, { id: d.id, name: d.name, value_type: d.value_type, values: (d.values || []).slice(0, 80) }); break; }
+      }
+    }
+  }
+  return Array.from(out.values());
+}
+
+interface Body { product_id: string; variant_id: string; dry_run?: boolean; extra_attributes?: { id: string; value_id?: string; value_name?: string }[]; }
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405);
   let body: Body;
   try { body = await req.json(); } catch { return json({ ok: false, error: 'invalid_json' }, 400); }
-  const { product_id, variant_id, dry_run } = body;
+  const { product_id, variant_id, dry_run, extra_attributes } = body;
   if (!product_id || !variant_id) return json({ ok: false, error: 'missing_product_or_variant_id' }, 400);
 
   try {
@@ -196,22 +278,53 @@ Deno.serve(async (req: Request) => {
     if (attrsFromText.is_dual_sim != null) attributes.push({ id: 'IS_DUAL_SIM', value_name: attrsFromText.is_dual_sim ? 'Sí' : 'No' });
     attributes.push({ id: 'CARRIER', value_name: 'Liberado' });
 
-    // Atributos obligatorios de la categoria: auto-completamos los tecnicos que podamos
-    // derivar (procesador/voltaje, solo si la categoria los pide) y, si aun faltan
-    // obligatorios, avisamos EXACTAMENTE cuales (en vez de un 400 opaco de ML).
-    let missingAttrs: { id: string; name: string }[] = [];
-    const catReq = await getCategoryRequired(mlCategoryId, token);
+    // Atributos que el admin cargó a mano (form del front). Tienen prioridad sobre lo derivado.
+    if (Array.isArray(extra_attributes)) {
+      for (const ea of extra_attributes) {
+        if (!ea?.id || (!ea.value_name && !ea.value_id)) continue;
+        const val: any = { id: ea.id };
+        if (ea.value_id) val.value_id = ea.value_id;
+        if (ea.value_name) val.value_name = ea.value_name;
+        const existing = attributes.find(a => a.id === ea.id);
+        if (existing) Object.assign(existing, val); else attributes.push(val);
+      }
+    }
+
+    // AUTO-FILL de atributos obligatorios de la categoría. Buscamos cada dato que ML pide en
+    // el texto del producto (nombre + descripción + features) y lo mandamos en el formato que
+    // ML acepta. Lo que NO se pueda derivar queda como "faltante" para que el admin lo cargue.
+    const attrText = `${product.name}\n${rawDescText}\n${(product.features ?? []).join('\n')}`;
+    let missingAttrs: { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }[] = [];
+    const catReq = await getCategoryAttrs(mlCategoryId, token);
     if (catReq.ids.size > 0) {
-      const tech = extractTechAttributes(`${product.name}\n${rawDescText}`);
+      // Primero los técnicos clásicos (procesador/voltaje) que ya derivábamos.
+      const tech = extractTechAttributes(attrText);
       for (const [id, value_name] of Object.entries(tech)) {
         if (value_name && catReq.ids.has(id) && !attributes.some(a => a.id === id)) attributes.push({ id, value_name });
       }
+      // Después, para cada OBLIGATORIO que todavía falta, intentamos derivarlo del texto
+      // usando los valores permitidos de ML (auto-fix). Registramos cada auto-completado.
+      for (const req of catReq.required) {
+        if (attributes.some(a => a.id === req.id)) continue;
+        const def = catReq.defs.get(req.id);
+        if (!def) continue;
+        const derived = deriveAttrValue(def, attrText);
+        if (derived) {
+          const val: any = { id: derived.id, value_name: derived.value_name };
+          if (derived.value_id) val.value_id = derived.value_id;
+          attributes.push(val);
+          await logEvent('ml_publish_autofilled_attr', { product_id, variant_id, attr: req.id, name: req.name, value: derived.value_name });
+        }
+      }
+      // Lo que quedó sin completar: lo devolvemos con su definición (value_type + valores
+      // permitidos) para que el front pueda armar el form manual. NO cortamos: ML decide.
       const have = new Set(attributes.map(a => a.id));
-      missingAttrs = catReq.required.filter(r => !have.has(r.id));
-      // Sin filtro de atributos: aunque falten obligatorios de la categoría, mandamos igual
-      // el POST a ML y dejamos que ML acepte o rechace. Solo lo registramos para tener el dato.
+      missingAttrs = catReq.required.filter(r => !have.has(r.id)).map(r => {
+        const d = catReq.defs.get(r.id);
+        return { id: r.id, name: r.name, value_type: d?.value_type ?? 'string', values: (d?.values ?? []).slice(0, 80) };
+      });
       if (!dry_run && missingAttrs.length > 0) {
-        await logEvent('ml_publish_forced_missing_attrs', { product_id, variant_id, category: mlCategoryId, missing: missingAttrs });
+        await logEvent('ml_publish_forced_missing_attrs', { product_id, variant_id, category: mlCategoryId, missing: missingAttrs.map(m => ({ id: m.id, name: m.name })) });
       }
     }
 
@@ -263,7 +376,11 @@ Deno.serve(async (req: Request) => {
     const post = await mlFetch('/items', { method: 'POST', token, body: itemPayload });
     if (!post.ok) {
       await logEvent('ml_publish_failed', { product_id, variant_id, ml_status: post.status, ml_response: post.data, payload_sent: itemPayload }, `ml_error_${post.status}: ${JSON.stringify(post.data).slice(0, 300)}`);
-      return json({ ok: false, error: 'ml_publish_failed', detail: post.data, payload_sent: itemPayload }, 400);
+      // Para el form manual: preferimos lo que ML reclama EXACTAMENTE en sus causes; si no
+      // pudimos parsear nada, caemos a nuestra lista de obligatorios sin completar.
+      const mlMissing = missingFromMlCauses(post.data && post.data.cause, catReq.defs);
+      const formMissing = mlMissing.length ? mlMissing : missingAttrs;
+      return json({ ok: false, error: 'ml_publish_failed', detail: post.data, missing_attributes: formMissing, payload_sent: itemPayload }, 400);
     }
     const mlItem = post.data;
 

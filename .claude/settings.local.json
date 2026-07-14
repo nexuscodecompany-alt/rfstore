@@ -137,7 +137,9 @@
       "Bash(git commit *)",
       "PowerShell(npx tsc -b --noEmit 2>&1 | Select-Object -First 40)",
       "PowerShell(npx tsc -b; if \\($?\\) { \"TYPECHECK OK\" } else { \"TYPECHECK FAILED\" })",
-      "PowerShell(git status --short; \"---\"; git log --oneline -3)"
+      "PowerShell(git status --short; \"---\"; git log --oneline -3)",
+      "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { \"FOUND: \" + $c.Source; supabase --version } else { \"NOT FOUND\" }; $env:SUPABASE_ACCESS_TOKEN -ne $null)",
+      "PowerShell($paths = @\\(\"$env:USERPROFILE\\\\.supabase\\\\access-token\", \"$env:APPDATA\\\\supabase\\\\access-token\", \"$env:LOCALAPPDATA\\\\supabase\\\\access-token\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { \"FOUND token file: $p\" } }; if \\(Test-Path \"$env:USERPROFILE\\\\.supabase\"\\) { Get-ChildItem \"$env:USERPROFILE\\\\.supabase\" -Force | Select-Object Name } else { \"no .supabase dir in USERPROFILE\" })"
     ]
   }
 }

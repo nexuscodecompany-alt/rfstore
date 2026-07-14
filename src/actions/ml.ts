@@ -140,6 +140,22 @@ async function invokeMlFn<T>(name: string, body: unknown): Promise<T> {
 	return json as T;
 }
 
+// Un atributo obligatorio que ML pide y que el producto no tiene: viene con su definición
+// (value_type + valores permitidos) para poder armar el input del form manual.
+export interface MlMissingAttr {
+	id: string;
+	name: string;
+	value_type?: string;
+	values?: { id?: string; name?: string }[];
+}
+
+// Valor de atributo que el admin carga a mano y mandamos a ML.
+export interface MlAttrInput {
+	id: string;
+	value_id?: string;
+	value_name?: string;
+}
+
 export interface PublishResult {
 	ok: boolean;
 	ml_item_id?: string;
@@ -150,8 +166,8 @@ export interface PublishResult {
 	error?: string;
 	detail?: unknown;
 	payload_sent?: unknown;
-	// Atributos obligatorios de la categoría ML que el producto no tiene (para avisar al cliente).
-	missing_attributes?: { id: string; name: string }[];
+	// Atributos obligatorios de la categoría ML que faltan (para armar el form manual).
+	missing_attributes?: MlMissingAttr[];
 }
 
 export interface DryRunResult {
@@ -169,8 +185,33 @@ export interface DryRunResult {
 	};
 }
 
-export const publishMlItem = (product_id: string, variant_id: string, dry_run = false) =>
-	invokeMlFn<PublishResult | DryRunResult>('ml-publish-item', { product_id, variant_id, dry_run });
+// Publica en ML. OJO: NO usamos invokeMlFn acá porque ese tira error en !res.ok y descarta
+// el body; nosotros necesitamos leer el body del 400 (trae missing_attributes para el form).
+// extra_attributes = valores que el admin cargó a mano en el form manual.
+export const publishMlItem = async (
+	product_id: string,
+	variant_id: string,
+	opts: { dry_run?: boolean; extra_attributes?: MlAttrInput[] } = {}
+): Promise<PublishResult | DryRunResult> => {
+	const { data: { session } } = await supabase.auth.getSession();
+	const res = await fetch(`${SUPABASE_URL}/functions/v1/ml-publish-item`, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			apikey: SUPABASE_ANON,
+			Authorization: `Bearer ${session?.access_token ?? SUPABASE_ANON}`,
+		},
+		body: JSON.stringify({
+			product_id,
+			variant_id,
+			dry_run: opts.dry_run ?? false,
+			extra_attributes: opts.extra_attributes,
+		}),
+	});
+	const json = await res.json().catch(() => ({}));
+	// Devolvemos el body tal cual (incluso en 400): el hook decide según ok / missing_attributes.
+	return json as PublishResult | DryRunResult;
+};
 
 // --------- Actualizar contenido (título + descripción) de una publicación ML existente ---------
 export interface UpdateMlContentResult {
