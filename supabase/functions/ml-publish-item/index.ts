@@ -126,7 +126,8 @@ Deno.serve(async (req: Request) => {
   try {
     const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active').eq('id', product_id).single();
     if (pErr || !product) throw new Error(`product_not_found: ${pErr?.message ?? 'null'}`);
-    if (!product.active) throw new Error('product_inactive');
+    // Sin filtros propios (decisión del admin): publicamos aunque esté inactivo; ML decide.
+    if (!product.active) await logEvent('ml_publish_forced_inactive', { product_id, variant_id });
     const { data: variant, error: vErr } = await supabase.from('variants').select('id, stock, price, color_name, storage').eq('id', variant_id).single();
     if (vErr || !variant) throw new Error(`variant_not_found: ${vErr?.message ?? 'null'}`);
     let brandName: string | null = null;
@@ -151,12 +152,14 @@ Deno.serve(async (req: Request) => {
     const effIva = hasCfg && mlPricingCfg.iva_percent != null ? Number(mlPricingCfg.iva_percent) : ivaPercent;
     const effThreshold = hasCfg && mlPricingCfg.usd_threshold != null ? Number(mlPricingCfg.usd_threshold) : usdThreshold;
 
-    if (Number(variant.stock) <= threshold) throw new Error(`stock_below_threshold (stock=${variant.stock}, threshold=${threshold})`);
+    // Sin filtro de stock: publicamos igual (incluso con stock 0/bajo umbral); ML decide.
+    if (Number(variant.stock) <= threshold) await logEvent('ml_publish_forced_low_stock', { product_id, variant_id, stock: variant.stock, threshold });
 
     const { token } = await getValidAccessToken(supabase);
     const fxRate = await getFxRate(SUPABASE_URL, SUPABASE_ANON_KEY);
     const costUsd = Number(product.price_usd);
-    if (!costUsd || costUsd <= 0) throw new Error(`invalid_price_usd: ${product.price_usd}`);
+    // Sin filtro de precio: si no hay costo válido, igual seguimos; ML rechaza si el precio no sirve.
+    if (!costUsd || costUsd <= 0) await logEvent('ml_publish_forced_no_price', { product_id, variant_id, price_usd: product.price_usd });
 
     // El tramo del margen se decide por el costo CON IVA (no el base): los tramos se
     // definen pensando en el precio con IVA. Solo afecta la eleccion del tramo; el precio
@@ -205,10 +208,10 @@ Deno.serve(async (req: Request) => {
       }
       const have = new Set(attributes.map(a => a.id));
       missingAttrs = catReq.required.filter(r => !have.has(r.id));
+      // Sin filtro de atributos: aunque falten obligatorios de la categoría, mandamos igual
+      // el POST a ML y dejamos que ML acepte o rechace. Solo lo registramos para tener el dato.
       if (!dry_run && missingAttrs.length > 0) {
-        await logEvent('ml_publish_missing_attrs', { product_id, variant_id, category: mlCategoryId, missing: missingAttrs }, missingAttrs.map(x => x.id).join(','));
-        // 200 a proposito: el front lee missing_attributes y le dice al cliente que cargar.
-        return json({ ok: false, error: 'missing_required_attributes', missing_attributes: missingAttrs, category_id: mlCategoryId }, 200);
+        await logEvent('ml_publish_forced_missing_attrs', { product_id, variant_id, category: mlCategoryId, missing: missingAttrs });
       }
     }
 
@@ -218,16 +221,18 @@ Deno.serve(async (req: Request) => {
     ];
 
     const imageUrls = (product.images ?? []).slice(0, 12);
-    if (imageUrls.length === 0) throw new Error('no_pictures');
+    // Sin filtro de imágenes: si no hay, igual intentamos; ML rechazará si las exige.
+    if (imageUrls.length === 0) await logEvent('ml_publish_forced_no_pictures', { product_id, variant_id });
     const uploadedPictureIds: string[] = [];
     const uploadErrors: string[] = [];
     for (const url of imageUrls) {
       const r = await uploadPictureToMl(url, token);
       if ('id' in r) uploadedPictureIds.push(r.id); else uploadErrors.push(`${url}: ${r.error}`);
     }
-    if (uploadedPictureIds.length === 0) {
+    // Sin filtro: si fallaron todas las subidas de imágenes, solo lo registramos y seguimos
+    // (mandamos pictures vacío). ML rechazará si necesita imágenes; no cortamos nosotros.
+    if (uploadedPictureIds.length === 0 && imageUrls.length > 0) {
       await logEvent('ml_picture_upload_failed', { product_id, urls: imageUrls, errors: uploadErrors }, uploadErrors.join('; ').slice(0, 300));
-      throw new Error(`picture_upload_failed: ${uploadErrors.join('; ').slice(0, 200)}`);
     }
     const pictures = uploadedPictureIds.map(id => ({ id }));
 
