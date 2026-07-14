@@ -27,8 +27,31 @@ async function uploadPictureToMl(url: string, token: string): Promise<{ id: stri
   } catch (e: any) { return { error: `exc: ${e?.message}` }; }
 }
 
+// Deja el texto 100% plano para ML: mapea puntuacion de Windows-1252 mal decodificada a ASCII
+// (guiones, comillas, viñetas, puntos suspensivos) y SACA todos los caracteres de control (C0
+// 0x00-0x1F y C1 0x7F-0x9F). ML rechaza la descripcion (item.description.type.invalid) si hay
+// cualquier control; ej 0x97 (151) = guion largo mal codificado que viene en fichas de CDR.
+// Usamos charCodeAt (codigos decimales) para no depender de tipear caracteres especiales.
+function plainForMl(s: string): string {
+  const src = s || '';
+  let out = '';
+  for (let i = 0; i < src.length; i++) {
+    const c = src.charCodeAt(i);
+    if (c === 10) { out += '\n'; continue; }                                  // salto de linea
+    if (c === 9 || c === 160) { out += ' '; continue; }                       // tab / nbsp
+    if (c === 150 || c === 151 || c === 8211 || c === 8212) { out += '-'; continue; }   // – —
+    if (c === 145 || c === 146 || c === 8216 || c === 8217) { out += "'"; continue; }   // ‘ ’
+    if (c === 147 || c === 148 || c === 8220 || c === 8221) { out += '"'; continue; }   // “ ”
+    if (c === 133 || c === 8230) { out += '...'; continue; }                            // …
+    if (c === 149 || c === 8226) { out += '*'; continue; }                              // •
+    if (c < 32 || (c >= 127 && c <= 159)) continue;                            // resto de controles C0/C1
+    out += src[i];
+  }
+  return out.replace(/[ ]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+}
+
 function toPureplainText(s: string): string {
-  return s.replace(/<[^>]*>/g, '').replace(/&[a-zA-Z]+;/g, ' ').replace(/&#\d+;/g, ' ').replace(/[\u0000-\u0008\u000b-\u001f-]/g, '').replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/[ ]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n');
+  return s.replace(/<[^>]*>/g, '').replace(/&[a-zA-Z]+;/g, ' ').replace(/&#\d+;/g, ' ').replace(/\r\n?/g, '\n').replace(/\t/g, ' ').replace(/[ ]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n');
 }
 
 // Decide currency y calcula price segun threshold del cliente
@@ -93,10 +116,10 @@ function extractTechAttributes(text: string): Record<string, string> {
   return out;
 }
 
-// Definición de un atributo de la categoría ML (con sus valores permitidos).
+// Definicion de un atributo de la categoria ML (con sus valores permitidos).
 interface MlAttrDef { id: string; name: string; value_type: string; values: { id?: string; name?: string }[]; }
 
-// Atributos de la categoria de ML: ids que existen, cuáles son obligatorios y la definición
+// Atributos de la categoria de ML: ids que existen, cuales son obligatorios y la definicion
 // completa (con value_type + valores permitidos) para poder auto-completar / armar el form.
 async function getCategoryAttrs(catId: string, token: string): Promise<{ ids: Set<string>; required: { id: string; name: string }[]; defs: Map<string, MlAttrDef> }> {
   try {
@@ -119,14 +142,14 @@ async function getCategoryAttrs(catId: string, token: string): Promise<{ ids: Se
   } catch { return { ids: new Set(), required: [], defs: new Map() }; }
 }
 
-// Normaliza texto para matchear (minusculas, sin acentos, comillas unificadas).
+// Normaliza texto para matchear (minusculas, sin acentos).
 function normText(s: string): string {
-  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[“”‘’"']/g, '"');
+  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[“”‘’]/g, '"');
 }
 
-// Intenta derivar el valor de UN atributo obligatorio buscándolo en el texto del producto
-// (nombre + descripción + features). Prioriza los "values" que ML acepta para ese atributo,
-// así el formato es EXACTO (mandamos value_id). Devuelve null si no lo encuentra.
+// Intenta derivar el valor de UN atributo obligatorio buscandolo en el texto del producto
+// (nombre + descripcion + features). Prioriza los "values" que ML acepta; si el atributo es
+// texto libre (value_type != 'list'), manda el candidato derivado aunque no este en la lista.
 function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_id?: string; value_name: string } | null {
   const text = normText(rawText);
   const values = Array.isArray(def.values) ? def.values.filter(v => v?.name) : [];
@@ -143,8 +166,8 @@ function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_i
     if (m) freeCandidate = `${m[1].replace(',', '.')}"`;
   }
 
-  // 1) Lista de valores de ML: elegimos el valor (más específico primero) cuyos tokens estén
-  //    TODOS en el texto. Números se matchean como token exacto (15.6 no matchea con 156 ni 15).
+  // 1) Lista de valores de ML: elegimos el valor (mas especifico primero) cuyos tokens esten
+  //    TODOS en el texto. Numeros se matchean como token exacto (15.6 no matchea con 156 ni 15).
   if (values.length) {
     const sorted = [...values].sort((a, b) => (b.name as string).length - (a.name as string).length);
     for (const v of sorted) {
@@ -162,7 +185,7 @@ function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_i
   }
 
   // 2) Si el atributo NO es de lista estricta (value_type 'list'), ML acepta texto libre:
-  //    aunque la lista de sugeridos no matcheó, mandamos el candidato derivado (ej. "1255U").
+  //    aunque la lista de sugeridos no matcheo, mandamos el candidato derivado (ej. "1255U").
   if (def.value_type !== 'list' && freeCandidate) {
     return { id: def.id, value_name: freeCandidate };
   }
@@ -171,8 +194,7 @@ function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_i
 
 // A partir de las "causes" que devuelve ML al rechazar, arma la lista EXACTA de atributos
 // que ML reclama (con su definicion para el form). Cubre "[GTIN]" (id entre corchetes) y
-// 'El campo "Modelo del procesador" ...' (nombre entre comillas). Es lo mas confiable: usamos
-// lo que ML realmente pide, no una adivinanza por tags.
+// 'El campo "Modelo del procesador" ...' (nombre entre comillas).
 function missingFromMlCauses(causes: any, defs: Map<string, MlAttrDef>): { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }[] {
   const out = new Map<string, { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }>();
   for (const c of Array.isArray(causes) ? causes : []) {
@@ -213,7 +235,7 @@ Deno.serve(async (req: Request) => {
   try {
     const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active').eq('id', product_id).single();
     if (pErr || !product) throw new Error(`product_not_found: ${pErr?.message ?? 'null'}`);
-    // Sin filtros propios (decisión del admin): publicamos aunque esté inactivo; ML decide.
+    // Sin filtros propios (decision del admin): publicamos aunque este inactivo; ML decide.
     if (!product.active) await logEvent('ml_publish_forced_inactive', { product_id, variant_id });
     const { data: variant, error: vErr } = await supabase.from('variants').select('id, stock, price, color_name, storage').eq('id', variant_id).single();
     if (vErr || !variant) throw new Error(`variant_not_found: ${vErr?.message ?? 'null'}`);
@@ -245,7 +267,7 @@ Deno.serve(async (req: Request) => {
     const { token } = await getValidAccessToken(supabase);
     const fxRate = await getFxRate(SUPABASE_URL, SUPABASE_ANON_KEY);
     const costUsd = Number(product.price_usd);
-    // Sin filtro de precio: si no hay costo válido, igual seguimos; ML rechaza si el precio no sirve.
+    // Sin filtro de precio: si no hay costo valido, igual seguimos; ML rechaza si el precio no sirve.
     if (!costUsd || costUsd <= 0) await logEvent('ml_publish_forced_no_price', { product_id, variant_id, price_usd: product.price_usd });
 
     // El tramo del margen se decide por el costo CON IVA (no el base): los tramos se
@@ -301,7 +323,7 @@ Deno.serve(async (req: Request) => {
     if (attrsFromText.is_dual_sim != null) attributes.push({ id: 'IS_DUAL_SIM', value_name: attrsFromText.is_dual_sim ? 'Sí' : 'No' });
     attributes.push({ id: 'CARRIER', value_name: 'Liberado' });
 
-    // Atributos que el admin cargó a mano (form del front). Tienen prioridad sobre lo derivado.
+    // Atributos que el admin cargo a mano (form del front). Tienen prioridad sobre lo derivado.
     if (Array.isArray(extra_attributes)) {
       for (const ea of extra_attributes) {
         if (!ea?.id || (!ea.value_name && !ea.value_id)) continue;
@@ -313,22 +335,19 @@ Deno.serve(async (req: Request) => {
       }
     }
 
-    // AUTO-FILL de atributos obligatorios de la categoría. Buscamos cada dato que ML pide en
-    // el texto del producto (nombre + descripción + features) y lo mandamos en el formato que
-    // ML acepta. Lo que NO se pueda derivar queda como "faltante" para que el admin lo cargue.
-    // Para combos, el texto del componente (la notebook) va PRIMERO: su pantalla/procesador
-    // reales ganan sobre lo que diga el combo (ej. el tamaño de la mochila).
+    // AUTO-FILL de atributos obligatorios de la categoria. Para combos, el texto del componente
+    // (la notebook) va PRIMERO: su pantalla/procesador reales ganan sobre lo que diga el combo.
     const ownText = `${product.name}\n${rawDescText}\n${(product.features ?? []).join('\n')}`;
     const attrText = comboComponentText ? `${comboComponentText}\n${ownText}` : ownText;
     let missingAttrs: { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }[] = [];
     const catReq = await getCategoryAttrs(mlCategoryId, token);
     if (catReq.ids.size > 0) {
-      // Primero los técnicos clásicos (procesador/voltaje) que ya derivábamos.
+      // Primero los tecnicos clasicos (procesador/voltaje) que ya derivabamos.
       const tech = extractTechAttributes(attrText);
       for (const [id, value_name] of Object.entries(tech)) {
         if (value_name && catReq.ids.has(id) && !attributes.some(a => a.id === id)) attributes.push({ id, value_name });
       }
-      // Después, para cada OBLIGATORIO que todavía falta, intentamos derivarlo del texto
+      // Despues, para cada OBLIGATORIO que todavia falta, intentamos derivarlo del texto
       // usando los valores permitidos de ML (auto-fix). Registramos cada auto-completado.
       for (const req of catReq.required) {
         if (attributes.some(a => a.id === req.id)) continue;
@@ -342,9 +361,8 @@ Deno.serve(async (req: Request) => {
           await logEvent('ml_publish_autofilled_attr', { product_id, variant_id, attr: req.id, name: req.name, value: derived.value_name });
         }
       }
-      // GTIN (código de barras): si el producto no tiene, en vez de trabar la publicación
-      // declaramos "el producto no tiene código universal" con EMPTY_GTIN_REASON. Es la vía
-      // oficial de ML para publicar sin código de barras. Así el admin nunca lidia con el GTIN.
+      // GTIN: si no hay (ni el combo ni su componente), declaramos "no tiene codigo universal"
+      // con EMPTY_GTIN_REASON. Es la via oficial de ML para publicar sin codigo (cats que lo permiten).
       if (!attributes.some(a => a.id === 'GTIN')) {
         const egr = catReq.defs.get('EMPTY_GTIN_REASON');
         if (egr && !attributes.some(a => a.id === 'EMPTY_GTIN_REASON')) {
@@ -358,7 +376,7 @@ Deno.serve(async (req: Request) => {
           }
         }
       }
-      // Lo que quedó sin completar: lo devolvemos con su definición (value_type + valores
+      // Lo que quedo sin completar: lo devolvemos con su definicion (value_type + valores
       // permitidos) para que el front pueda armar el form manual. NO cortamos: ML decide.
       const have = new Set(attributes.map(a => a.id));
       missingAttrs = catReq.required.filter(r => r.id !== 'GTIN' && !have.has(r.id)).map(r => {
@@ -376,7 +394,7 @@ Deno.serve(async (req: Request) => {
     ];
 
     const imageUrls = (product.images ?? []).slice(0, 12);
-    // Sin filtro de imágenes: si no hay, igual intentamos; ML rechazará si las exige.
+    // Sin filtro de imagenes: si no hay, igual intentamos; ML rechazara si las exige.
     if (imageUrls.length === 0) await logEvent('ml_publish_forced_no_pictures', { product_id, variant_id });
     const uploadedPictureIds: string[] = [];
     const uploadErrors: string[] = [];
@@ -384,8 +402,7 @@ Deno.serve(async (req: Request) => {
       const r = await uploadPictureToMl(url, token);
       if ('id' in r) uploadedPictureIds.push(r.id); else uploadErrors.push(`${url}: ${r.error}`);
     }
-    // Sin filtro: si fallaron todas las subidas de imágenes, solo lo registramos y seguimos
-    // (mandamos pictures vacío). ML rechazará si necesita imágenes; no cortamos nosotros.
+    // Sin filtro: si fallaron todas las subidas de imagenes, solo lo registramos y seguimos.
     if (uploadedPictureIds.length === 0 && imageUrls.length > 0) {
       await logEvent('ml_picture_upload_failed', { product_id, urls: imageUrls, errors: uploadErrors }, uploadErrors.join('; ').slice(0, 300));
     }
@@ -397,7 +414,8 @@ Deno.serve(async (req: Request) => {
       color, ram: attrsFromText.ram, internalMemory, isDualSim: attrsFromText.is_dual_sim,
       warrantyMonths: warranty.months, warrantyType: warranty.type,
     });
-    const finalDescription = toPureplainText(builtDesc);
+    // plainForMl deja la descripcion 100% en texto plano (saca controles como 0x97) para que ML no la rechace.
+    const finalDescription = plainForMl(toPureplainText(builtDesc));
 
     const itemPayload = {
       title, category_id: mlCategoryId,
@@ -412,7 +430,7 @@ Deno.serve(async (req: Request) => {
     };
 
     if (dry_run) {
-      return json({ ok: true, dry_run: true, payload: itemPayload, meta: { fxRate, costUsd, markupPercent: effMargin, usdThreshold: effThreshold, price: priceCalc.price, currency: priceCalc.currency_id, priceUyu: priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.ceil(priceCalc.basis_usd * fxRate), warranty, featuresExtracted, modelValue, attrsFromText, predictedCategory: mlCategoryId, missingAttributes: missingAttrs, uploadedPictureIds, uploadErrors, descriptionPreview: finalDescription, descriptionLength: finalDescription.length } });
+      return json({ ok: true, dry_run: true, payload: itemPayload, meta: { fxRate, costUsd, markupPercent: effMargin, usdThreshold: effThreshold, price: priceCalc.price, currency: priceCalc.currency_id, priceUyu: priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.ceil(priceCalc.basis_usd * fxRate), warranty, featuresExtracted, modelValue, attrsFromText, predictedCategory: mlCategoryId, missingAttributes: missingAttrs, effectiveGtin, uploadedPictureIds, uploadErrors, descriptionPreview: finalDescription, descriptionLength: finalDescription.length } });
     }
 
     const post = await mlFetch('/items', { method: 'POST', token, body: itemPayload });
