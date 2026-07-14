@@ -71,7 +71,10 @@ export const MlPublishAttributesModal = ({ open, productName, missing, submittin
 
 					<div className='space-y-4'>
 						{missing.map(attr => {
-							const hasList = Array.isArray(attr.values) && attr.values.length > 0;
+							// Desplegable SOLO si es enum estricto (value_type 'list'). Para 'string' /
+							// 'number_unit' ML acepta texto libre (la lista, si viene, son sugerencias).
+							const hasList =
+								attr.value_type === 'list' && Array.isArray(attr.values) && attr.values.length > 0;
 							const current = values[attr.id];
 							return (
 								<div key={attr.id}>

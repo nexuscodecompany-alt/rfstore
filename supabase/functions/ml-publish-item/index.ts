@@ -130,8 +130,21 @@ function normText(s: string): string {
 function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_id?: string; value_name: string } | null {
   const text = normText(rawText);
   const values = Array.isArray(def.values) ? def.values.filter(v => v?.name) : [];
-  // 1) Lista fija de ML: elegimos el valor (más específico primero) cuyos tokens estén TODOS
-  //    en el texto. Números se matchean como token exacto (15.6 no matchea con 156 ni 15).
+  const idu = def.id.toUpperCase();
+  const nm = normText(def.name);
+
+  // Candidato de texto libre (procesador / pantalla) derivado del texto del producto.
+  let freeCandidate: string | null = null;
+  if (idu === 'PROCESSOR_MODEL' || nm.includes('modelo del procesador')) {
+    const m = text.match(/(?:core\s*ultra\s*[3579]|core\s*i[3579]|ryzen\s*(?:ai\s*)?[3579]|athlon|celeron|pentium)[\s-]*([0-9]{3,5}[a-z]{0,3})/);
+    if (m) freeCandidate = m[1].toUpperCase();
+  } else if (idu.includes('SCREEN') || idu.includes('DISPLAY') || nm.includes('pantalla')) {
+    const m = text.match(/([0-9]{1,2}(?:[.,][0-9])?)\s*(?:"|''|pulgadas?|inch)/);
+    if (m) freeCandidate = `${m[1].replace(',', '.')}"`;
+  }
+
+  // 1) Lista de valores de ML: elegimos el valor (más específico primero) cuyos tokens estén
+  //    TODOS en el texto. Números se matchean como token exacto (15.6 no matchea con 156 ni 15).
   if (values.length) {
     const sorted = [...values].sort((a, b) => (b.name as string).length - (a.name as string).length);
     for (const v of sorted) {
@@ -146,20 +159,12 @@ function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_i
       });
       if (allPresent) return { id: def.id, value_id: v.id, value_name: v.name as string };
     }
-    return null;
   }
-  // 2) Texto libre / número: extractores puntuales por id / nombre del atributo.
-  const idu = def.id.toUpperCase();
-  const nm = normText(def.name);
-  // Modelo del procesador (ej. "Core i7-1255U" -> "1255U", "Ryzen 5 5500U" -> "5500U").
-  if (idu === 'PROCESSOR_MODEL' || nm.includes('modelo del procesador')) {
-    const m = text.match(/(?:core\s*ultra\s*[3579]|core\s*i[3579]|ryzen\s*(?:ai\s*)?[3579]|athlon|celeron|pentium)[\s-]*([0-9]{3,5}[a-z]{0,3})/);
-    if (m) return { id: def.id, value_name: m[1].toUpperCase() };
-  }
-  // Tamaño de la pantalla (ej. 15.6" -> "15.6").
-  if (idu.includes('SCREEN') || idu.includes('DISPLAY') || nm.includes('pantalla')) {
-    const m = text.match(/([0-9]{1,2}(?:[.,][0-9])?)\s*(?:"|''|pulgadas?|inch)/);
-    if (m) { const n = m[1].replace(',', '.'); return { id: def.id, value_name: `${n}"` }; }
+
+  // 2) Si el atributo NO es de lista estricta (value_type 'list'), ML acepta texto libre:
+  //    aunque la lista de sugeridos no matcheó, mandamos el candidato derivado (ej. "1255U").
+  if (def.value_type !== 'list' && freeCandidate) {
+    return { id: def.id, value_name: freeCandidate };
   }
   return null;
 }
@@ -178,7 +183,7 @@ function missingFromMlCauses(causes: any, defs: Map<string, MlAttrDef>): { id: s
     if (bracket) {
       for (const raw of bracket[1].split(',')) {
         const id = raw.trim();
-        if (!id) continue;
+        if (!id || id === 'GTIN') continue; // GTIN lo resolvemos con EMPTY_GTIN_REASON, no lo pedimos
         const d = defs.get(id);
         out.set(id, { id, name: (d && d.name) || id, value_type: (d && d.value_type) || 'string', values: ((d && d.values) || []).slice(0, 80) });
       }
@@ -258,6 +263,24 @@ Deno.serve(async (req: Request) => {
     const featuresExtracted = extractFromFeatures(product.features);
     const attrsFromText = extractAttributesFromText(product.name, rawDescText);
 
+    // Combos (external_code "A+B", ej notebook + mochila): no tienen GTIN ni ficha completa
+    // propia. Tomamos el EAN/GTIN oficial del producto PRINCIPAL y ademas su TEXTO (nombre +
+    // descripcion + features) para poder derivar pantalla / procesador de la ficha real.
+    let comboGtin: string | null = null;
+    let comboComponentText = '';
+    if (typeof product.external_code === 'string' && product.external_code.includes('+')) {
+      const codes = product.external_code.split('+').map((s: string) => s.trim()).filter(Boolean);
+      for (const code of codes) {
+        const { data: comp } = await supabase.from('products').select('name, description, features').eq('external_code', code).maybeSingle();
+        if (!comp) continue;
+        comboComponentText += `\n${comp.name ?? ''}\n${descriptionToText(comp.description)}\n${(comp.features ?? []).join('\n')}`;
+        const g = extractFromFeatures(comp.features);
+        if (g.gtin && !comboGtin) comboGtin = g.gtin;
+      }
+      if (comboGtin) await logEvent('ml_publish_combo_gtin', { product_id, variant_id, external_code: product.external_code, gtin: comboGtin });
+    }
+    const effectiveGtin = featuresExtracted.gtin || comboGtin;
+
     let mlCategoryId = 'MLU1055';
     try {
       const pred = await mlFetch(`/sites/${siteId}/domain_discovery/search?q=${encodeURIComponent(title)}&limit=1`, { token });
@@ -269,7 +292,7 @@ Deno.serve(async (req: Request) => {
     const attributes: any[] = [];
     if (brandName) attributes.push({ id: 'BRAND', value_name: brandName });
     if (modelValue) attributes.push({ id: 'MODEL', value_name: modelValue });
-    if (featuresExtracted.gtin) attributes.push({ id: 'GTIN', value_name: featuresExtracted.gtin });
+    if (effectiveGtin) attributes.push({ id: 'GTIN', value_name: effectiveGtin });
     const color = attrsFromText.color || (variant.color_name && variant.color_name !== 'Unico' ? variant.color_name : null);
     if (color) attributes.push({ id: 'COLOR', value_name: color });
     const internalMemory = attrsFromText.internal_memory || (variant.storage && variant.storage !== '-' ? variant.storage : null);
@@ -293,7 +316,10 @@ Deno.serve(async (req: Request) => {
     // AUTO-FILL de atributos obligatorios de la categoría. Buscamos cada dato que ML pide en
     // el texto del producto (nombre + descripción + features) y lo mandamos en el formato que
     // ML acepta. Lo que NO se pueda derivar queda como "faltante" para que el admin lo cargue.
-    const attrText = `${product.name}\n${rawDescText}\n${(product.features ?? []).join('\n')}`;
+    // Para combos, el texto del componente (la notebook) va PRIMERO: su pantalla/procesador
+    // reales ganan sobre lo que diga el combo (ej. el tamaño de la mochila).
+    const ownText = `${product.name}\n${rawDescText}\n${(product.features ?? []).join('\n')}`;
+    const attrText = comboComponentText ? `${comboComponentText}\n${ownText}` : ownText;
     let missingAttrs: { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }[] = [];
     const catReq = await getCategoryAttrs(mlCategoryId, token);
     if (catReq.ids.size > 0) {
@@ -316,10 +342,26 @@ Deno.serve(async (req: Request) => {
           await logEvent('ml_publish_autofilled_attr', { product_id, variant_id, attr: req.id, name: req.name, value: derived.value_name });
         }
       }
+      // GTIN (código de barras): si el producto no tiene, en vez de trabar la publicación
+      // declaramos "el producto no tiene código universal" con EMPTY_GTIN_REASON. Es la vía
+      // oficial de ML para publicar sin código de barras. Así el admin nunca lidia con el GTIN.
+      if (!attributes.some(a => a.id === 'GTIN')) {
+        const egr = catReq.defs.get('EMPTY_GTIN_REASON');
+        if (egr && !attributes.some(a => a.id === 'EMPTY_GTIN_REASON')) {
+          const vals = egr.values ?? [];
+          const chosen = vals.find(v => /no tiene c/i.test(v.name ?? '')) || vals.find(v => /kit|pack/i.test(v.name ?? '')) || vals[0];
+          if (chosen) {
+            const val: any = { id: 'EMPTY_GTIN_REASON', value_name: chosen.name };
+            if (chosen.id) val.value_id = chosen.id;
+            attributes.push(val);
+            await logEvent('ml_publish_empty_gtin', { product_id, variant_id, reason: chosen.name });
+          }
+        }
+      }
       // Lo que quedó sin completar: lo devolvemos con su definición (value_type + valores
       // permitidos) para que el front pueda armar el form manual. NO cortamos: ML decide.
       const have = new Set(attributes.map(a => a.id));
-      missingAttrs = catReq.required.filter(r => !have.has(r.id)).map(r => {
+      missingAttrs = catReq.required.filter(r => r.id !== 'GTIN' && !have.has(r.id)).map(r => {
         const d = catReq.defs.get(r.id);
         return { id: r.id, name: r.name, value_type: d?.value_type ?? 'string', values: (d?.values ?? []).slice(0, 80) };
       });
@@ -351,7 +393,7 @@ Deno.serve(async (req: Request) => {
 
     const builtDesc = buildMlDescription({
       productName: product.name, cleanDesc: toPureplainText(cleanDesc), brand: brandName,
-      model: featuresExtracted.model, gtin: featuresExtracted.gtin,
+      model: featuresExtracted.model, gtin: effectiveGtin ?? undefined,
       color, ram: attrsFromText.ram, internalMemory, isDualSim: attrsFromText.is_dual_sim,
       warrantyMonths: warranty.months, warrantyType: warranty.type,
     });
