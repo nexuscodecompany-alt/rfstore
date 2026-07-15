@@ -111,12 +111,12 @@ export const Footer = () => {
 					<p>
 						Created by{' '}
 						<a
-							href='https://www.linkedin.com/company/hglabs-uy'
+							href='https://wa.me/59898369254'
 							target='_blank'
 							rel='noopener noreferrer'
 							className='font-semibold text-white/70 hover:text-brand-400 transition-colors'
 						>
-							hgLabs
+							Nexus Code Company
 						</a>
 					</p>
 				</div>
