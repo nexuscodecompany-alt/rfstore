@@ -135,24 +135,61 @@ export const searchProducts = async (searchTerm: string) => {
     // "Auriculares Sony WH-1000XM5"; "microfono genius" encuentra "Micrófono Genius".
     const words = normalizeSearch(searchTerm).split(/\s+/).filter(Boolean);
     if (words.length === 0) return [];
+    const fullTerm = normalizeSearch(searchTerm);
 
-    let query = supabase
-        .from('products')
-        .select('*, variants(*), brand:brands(*), category:categories(*)')
-        .eq('active', true);
+    const SELECT = '*, variants(*), brand:brands(*), category:categories(*)';
 
+    // 1) Coincidencia por texto (nombre + código): todas las palabras.
+    let textQuery = supabase.from('products').select(SELECT).eq('active', true);
     for (const word of words) {
-        query = query.ilike('search_text', `%${word}%`);
+        textQuery = textQuery.ilike('search_text', `%${word}%`);
     }
 
-    const { data, error } = await query.limit(40);
+    // 2) Coincidencia por NOMBRE de categoría/subcategoría. Así "celulares"
+    //    devuelve los productos de la categoría Celulares aunque el nombre del
+    //    producto no diga "celular".
+    const [catsRes, subsRes] = await Promise.all([
+        supabase.from('categories').select('id, name'),
+        supabase.from('subcategories').select('id, name'),
+    ]);
+    const nameMatches = (name: string) => {
+        const n = normalizeSearch(name);
+        return n.length >= 3 && (n.includes(fullTerm) || fullTerm.includes(n));
+    };
+    const matchCatIds = (catsRes.data ?? [])
+        .filter(c => nameMatches(c.name ?? ''))
+        .map(c => c.id);
+    const matchSubIds = (subsRes.data ?? [])
+        .filter(s => nameMatches(s.name ?? ''))
+        .map(s => s.id);
 
-    if (error) {
-        console.log(error.message);
-        throw new Error(error.message);
+    const queries = [textQuery.limit(40)];
+    if (matchCatIds.length || matchSubIds.length) {
+        let taxQuery = supabase.from('products').select(SELECT).eq('active', true);
+        const ors: string[] = [];
+        if (matchCatIds.length) ors.push(`category_id.in.(${matchCatIds.join(',')})`);
+        if (matchSubIds.length) ors.push(`subcategory_id.in.(${matchSubIds.join(',')})`);
+        taxQuery = taxQuery.or(ors.join(','));
+        queries.push(taxQuery.limit(40));
     }
 
-    return hideOutOfStockCdrProducts(data);
+    const results = await Promise.all(queries);
+    for (const r of results) {
+        if (r.error) {
+            console.log(r.error.message);
+            throw new Error(r.error.message);
+        }
+    }
+
+    // Merge único: primero los de texto (más relevantes), luego los de categoría.
+    const map = new Map<string, any>();
+    for (const r of results) {
+        for (const p of (r.data ?? []) as any[]) {
+            if (!map.has(p.id)) map.set(p.id, p);
+        }
+    }
+
+    return hideOutOfStockCdrProducts([...map.values()] as any);
 };
 
 /* ********************************** */

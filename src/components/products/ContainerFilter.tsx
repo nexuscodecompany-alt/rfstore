@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { HiOutlineAdjustmentsHorizontal } from 'react-icons/hi2';
+import { HiOutlineAdjustmentsHorizontal, HiOutlineChevronDown } from 'react-icons/hi2';
 import { useBrandsByCategories, useTaxonomies } from '../../hooks';
 
 interface Props {
@@ -99,6 +99,8 @@ export const ContainerFilter = ({
 		selectedCategories,
 		selectedSubcategories
 	);
+	// En celular los filtros arrancan colapsados; en desktop (lg) siempre visibles.
+	const [mobileOpen, setMobileOpen] = useState(false);
 	const [localMin, setLocalMin] = useState<string>(priceMin?.toString() || '');
 	const [localMax, setLocalMax] = useState<string>(priceMax?.toString() || '');
 
@@ -159,7 +161,19 @@ export const ContainerFilter = ({
 			<div className='flex items-center justify-between mb-5'>
 				<div className='flex items-center gap-2'>
 					<HiOutlineAdjustmentsHorizontal className='text-brand-700' size={20} />
-					<h3 className='text-base font-bold text-ink-900'>Filtros</h3>
+					<button
+						type='button'
+						onClick={() => setMobileOpen(o => !o)}
+						className='flex items-center gap-1 lg:pointer-events-none'
+					>
+						<h3 className='text-base font-bold text-ink-900'>Filtros</h3>
+						<HiOutlineChevronDown
+							size={16}
+							className={`text-ink-400 transition-transform lg:hidden ${
+								mobileOpen ? 'rotate-180' : ''
+							}`}
+						/>
+					</button>
 					{totalActive > 0 && (
 						<span className='inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-[10px] font-bold rounded-full bg-brand-600 text-white'>
 							{totalActive}
@@ -176,7 +190,7 @@ export const ContainerFilter = ({
 				)}
 			</div>
 
-			<div className='flex flex-col gap-6'>
+			<div className={`flex-col gap-6 lg:flex ${mobileOpen ? 'flex' : 'hidden'}`}>
 				{/* 1. Categorías */}
 				<CheckboxBlock
 					title='Categorías'

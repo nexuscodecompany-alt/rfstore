@@ -1,72 +1,114 @@
-import { Link } from 'react-router-dom';
-import { HiArrowRight } from 'react-icons/hi2';
+import { useQuery } from '@tanstack/react-query';
 import { ProductGrid } from '../components/home/ProductGrid';
 import { FeatureGrid } from '../components/home/FeatureGrid';
+import { HeroCarousel } from '../components/home/HeroCarousel';
+import { CategoryTiles } from '../components/home/CategoryTiles';
+import { Banner3D } from '../components/home/Banner3D';
+import { BusinessBanner } from '../components/home/BusinessBanner';
 import { Brands } from '../components/home/Brands';
 import WhatsAppButton from '../components/shared/WhatsAppButton';
 import { prepareProducts } from '../helpers';
-import { useHomeSections } from '../hooks';
+import { useHomeConfig, useHomeSections } from '../hooks';
+import { getProductsByIds } from '../actions';
+import type { HomeBlock } from '../actions/homeConfig';
+import type { Product } from '../interfaces';
+
+/* Sección de productos (una entrada 'products' del layout). */
+const ProductSection = ({
+	block,
+	recent,
+	featured,
+	ready,
+}: {
+	block: HomeBlock;
+	recent: Product[];
+	featured: Product[];
+	ready: boolean;
+}) => {
+	const source = block.source ?? 'manual';
+	const manualIds = block.product_ids ?? [];
+
+	const { data: manual = [] } = useQuery({
+		queryKey: ['home-manual-section', block.id, manualIds],
+		queryFn: () => getProductsByIds(manualIds),
+		enabled: source === 'manual' && manualIds.length > 0,
+	});
+
+	const raw =
+		source === 'recent' ? recent : source === 'featured' ? featured : manual;
+	const products = prepareProducts(raw);
+
+	// Automáticas: esperar a que carguen. Manual: si está vacía, no mostrar.
+	if (source !== 'manual' && !ready) return null;
+	if (products.length === 0) return null;
+
+	return <ProductGrid title={block.title || 'Productos'} products={products} />;
+};
+
+const BlockRenderer = ({
+	block,
+	recent,
+	featured,
+	ready,
+}: {
+	block: HomeBlock;
+	recent: Product[];
+	featured: Product[];
+	ready: boolean;
+}) => {
+	switch (block.type) {
+		case 'hero':
+			return (
+				<div className='-mt-8'>
+					<HeroCarousel />
+				</div>
+			);
+		case 'features':
+			return (
+				<div className='my-10'>
+					<FeatureGrid />
+				</div>
+			);
+		case 'categories':
+			return <CategoryTiles />;
+		case 'banner3d':
+			return <Banner3D />;
+		case 'brands':
+			return <Brands />;
+		case 'business':
+			return <BusinessBanner />;
+		case 'products':
+			return (
+				<ProductSection
+					block={block}
+					recent={recent}
+					featured={featured}
+					ready={ready}
+				/>
+			);
+		default:
+			return null;
+	}
+};
 
 export const HomePage = () => {
-	const { featured, recent, popular, isLoading, isError } = useHomeSections();
-	const preparedFeatured = prepareProducts(featured);
-	const preparedRecent = prepareProducts(recent);
-	const preparedPopular = prepareProducts(popular);
+	const { config } = useHomeConfig();
+	const { featured, recent, isLoading, isError } = useHomeSections();
+	const ready = !isLoading && !isError;
 
 	return (
 		<div>
-			<FeatureGrid />
-
-			{!isLoading && !isError && preparedFeatured.length > 0 && (
-				<ProductGrid title='Productos Destacados' products={preparedFeatured} />
-			)}
-
-			<Brands />
-
-			{!isLoading && !isError && preparedRecent.length > 0 && (
-				<ProductGrid title='Recién Llegados' products={preparedRecent} />
-			)}
-
-			{/* CTA dark */}
-			<section className='relative section-dark py-20 my-16 overflow-hidden bleed-full'>
-				<div
-					aria-hidden
-					className='absolute inset-0 bg-grid-dark bg-grid-md [mask-image:radial-gradient(ellipse_at_center,black_30%,transparent_75%)]'
-				/>
-				<div
-					aria-hidden
-					className='absolute -top-32 left-1/2 -translate-x-1/2 w-[600px] h-[400px] bg-brand-600/30 blur-3xl rounded-full'
-				/>
-				<div className='relative z-10 container text-center max-w-3xl'>
-					<p className='section-eyebrow text-brand-400 mb-4'>¿Cotización a medida?</p>
-					<h2 className='text-3xl md:text-4xl font-bold text-white mb-4 leading-tight'>
-						Equipamos a tu empresa con la{' '}
-						<span className='bg-gradient-to-br from-brand-300 to-brand-500 bg-clip-text text-transparent'>
-							tecnología que necesita
-						</span>
-					</h2>
-					<p className='text-white/70 mb-8'>
-						Asesoramiento técnico, mejor precio del mercado y facturación con IVA.
-						Contanos qué buscás y armamos una propuesta para tu negocio.
-					</p>
-					<div className='flex flex-col sm:flex-row gap-3 justify-center'>
-						<Link
-							to='/contacto'
-							className='inline-flex items-center justify-center gap-2 bg-white text-ink-900 py-3 px-6 rounded-lg font-semibold text-sm hover:bg-brand-50 transition-all'
-						>
-							Solicitar asesoramiento
-							<HiArrowRight />
-						</Link>
-						<Link to='/tienda' className='btn-ghost-dark px-6 py-3'>
-							Ver catálogo
-						</Link>
-					</div>
-				</div>
-			</section>
-
-			{!isLoading && !isError && preparedPopular.length > 0 && (
-				<ProductGrid title='Más Populares' products={preparedPopular} />
-			)}
+			{config.layout
+				.filter(b => b.enabled)
+				.map(block => (
+					<BlockRenderer
+						key={block.id}
+						block={block}
+						recent={recent}
+						featured={featured}
+						ready={ready}
+					/>
+				))}
 
 			<WhatsAppButton />
 		</div>

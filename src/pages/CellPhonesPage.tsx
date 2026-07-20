@@ -46,15 +46,23 @@ const CategoryPill = ({
 );
 
 export const CellPhonesPage = () => {
-	const [page, setPage] = useState(1);
-	const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-	const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-	const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>([]);
-	const [priceMin, setPriceMin] = useState<number | undefined>(undefined);
-	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
-	// Búsqueda inicial desde el ?q= (cuando se llega con Enter desde el buscador del header).
+	// Parámetros iniciales desde la URL: ?q= (búsqueda), ?category= y ?subcategory=
+	// (llegadas desde el buscador / mega-menú / tiles del header).
 	const [searchParams] = useSearchParams();
 	const qParam = searchParams.get('q') ?? '';
+	const catParam = searchParams.get('category') ?? '';
+	const subParam = searchParams.get('subcategory') ?? '';
+
+	const [page, setPage] = useState(1);
+	const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+	const [selectedCategories, setSelectedCategories] = useState<string[]>(
+		catParam ? [catParam] : []
+	);
+	const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(
+		subParam ? [subParam] : []
+	);
+	const [priceMin, setPriceMin] = useState<number | undefined>(undefined);
+	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
 	const [searchTerm, setSearchTerm] = useState(qParam);
 	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
 	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
@@ -63,6 +71,13 @@ export const CellPhonesPage = () => {
 	useEffect(() => {
 		setSearchTerm(qParam);
 	}, [qParam]);
+
+	// Si cambian ?category= / ?subcategory= (navegación desde el header/tiles), sincronizar.
+	useEffect(() => {
+		setSelectedCategories(catParam ? [catParam] : []);
+		setSelectedSubcategories(subParam ? [subParam] : []);
+		setNewArrivalsOnly(false);
+	}, [catParam, subParam]);
 
 	const { categories, subcategories } = useTaxonomies();
 

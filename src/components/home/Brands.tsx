@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 const brands = [
 	{ image: '/img/brands/logitech.png', alt: 'Logitech' },
 	{ image: '/img/brands/samsung.png', alt: 'Samsung' },
@@ -12,7 +14,30 @@ const brands = [
 	{ image: '/img/brands/lenovo.svg', alt: 'Lenovo' },
 	{ image: '/img/brands/tp-link.svg', alt: 'TP-Link' },
 	{ image: '/img/brands/ubiquiti-seeklogo.png', alt: 'Ubiquiti' },
+	{ image: '/img/brands/xiaomi.png', alt: 'Xiaomi' },
+	{ image: '/img/brands/bambulab.png', alt: 'Bambu Lab' },
+	{ image: '/img/brands/suunto.png', alt: 'Suunto' },
+	{ image: '/img/brands/ezviz.png', alt: 'EZVIZ' },
 ];
+
+/** Logo de marca con fallback a texto si el archivo de imagen no existe. */
+const BrandLogo = ({ image, alt }: { image: string; alt: string }) => {
+	const [failed, setFailed] = useState(false);
+	if (failed) {
+		return (
+			<span className='text-sm font-bold tracking-wide text-ink-500'>{alt}</span>
+		);
+	}
+	return (
+		<img
+			src={image}
+			alt={alt}
+			loading='lazy'
+			onError={() => setFailed(true)}
+			className='max-h-10 w-auto object-contain'
+		/>
+	);
+};
 
 export const Brands = () => {
 	const loop = [...brands, ...brands];
@@ -52,12 +77,7 @@ export const Brands = () => {
 								key={`${b.alt}-${idx}`}
 								className='shrink-0 grid place-items-center w-[160px] h-20 bg-white rounded-xl px-5 py-4 shadow-soft ring-1 ring-white/10 hover:scale-105 transition-transform duration-300'
 							>
-								<img
-									src={b.image}
-									alt={b.alt}
-									loading='lazy'
-									className='max-h-10 w-auto object-contain'
-								/>
+								<BrandLogo image={b.image} alt={b.alt} />
 							</li>
 						))}
 					</ul>

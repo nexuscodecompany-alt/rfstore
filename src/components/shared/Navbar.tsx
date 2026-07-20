@@ -1,21 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { navbarLinks } from '../../constants/links';
+import { Link, useNavigate } from 'react-router-dom';
 import {
-	HiOutlineSearch,
 	HiOutlineShoppingBag,
 	HiOutlineUser,
 	HiOutlineLogout,
 } from 'react-icons/hi';
 import { HiOutlineClipboardDocumentList, HiOutlineSquares2X2 } from 'react-icons/hi2';
 import { FaBarsStaggered } from 'react-icons/fa6';
+import { FaWhatsapp } from 'react-icons/fa';
 import { Logo } from './Logo';
+import { TopBar } from './TopBar';
+import { HeaderSearch } from './HeaderSearch';
+import { CategoryBar } from './CategoryBar';
 import { useGlobalStore } from '../../store/global.store';
 import { useCartStore } from '../../store/cart.store';
 import { useCustomer, useUser, useRoleUser } from '../../hooks';
 import { LuLoader2 } from 'react-icons/lu';
 import { signOut } from '../../actions';
 import toast from 'react-hot-toast';
+
+const WHATSAPP_URL = `https://wa.me/59894116299?text=${encodeURIComponent(
+	'Hola, quería hacer una consulta.'
+)}`;
 
 export const Navbar = () => {
 	const openSheet = useGlobalStore(state => state.openSheet);
@@ -28,16 +34,8 @@ export const Navbar = () => {
 	const { data: customer } = useCustomer(userId!);
 	const { data: role } = useRoleUser(userId ?? '');
 
-	const [scrolled, setScrolled] = useState(false);
 	const [profileOpen, setProfileOpen] = useState(false);
 	const profileRef = useRef<HTMLDivElement | null>(null);
-
-	useEffect(() => {
-		const onScroll = () => setScrolled(window.scrollY > 8);
-		onScroll();
-		window.addEventListener('scroll', onScroll, { passive: true });
-		return () => window.removeEventListener('scroll', onScroll);
-	}, []);
 
 	useEffect(() => {
 		const onClickOutside = (e: MouseEvent) => {
@@ -66,140 +64,143 @@ export const Navbar = () => {
 	const isAdmin = role === 'admin';
 
 	return (
-		<header
-			className={`sticky top-0 z-40 transition-all duration-300 ${
-				scrolled
-					? 'bg-white/80 backdrop-blur-md border-b border-ink-200/70 shadow-soft'
-					: 'bg-white border-b border-transparent'
-			}`}
-		>
-			<div className='flex items-center justify-between px-5 py-3.5 lg:px-12'>
-				<Logo />
+		<header className='z-40'>
+			<TopBar />
 
-				<nav className='space-x-1 hidden md:flex'>
-					{navbarLinks.map(link => (
-						<NavLink
-							key={link.id}
-							to={link.href}
-							className={({ isActive }) =>
-								`px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 ${
-									isActive
-										? 'text-brand-700 bg-brand-50'
-										: 'text-ink-700 hover:text-brand-700 hover:bg-brand-50/60'
-								}`
-							}
-						>
-							{link.title}
-						</NavLink>
-					))}
-				</nav>
+			{/* Bloque sticky: fila principal + barra de categorías (siempre visibles) */}
+			<div className='sticky top-0 z-40 border-b border-white/10 bg-ink-950 shadow-soft'>
+				{/* Fila principal */}
+				<div className='flex items-center gap-4 px-4 py-3 lg:px-10'>
+					<Logo />
 
-				<div className='flex gap-2 items-center'>
-					<button
-						onClick={() => openSheet('search')}
-						className='p-2 rounded-md text-ink-700 hover:text-brand-700 hover:bg-brand-50/60 transition-all'
-						aria-label='Buscar'
-					>
-						<HiOutlineSearch size={22} />
-					</button>
+					{/* Buscador central (desktop) */}
+					<div className='hidden flex-1 justify-center md:flex'>
+						<HeaderSearch />
+					</div>
 
-					{isLoading ? (
-						<div className='p-2'>
-							<LuLoader2 className='animate-spin text-brand-600' size={22} />
-						</div>
-					) : session ? (
-						<div className='relative ml-1' ref={profileRef}>
-							<button
-								onClick={() => setProfileOpen(o => !o)}
-								className='grid place-items-center w-9 h-9 rounded-full bg-gradient-to-br from-brand-600 to-brand-700 text-white text-sm font-bold shadow-soft hover:shadow-glow-brand transition-all'
-								aria-label='Mi cuenta'
-								aria-expanded={profileOpen}
-							>
-								{initial}
-							</button>
+					<div className='ml-auto flex items-center gap-1.5'>
+						{isLoading ? (
+							<div className='p-2'>
+								<LuLoader2 className='animate-spin text-brand-600' size={22} />
+							</div>
+						) : session ? (
+							<div className='relative' ref={profileRef}>
+								<button
+									onClick={() => setProfileOpen(o => !o)}
+									className='flex items-center gap-2 rounded-full py-1 pl-1 pr-2 transition-colors hover:bg-white/10'
+									aria-label='Mi cuenta'
+									aria-expanded={profileOpen}
+								>
+									<span className='grid h-8 w-8 place-items-center rounded-full bg-brand-900 text-sm font-bold text-white shadow-soft ring-2 ring-white'>
+										{initial}
+									</span>
+									<span className='hidden text-sm font-medium text-white/80 lg:inline'>
+										Mi cuenta
+									</span>
+								</button>
 
-							{profileOpen && (
-								<div className='absolute right-0 top-11 w-64 bg-white border border-ink-200 rounded-xl shadow-2xl py-2 animate-fade-in z-50'>
-									<div className='px-4 py-3 border-b border-ink-100'>
-										<p className='text-sm font-semibold text-ink-900 truncate'>
-											{fullName || 'Mi cuenta'}
-										</p>
-										<p className='text-xs text-ink-500 truncate'>{email}</p>
-										{isAdmin && (
-											<span className='inline-block mt-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-brand-50 text-brand-700 rounded'>
-												Admin
-											</span>
-										)}
-									</div>
-									<Link
-										to='/account/perfil'
-										onClick={() => setProfileOpen(false)}
-										className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 hover:bg-brand-50 transition-colors'
-									>
-										<HiOutlineUser size={18} />
-										Mi perfil
-									</Link>
-									<Link
-										to='/account/pedidos'
-										onClick={() => setProfileOpen(false)}
-										className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 hover:bg-brand-50 transition-colors'
-									>
-										<HiOutlineClipboardDocumentList size={18} />
-										Mis pedidos
-									</Link>
-									{isAdmin && (
+								{profileOpen && (
+									<div className='absolute right-0 top-12 z-50 w-64 animate-fade-in rounded-xl border border-ink-200 bg-white py-2 shadow-2xl'>
+										<div className='border-b border-ink-100 px-4 py-3'>
+											<p className='truncate text-sm font-semibold text-ink-900'>
+												{fullName || 'Mi cuenta'}
+											</p>
+											<p className='truncate text-xs text-ink-500'>{email}</p>
+											{isAdmin && (
+												<span className='mt-1.5 inline-block rounded bg-brand-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-brand-700'>
+													Admin
+												</span>
+											)}
+										</div>
 										<Link
-											to='/dashboard'
+											to='/account/perfil'
 											onClick={() => setProfileOpen(false)}
-											className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 hover:bg-brand-50 transition-colors'
+											className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-brand-50'
 										>
-											<HiOutlineSquares2X2 size={18} />
-											Panel admin
+											<HiOutlineUser size={18} />
+											Mi perfil
 										</Link>
-									)}
-									<div className='border-t border-ink-100 mt-1 pt-1'>
-										<button
-											onClick={onSignOut}
-											className='flex items-center gap-3 px-4 py-2.5 text-sm text-rose-600 hover:bg-rose-50 transition-colors w-full text-left'
+										<Link
+											to='/account/pedidos'
+											onClick={() => setProfileOpen(false)}
+											className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-brand-50'
 										>
-											<HiOutlineLogout size={18} />
-											Cerrar sesión
-										</button>
+											<HiOutlineClipboardDocumentList size={18} />
+											Mis pedidos
+										</Link>
+										{isAdmin && (
+											<Link
+												to='/dashboard'
+												onClick={() => setProfileOpen(false)}
+												className='flex items-center gap-3 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-brand-50'
+											>
+												<HiOutlineSquares2X2 size={18} />
+												Panel admin
+											</Link>
+										)}
+										<div className='mt-1 border-t border-ink-100 pt-1'>
+											<button
+												onClick={onSignOut}
+												className='flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-rose-600 transition-colors hover:bg-rose-50'
+											>
+												<HiOutlineLogout size={18} />
+												Cerrar sesión
+											</button>
+										</div>
 									</div>
-								</div>
-							)}
-						</div>
-					) : (
-						<Link
-							to='/login'
-							className='p-2 rounded-md text-ink-700 hover:text-brand-700 hover:bg-brand-50/60 transition-all'
-							aria-label='Iniciar sesión'
-						>
-							<HiOutlineUser size={22} />
-						</Link>
-					)}
-
-					<button
-						className='relative p-2 rounded-md text-ink-700 hover:text-brand-700 hover:bg-brand-50/60 transition-all'
-						onClick={() => openSheet('cart')}
-						aria-label='Carrito'
-					>
-						{totalItemsInCart > 0 && (
-							<span className='absolute top-0 right-0 min-w-[18px] h-[18px] grid place-items-center px-1 bg-gradient-to-br from-brand-600 to-brand-700 text-white text-[10px] font-bold rounded-full ring-2 ring-white shadow-soft'>
-								{totalItemsInCart}
-							</span>
+								)}
+							</div>
+						) : (
+							<Link
+								to='/login'
+								className='flex items-center gap-1.5 rounded-md px-2.5 py-2 text-sm font-medium text-white/80 transition-all hover:text-white'
+								aria-label='Iniciar sesión'
+							>
+								<HiOutlineUser size={22} />
+								<span className='hidden lg:inline'>Ingresar</span>
+							</Link>
 						)}
-						<HiOutlineShoppingBag size={22} />
-					</button>
 
-					<button
-						className='md:hidden ml-1 p-2 rounded-md text-ink-700 hover:bg-ink-100 transition-all'
-						onClick={() => setActiveNavMobile(true)}
-						aria-label='Menú'
-					>
-						<FaBarsStaggered size={20} />
-					</button>
+						<button
+							className='relative rounded-md p-2 text-white/80 transition-all hover:bg-white/10 hover:text-white'
+							onClick={() => openSheet('cart')}
+							aria-label='Carrito'
+						>
+							{totalItemsInCart > 0 && (
+								<span className='absolute right-0 top-0 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-gradient-to-br from-brand-600 to-brand-700 px-1 text-[10px] font-bold text-white shadow-soft ring-2 ring-white'>
+									{totalItemsInCart}
+								</span>
+							)}
+							<HiOutlineShoppingBag size={22} />
+						</button>
+
+						<a
+							href={WHATSAPP_URL}
+							target='_blank'
+							rel='noopener noreferrer'
+							className='hidden h-9 w-9 place-items-center rounded-full bg-[#25D366] text-white shadow-soft transition-transform hover:scale-105 sm:grid'
+							aria-label='WhatsApp'
+						>
+							<FaWhatsapp size={20} />
+						</a>
+
+						<button
+							className='ml-0.5 rounded-md p-2 text-white/80 transition-all hover:bg-white/10 md:hidden'
+							onClick={() => setActiveNavMobile(true)}
+							aria-label='Menú'
+						>
+							<FaBarsStaggered size={20} />
+						</button>
+					</div>
 				</div>
+
+				{/* Buscador (mobile) */}
+				<div className='px-4 pb-3 md:hidden'>
+					<HeaderSearch />
+				</div>
+
+				{/* Barra de categorías con mega-menú */}
+				<CategoryBar />
 			</div>
 		</header>
 	);

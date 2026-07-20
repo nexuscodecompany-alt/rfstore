@@ -15,6 +15,7 @@ export interface Subcategory {
 	id: string;
 	name: string;
 	category_id: string;
+	sort_order?: number;
 }
 
 /* ----------------------------- LECTURA ----------------------------- */
@@ -46,10 +47,11 @@ export const getCategories = async (): Promise<Category[]> => {
 export const getSubcategories = async (): Promise<Subcategory[]> => {
 	const { data, error } = await supabase
 		.from('subcategories')
-		.select('id, name, category_id')
+		.select('id, name, category_id, sort_order')
+		.order('sort_order', { ascending: true })
 		.order('name');
 	if (error) throw new Error(error.message);
-	return data as Subcategory[];
+	return (data as unknown) as Subcategory[];
 };
 
 // Devuelve los ids de marcas que tienen productos visibles en las categorías
@@ -155,4 +157,16 @@ export const updateSubcategory = async ({
 export const deleteSubcategory = async (id: string) => {
 	const { error } = await supabase.from('subcategories').delete().eq('id', id);
 	if (error) throw new Error(error.message);
+};
+
+// Persiste el orden de las subcategorías de una categoría: sort_order = índice+1.
+export const reorderSubcategories = async (orderedIds: string[]) => {
+	await Promise.all(
+		orderedIds.map((id, i) =>
+			supabase
+				.from('subcategories')
+				.update({ sort_order: i + 1 } as never)
+				.eq('id', id)
+		)
+	);
 };

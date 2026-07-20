@@ -8,6 +8,8 @@ import {
 	HiOutlineCheck,
 	HiOutlineXMark,
 	HiOutlineChevronDown,
+	HiOutlineArrowUp,
+	HiOutlineArrowDown,
 } from 'react-icons/hi2';
 import {
 	getBrandsAdmin,
@@ -22,6 +24,8 @@ import {
 	createSubcategory,
 	updateSubcategory,
 	deleteSubcategory,
+	reorderSubcategories,
+	type Subcategory,
 } from '../../actions';
 
 /* ---------- fila editable reutilizable ---------- */
@@ -176,6 +180,23 @@ export const DashboardTaxonomiesPage = () => {
 	const mAddSub = useMutation({ mutationFn: createSubcategory, onSuccess: () => inv('subcategories'), onError: onErr });
 	const mEditSub = useMutation({ mutationFn: updateSubcategory, onSuccess: () => inv('subcategories'), onError: onErr });
 	const mDelSub = useMutation({ mutationFn: deleteSubcategory, onSuccess: () => inv('subcategories'), onError: onErr });
+	const mReorderSub = useMutation({
+		mutationFn: reorderSubcategories,
+		onSuccess: () => {
+			inv('subcategories');
+			toast.success('Orden actualizado', { position: 'bottom-right' });
+		},
+		onError: onErr,
+	});
+
+	// Reordena las subcategorías de una categoría (subs ya viene ordenado) y persiste.
+	const moveSub = (subs: Subcategory[], idx: number, dir: -1 | 1) => {
+		const j = idx + dir;
+		if (j < 0 || j >= subs.length) return;
+		const next = [...subs];
+		[next[idx], next[j]] = [next[j], next[idx]];
+		mReorderSub.mutate(next.map(s => s.id));
+	};
 
 	const confirmDel = (msg: string) => window.confirm(msg);
 
@@ -249,19 +270,43 @@ export const DashboardTaxonomiesPage = () => {
 
 									{isOpen && (
 										<div className='space-y-2 border-t border-ink-100 px-4 py-3 pl-12'>
-											{subs.map(sub => (
-												<EditableItem
+											{subs.map((sub, idx) => (
+												<div
 													key={sub.id}
-													dense
-													name={sub.name}
-													onRename={name =>
-														mEditSub.mutate({ id: sub.id, name })
-													}
-													onDelete={() => {
-														if (confirmDel(`¿Eliminar "${sub.name}"?`))
-															mDelSub.mutate(sub.id);
-													}}
-												/>
+													className='flex items-center gap-1'
+												>
+													<div className='flex shrink-0 items-center'>
+														<button
+															onClick={() => moveSub(subs, idx, -1)}
+															disabled={idx === 0}
+															className='grid h-7 w-7 place-items-center rounded-md text-ink-400 hover:bg-ink-100 disabled:opacity-30'
+															title='Subir'
+														>
+															<HiOutlineArrowUp size={14} />
+														</button>
+														<button
+															onClick={() => moveSub(subs, idx, 1)}
+															disabled={idx === subs.length - 1}
+															className='grid h-7 w-7 place-items-center rounded-md text-ink-400 hover:bg-ink-100 disabled:opacity-30'
+															title='Bajar'
+														>
+															<HiOutlineArrowDown size={14} />
+														</button>
+													</div>
+													<div className='flex-1'>
+														<EditableItem
+															dense
+															name={sub.name}
+															onRename={name =>
+																mEditSub.mutate({ id: sub.id, name })
+															}
+															onDelete={() => {
+																if (confirmDel(`¿Eliminar "${sub.name}"?`))
+																	mDelSub.mutate(sub.id);
+															}}
+														/>
+													</div>
+												</div>
 											))}
 											<AddInput
 												placeholder='Nueva subcategoría'

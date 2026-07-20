@@ -6,6 +6,7 @@ export * from './getFilteredProducts';
 export * from './cdr';
 export * from './pricing';
 export * from './home';
+export * from './homeConfig';
 export * from './legal';
 export * from './notifications';
 export * from './shipping';

@@ -68,6 +68,10 @@ export const TableProduct = () => {
   const [minReadiness, setMinReadiness] = useState<number>(
     Number(searchParams.get('listo')) || 0
   );
+  // Ordenamiento client-side de la página cargada. '' = orden por defecto del
+  // servidor (created_at desc). "stock" es la SUMA del stock de las variantes.
+  const [sortBy, setSortBy] = useState<'' | 'stock' | 'estado' | 'fecha' | 'ml'>('');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // Si vienen filtros por query string (ej desde /dashboard/cdr), persistirlos en estado
   useEffect(() => {
@@ -178,6 +182,36 @@ export const TableProduct = () => {
 
   const isBusy = isLoading || isPending;
   const showEmpty = !isBusy && (!products || products.length === 0);
+
+  // Stock total de un producto = suma del stock de todas sus variantes.
+  const totalStock = (p: any) =>
+    (p.variants ?? []).reduce((sum: number, v: any) => sum + (v?.stock ?? 0), 0);
+
+  // Ordena la página cargada según el criterio elegido. Sin criterio, respeta el
+  // orden que devuelve el servidor (created_at desc).
+  const displayedProducts = (() => {
+    if (!sortBy) return products;
+    const dir = sortDir === 'asc' ? 1 : -1;
+    const compare = (a: any, b: any) => {
+      switch (sortBy) {
+        case 'stock':
+          return (totalStock(a) - totalStock(b)) * dir;
+        case 'estado':
+          return ((a.active ? 1 : 0) - (b.active ? 1 : 0)) * dir;
+        case 'fecha':
+          return (
+            (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * dir
+          );
+        case 'ml':
+          return (
+            ((a.ml_ready_percent ?? -1) - (b.ml_ready_percent ?? -1)) * dir
+          );
+        default:
+          return 0;
+      }
+    };
+    return [...products].sort(compare);
+  })();
 
   return (
     <div className="flex flex-col flex-1 border border-ink-200/70 rounded-2xl p-5 bg-white shadow-soft">
@@ -296,7 +330,33 @@ export const TableProduct = () => {
             <option value={100}>100% (listos para publicar)</option>
           </select>
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly) && (
+          <select
+            value={sortBy}
+            onChange={(e) =>
+              setSortBy(e.target.value as '' | 'stock' | 'estado' | 'fecha' | 'ml')
+            }
+            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
+            title="Ordenar los productos de esta página"
+          >
+            <option value="">Ordenar por…</option>
+            <option value="stock">Stock</option>
+            <option value="estado">Estado</option>
+            <option value="fecha">Fecha</option>
+            <option value="ml">Listo ML</option>
+          </select>
+
+          {sortBy && (
+            <button
+              type="button"
+              onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+              className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-ink-300 px-3 py-2 text-sm font-semibold text-ink-700 transition-all hover:bg-ink-50"
+              title={sortDir === 'asc' ? 'Ascendente' : 'Descendente'}
+            >
+              {sortDir === 'asc' ? '↑ Ascendente' : '↓ Descendente'}
+            </button>
+          )}
+
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || sortBy) && (
             <button
               type="button"
               onClick={() => {
@@ -308,6 +368,8 @@ export const TableProduct = () => {
                 setMlFilter('');
                 setMinReadiness(0);
                 setContentDirtyOnly(false);
+                setSortBy('');
+                setSortDir('desc');
                 setSearchParams({}, { replace: true });
                 setPage(1);
               }}
@@ -423,7 +485,7 @@ export const TableProduct = () => {
             </tr>
           </thead>
           <tbody>
-            {products.map((product, index) => {
+            {displayedProducts.map((product, index) => {
               const selectedVariant = product.variants[0] || {};
               const mlMapping = (product as any).ml_item_mapping?.[0];
               const mlItemId: string | null = mlMapping?.ml_item_id ?? null;

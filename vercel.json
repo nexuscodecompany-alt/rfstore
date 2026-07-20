@@ -5,6 +5,28 @@
       "destination": "/api/:path*"
     },
     {
+      "source": "/producto/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|WhatsApp|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Pinterest|redditbot|Applebot|bingbot|Googlebot|Google-InspectionTool|SkypeUriPreview|vkShare|Embedly|W3C_Validator).*"
+        }
+      ],
+      "destination": "/api/og?type=product&slug=:slug"
+    },
+    {
+      "source": "/blog/:slug",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(facebookexternalhit|Facebot|WhatsApp|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Pinterest|redditbot|Applebot|bingbot|Googlebot|Google-InspectionTool|SkypeUriPreview|vkShare|Embedly|W3C_Validator).*"
+        }
+      ],
+      "destination": "/api/og?type=blog&slug=:slug"
+    },
+    {
       "source": "/((?!api).*)",
       "destination": "/index.html"
     }

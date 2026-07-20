@@ -44,6 +44,11 @@ export * from './taxonomy/useTaxonomies';
 export * from './taxonomy/useBrandsByCategories';
 
 /* ********************************** */
+/*                HOME                */
+/* ********************************** */
+export * from './home/useHomeConfig';
+
+/* ********************************** */
 /*             SETTINGS               */
 /* ********************************** */
 export * from './settings/useFeatureFlag';

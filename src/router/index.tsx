@@ -27,7 +27,7 @@ import {
     DashboardHomePage,
     DashboardMarginsPage,
     DashboardCouponsPage,
-    DashboardHomeSectionsPage,
+    DashboardHomeConfigPage,
     DashboardLegalPage,
     DashboardShippingPage,
     DashboardMercadoLibrePage,
@@ -182,7 +182,11 @@ export const router = createBrowserRouter([
             },
             {
                 path: 'vitrina',
-                element: <DashboardHomeSectionsPage />,
+                element: <Navigate to='/dashboard/home' replace />,
+            },
+            {
+                path: 'home',
+                element: <DashboardHomeConfigPage />,
             },
             {
                 path: 'legales',

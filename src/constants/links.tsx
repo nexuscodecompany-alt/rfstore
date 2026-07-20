@@ -11,10 +11,10 @@ import {
     FaTags,
     FaPercent,
     FaTicket,
-    FaStar,
     FaScaleBalanced,
     FaTruck,
     FaStore,
+    FaHouse,
 } from 'react-icons/fa6';
 
 export const navbarLinks = [
@@ -117,10 +117,10 @@ export const dashboardLinks = [
         icon: <FaTicket size={22} />,
     },
     {
-        id: 8,
-        title: 'Vitrina Home',
-        href: '/dashboard/vitrina',
-        icon: <FaStar size={22} />,
+        id: 13,
+        title: 'Home',
+        href: '/dashboard/home',
+        icon: <FaHouse size={22} />,
     },
     {
         id: 9,

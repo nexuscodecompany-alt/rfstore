@@ -94,17 +94,13 @@ export const CardProduct = ({
 			{/* IMAGEN */}
 			<Link
 				to={`/producto/${slug}`}
-				className='relative block aspect-square bg-gradient-to-br from-ink-50 to-white overflow-hidden'
+				className='relative block aspect-square overflow-hidden bg-white'
 			>
-				<div
-					aria-hidden
-					className='absolute inset-0 bg-grid-light bg-grid-sm opacity-40'
-				/>
 				<img
 					src={img}
 					alt={name}
 					loading='lazy'
-					className='relative h-full w-full object-contain p-6 group-hover:scale-105 transition-transform duration-500 ease-out'
+					className='relative h-full w-full object-contain p-3 transition-transform duration-500 ease-out group-hover:scale-105'
 				/>
 			</Link>
 

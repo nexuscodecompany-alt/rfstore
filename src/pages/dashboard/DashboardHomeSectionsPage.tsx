@@ -23,7 +23,7 @@ const SECTIONS: HomeSectionKey[] = [
 	'home_popular',
 ];
 
-const SectionEditor = ({ sectionKey }: { sectionKey: HomeSectionKey }) => {
+export const SectionEditor = ({ sectionKey }: { sectionKey: HomeSectionKey }) => {
 	const qc = useQueryClient();
 	const [term, setTerm] = useState('');
 

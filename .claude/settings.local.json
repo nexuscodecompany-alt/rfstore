@@ -139,7 +139,12 @@
       "PowerShell(npx tsc -b; if \\($?\\) { \"TYPECHECK OK\" } else { \"TYPECHECK FAILED\" })",
       "PowerShell(git status --short; \"---\"; git log --oneline -3)",
       "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { \"FOUND: \" + $c.Source; supabase --version } else { \"NOT FOUND\" }; $env:SUPABASE_ACCESS_TOKEN -ne $null)",
-      "PowerShell($paths = @\\(\"$env:USERPROFILE\\\\.supabase\\\\access-token\", \"$env:APPDATA\\\\supabase\\\\access-token\", \"$env:LOCALAPPDATA\\\\supabase\\\\access-token\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { \"FOUND token file: $p\" } }; if \\(Test-Path \"$env:USERPROFILE\\\\.supabase\"\\) { Get-ChildItem \"$env:USERPROFILE\\\\.supabase\" -Force | Select-Object Name } else { \"no .supabase dir in USERPROFILE\" })"
+      "PowerShell($paths = @\\(\"$env:USERPROFILE\\\\.supabase\\\\access-token\", \"$env:APPDATA\\\\supabase\\\\access-token\", \"$env:LOCALAPPDATA\\\\supabase\\\\access-token\"\\); foreach \\($p in $paths\\) { if \\(Test-Path $p\\) { \"FOUND token file: $p\" } }; if \\(Test-Path \"$env:USERPROFILE\\\\.supabase\"\\) { Get-ChildItem \"$env:USERPROFILE\\\\.supabase\" -Force | Select-Object Name } else { \"no .supabase dir in USERPROFILE\" })",
+      "mcp__magic__logo_search",
+      "Bash(cp \"/c/Users/Admin/Downloads/suunto.png\"    public/img/brands/suunto.png)",
+      "Bash(cp \"/c/Users/Admin/Downloads/ezviz.png\"     public/img/brands/ezviz.png)",
+      "Bash(cp \"/c/Users/Admin/Downloads/xiaomi.png\"    public/img/brands/xiaomi.png)",
+      "Bash(cp \"/c/Users/Admin/Downloads/bambulabs.png\" public/img/brands/bambulab.png)"
     ]
   }
 }
