@@ -164,6 +164,8 @@ export interface PublishResult {
 	price_uyu?: number;
 	stock?: number;
 	error?: string;
+	// Motivo literal que devolvió ML al rechazar (sus `cause[].message` concatenados).
+	ml_message?: string;
 	detail?: unknown;
 	payload_sent?: unknown;
 	// Atributos obligatorios de la categoría ML que faltan (para armar el form manual).

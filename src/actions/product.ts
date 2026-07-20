@@ -195,6 +195,20 @@ export const searchProducts = async (searchTerm: string) => {
 /* ********************************** */
 /* ADMINISTRADOR          */
 /* ********************************** */
+// Campos por los que el admin puede ordenar el listado clickeando el encabezado.
+export type AdminSortField = 'name' | 'stock' | 'price' | 'active' | 'created_at' | 'ml_ready';
+
+// Mapeo a columnas reales de products. Se usa como whitelist: nunca mandamos a
+// PostgREST un nombre de columna que venga del front sin validar.
+const ADMIN_SORT_COLUMNS: Record<AdminSortField, string> = {
+    name: 'name',
+    stock: 'total_stock',
+    price: 'price_usd',
+    active: 'active',
+    created_at: 'created_at',
+    ml_ready: 'ml_ready_percent',
+};
+
 // Listado para el panel admin: trae TODOS los productos (activos e inactivos,
 // y CDR con o sin stock) con búsqueda + paginación. A diferencia de la tienda,
 // no usa la vista products_with_price para que el admin pueda gestionarlos todos.
@@ -208,11 +222,18 @@ export const getAdminProducts = async (
     newOnly = false,
     mlFilter: '' | 'in' | 'out' = '',
     minReadiness = 0,
-    contentDirtyOnly = false
+    contentDirtyOnly = false,
+    sortBy: AdminSortField = 'created_at',
+    sortDir: 'asc' | 'desc' = 'desc'
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
     const to = from + itemsPerPage - 1;
+
+    // Ordenamos en la BASE (no en memoria): así el orden aplica sobre TODO el catálogo
+    // y no sólo sobre los 25 de la página visible. El stock sale de products.total_stock
+    // (denormalizado por trigger) porque el stock real vive en variants.
+    const sortColumn = ADMIN_SORT_COLUMNS[sortBy] ?? 'created_at';
 
     let query = supabase
         .from('products')
@@ -222,7 +243,8 @@ export const getAdminProducts = async (
                 count: 'exact',
             }
         )
-        .order('created_at', { ascending: false })
+        .order(sortColumn, { ascending: sortDir === 'asc', nullsFirst: false })
+        // Desempate estable: sin esto, filas con el mismo valor pueden saltar de página.
         .order('id', { ascending: true });
 
     // Filtro "En Mercado Libre": usa la columna denormalizada products.is_in_ml

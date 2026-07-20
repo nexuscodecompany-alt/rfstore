@@ -11,7 +11,7 @@ const friendlyMlError = (e?: string): string => {
 	if (e.startsWith('invalid_price_usd')) return 'El producto no tiene un costo válido para calcular el precio';
 	if (e.startsWith('no_pictures')) return 'El producto no tiene imágenes para publicar';
 	if (e.startsWith('picture_upload_failed')) return 'No se pudieron subir las imágenes a Mercado Libre';
-	if (e === 'ml_publish_failed') return 'Mercado Libre rechazó la publicación (revisá los datos que pide la categoría)';
+	if (e === 'ml_publish_failed') return 'Mercado Libre rechazó la publicación';
 	if (e.startsWith('no_ml_credentials')) return 'No hay una cuenta de Mercado Libre conectada';
 	return `Mercado Libre: ${e}`;
 };
@@ -55,7 +55,11 @@ export const usePublishMlItem = (opts: UsePublishMlItemOpts = {}) => {
 				});
 				return;
 			}
-			toast.error(friendlyMlError(data?.error), { position: 'bottom-right', duration: 6000 });
+			// Mostramos el motivo LITERAL de ML. Antes cualquier rechazo se traducía a
+			// "revisá los datos que pide la categoría", que mandaba al admin a buscar
+			// donde no era (ej: el bloqueo real era el campo family_name del payload).
+			const detail = data?.ml_message ? `Mercado Libre rechazó la publicación: ${data.ml_message}` : friendlyMlError(data?.error);
+			toast.error(detail, { position: 'bottom-right', duration: 10000 });
 		},
 		onError: (err: Error) =>
 			toast.error(err.message || 'No se pudo publicar en ML', {

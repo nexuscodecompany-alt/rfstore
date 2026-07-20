@@ -95,19 +95,35 @@ function resolveModel(explicit: string | undefined, name: string, brand: string 
   return deriveModelFromName(name, brand);
 }
 
+// ML pasó a exigir family_name en el POST /items: sin el campo rechaza TODO con
+// validation_error / body.required_fields, en cualquier categoria y por mas completos
+// que esten los atributos. Es el nombre de la "familia" del producto, o sea el titulo
+// sin el color (que es lo que varia entre publicaciones del mismo modelo).
+function buildFamilyName(title: string): string {
+  const words = (title || '').trim().split(/\s+/).filter(w => {
+    const clean = w.toLowerCase().replace(/[^a-záéíóúñ]/gi, '');
+    return clean === '' ? true : !MODEL_COLOR_WORDS.includes(clean);
+  });
+  const out = words.join(' ').replace(/\s+/g, ' ').trim();
+  return (out || (title || '').trim()).slice(0, 60);
+}
+
 // Atributos tecnicos (procesador / voltaje) derivados del texto. Se mandan SOLO si la
 // categoria de ML los define. Cubre PCs/notebooks, que piden datos del procesador.
 function extractTechAttributes(text: string): Record<string, string> {
   const t = (text || '').toLowerCase();
   const out: Record<string, string> = {};
   if (/\bryzen\b|\bathlon\b|\bamd\b/.test(t)) out.PROCESSOR_BRAND = 'AMD';
-  else if (/\bcore\s*(ultra\s*)?i[3579]\b|\bcore\s*ultra\b|\bceleron\b|\bpentium\b|\bintel\b/.test(t)) out.PROCESSOR_BRAND = 'Intel';
+  else if (/\bcore\s*(ultra\s*)?i?[3579]\b|\bcore\s*ultra\b|\bceleron\b|\bpentium\b|\bintel\b/.test(t)) out.PROCESSOR_BRAND = 'Intel';
   let line: string | null = null;
   let model: string | null = null;
   let m: RegExpMatchArray | null;
   if ((m = t.match(/ryzen\s*(?:ai\s*)?([3579])\s*([0-9]{3,4}[a-z]{0,2})?/))) { line = `Ryzen ${m[1]}`; if (m[2]) model = m[2].toUpperCase(); }
   else if ((m = t.match(/core\s*ultra\s*([3579])\s*([0-9]{2,4}[a-z]{0,2})?/))) { line = `Core Ultra ${m[1]}`; if (m[2]) model = m[2].toUpperCase(); }
   else if ((m = t.match(/core\s*(i[3579])[\s-]*([0-9]{3,5}[a-z]{0,2})?/))) { line = `Core ${m[1]}`; if (m[2]) model = m[2].toUpperCase(); }
+  // Intel renombro la linea en 2024: ahora es "Core 7 240H", sin la i ni Ultra. Va ultimo
+  // para no pisar los matches de "Core Ultra 7" ni "Core i7".
+  else if ((m = t.match(/core\s*([3579])[\s-]+([0-9]{3,5}[a-z]{0,2})/))) { line = `Core ${m[1]}`; model = m[2].toUpperCase(); }
   else if (/celeron/.test(t)) line = 'Celeron';
   else if (/pentium/.test(t)) line = 'Pentium';
   if (line) out.PROCESSOR_LINE = line;
@@ -161,6 +177,13 @@ function deriveAttrValue(def: MlAttrDef, rawText: string): { id: string; value_i
   if (idu === 'PROCESSOR_MODEL' || nm.includes('modelo del procesador')) {
     const m = text.match(/(?:core\s*ultra\s*[3579]|core\s*i[3579]|ryzen\s*(?:ai\s*)?[3579]|athlon|celeron|pentium)[\s-]*([0-9]{3,5}[a-z]{0,3})/);
     if (m) freeCandidate = m[1].toUpperCase();
+    // CDR suele mandar el modelo pelado, sin la linea delante ("Notebook Asus N4500 2.8hz").
+    // Sin este fallback ML corta por PROCESSOR_MODEL y le pedimos al admin algo que ya
+    // estaba en el titulo. Excluimos GB/TB/Hz para no confundir memoria con procesador.
+    if (!freeCandidate) {
+      const bare = text.match(/\b([a-z]{1,2}[0-9]{3,5}[a-z]{0,3})\b/);
+      if (bare && !/^(gb|tb|mb|hz|ghz)/.test(bare[1])) freeCandidate = bare[1].toUpperCase();
+    }
   } else if (idu.includes('SCREEN') || idu.includes('DISPLAY') || nm.includes('pantalla')) {
     const m = text.match(/([0-9]{1,2}(?:[.,][0-9])?)\s*(?:"|''|pulgadas?|inch)/);
     if (m) freeCandidate = `${m[1].replace(',', '.')}"`;
@@ -417,8 +440,13 @@ Deno.serve(async (req: Request) => {
     // plainForMl deja la descripcion 100% en texto plano (saca controles como 0x97) para que ML no la rechace.
     const finalDescription = plainForMl(toPureplainText(builtDesc));
 
+    const familyName = buildFamilyName(title);
+
+    // OJO: title y family_name son EXCLUYENTES en el modelo nuevo de ML. Si mandamos los
+    // dos responde "The fields [title] are invalid for requested call". ML arma el titulo
+    // a partir de family_name + los atributos, asi que title solo queda para logs/preview.
     const itemPayload = {
-      title, category_id: mlCategoryId,
+      family_name: familyName, category_id: mlCategoryId,
       price: priceCalc.price,
       currency_id: priceCalc.currency_id,
       available_quantity: Number(variant.stock),
@@ -430,7 +458,14 @@ Deno.serve(async (req: Request) => {
     };
 
     if (dry_run) {
-      return json({ ok: true, dry_run: true, payload: itemPayload, meta: { fxRate, costUsd, markupPercent: effMargin, usdThreshold: effThreshold, price: priceCalc.price, currency: priceCalc.currency_id, priceUyu: priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.ceil(priceCalc.basis_usd * fxRate), warranty, featuresExtracted, modelValue, attrsFromText, predictedCategory: mlCategoryId, missingAttributes: missingAttrs, effectiveGtin, uploadedPictureIds, uploadErrors, descriptionPreview: finalDescription, descriptionLength: finalDescription.length } });
+      // Validacion REAL contra ML: /items/validate corre las mismas reglas que el POST
+      // pero NO crea la publicacion (204 = pasa). Asi vemos el error exacto sin publicar.
+      let validation: any = null;
+      try {
+        const v = await mlFetch('/items/validate', { method: 'POST', token, body: itemPayload });
+        validation = { ok: v.ok, status: v.status, response: v.data };
+      } catch (e: any) { validation = { ok: false, error: e?.message }; }
+      return json({ ok: true, dry_run: true, validation, payload: itemPayload, meta: { fxRate, costUsd, markupPercent: effMargin, usdThreshold: effThreshold, price: priceCalc.price, currency: priceCalc.currency_id, priceUyu: priceCalc.currency_id === 'UYU' ? priceCalc.price : Math.ceil(priceCalc.basis_usd * fxRate), warranty, featuresExtracted, modelValue, attrsFromText, predictedCategory: mlCategoryId, missingAttributes: missingAttrs, effectiveGtin, uploadedPictureIds, uploadErrors, descriptionPreview: finalDescription, descriptionLength: finalDescription.length } });
     }
 
     const post = await mlFetch('/items', { method: 'POST', token, body: itemPayload });
@@ -440,7 +475,12 @@ Deno.serve(async (req: Request) => {
       // pudimos parsear nada, caemos a nuestra lista de obligatorios sin completar.
       const mlMissing = missingFromMlCauses(post.data && post.data.cause, catReq.defs);
       const formMissing = mlMissing.length ? mlMissing : missingAttrs;
-      return json({ ok: false, error: 'ml_publish_failed', detail: post.data, missing_attributes: formMissing, payload_sent: itemPayload }, 400);
+      // Mensaje literal de ML para mostrarle al admin. Sin esto todo error cae en un
+      // generico que culpa a la categoria, aunque la causa real sea otra.
+      const causes = Array.isArray(post.data?.cause) ? post.data.cause : [];
+      const mlMessage = causes.map((c: any) => c?.message).filter(Boolean).join(' | ')
+        || post.data?.message || `HTTP ${post.status}`;
+      return json({ ok: false, error: 'ml_publish_failed', ml_message: mlMessage, detail: post.data, missing_attributes: formMissing, payload_sent: itemPayload }, 400);
     }
     const mlItem = post.data;
 

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getAdminProducts, getContentDirtyCount, getNewProductsCount, markProductsSeen } from '../../actions';
+import type { AdminSortField } from '../../actions/product';
 
 export const useAdminProducts = (
 	page: number,
@@ -11,12 +12,14 @@ export const useAdminProducts = (
 	newOnly = false,
 	mlFilter: '' | 'in' | 'out' = '',
 	minReadiness = 0,
-	contentDirtyOnly = false
+	contentDirtyOnly = false,
+	sortBy: AdminSortField = 'created_at',
+	sortDir: 'asc' | 'desc' = 'desc'
 ) => {
 	const { data, isLoading } = useQuery({
-		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly],
+		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir],
 		queryFn: () =>
-			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly),
+			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir),
 	});
 
 	return {

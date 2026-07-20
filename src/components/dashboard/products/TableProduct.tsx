@@ -22,24 +22,29 @@ import { Loader } from '../../shared/Loader';
 import { formatDate, formatPrice, salePrice, mlMarginFor, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
 import { getMlPricingConfig } from '../../../actions/ml-pricing';
 import type { MlAttrInput, MlMissingAttr } from '../../../actions/ml';
+import type { AdminSortField } from '../../../actions/product';
 import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
 import { MlPublishAttributesModal } from './MlPublishAttributesModal';
 
-const tableHeaders = [
-  '',
-  'Nombre',
-  'Origen',
-  'Marca',
-  'Categoría',
-  'Costo CDR',
-  'Precio Web',
-  'Precio ML',
-  'Stock',
-  'Estado',
-  'Listo ML',
-  'Fecha',
-  '',
+// `sort` marca las columnas clickeables para ordenar. Las que no lo tienen no son
+// ordenables a nivel base: "Precio Web" y "Precio ML" se calculan aplicando márgenes
+// por tramo/categoría sobre el costo, así que ordenar por costo NO daría el mismo
+// orden y el control mentiría.
+const tableHeaders: { label: string; sort?: AdminSortField }[] = [
+  { label: '' },
+  { label: 'Nombre', sort: 'name' },
+  { label: 'Origen' },
+  { label: 'Marca' },
+  { label: 'Categoría' },
+  { label: 'Costo CDR', sort: 'price' },
+  { label: 'Precio Web' },
+  { label: 'Precio ML' },
+  { label: 'Stock', sort: 'stock' },
+  { label: 'Estado', sort: 'active' },
+  { label: 'Listo ML', sort: 'ml_ready' },
+  { label: 'Fecha', sort: 'created_at' },
+  { label: '' },
 ];
 
 export const TableProduct = () => {
@@ -68,10 +73,23 @@ export const TableProduct = () => {
   const [minReadiness, setMinReadiness] = useState<number>(
     Number(searchParams.get('listo')) || 0
   );
-  // Ordenamiento client-side de la página cargada. '' = orden por defecto del
-  // servidor (created_at desc). "stock" es la SUMA del stock de las variantes.
-  const [sortBy, setSortBy] = useState<'' | 'stock' | 'estado' | 'fecha' | 'ml'>('');
+  // Ordenamiento SERVER-SIDE: se clickea el encabezado de la columna y ordena todo el
+  // catálogo (no sólo la página visible). Primer click = descendente (mayor a menor),
+  // segundo click = ascendente.
+  const [sortBy, setSortBy] = useState<AdminSortField>('created_at');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // Click en encabezado: si es la columna activa invierte el sentido, si no la activa
+  // arrancando de mayor a menor. Siempre vuelve a la página 1 (el orden cambió entero).
+  const toggleSort = (field: AdminSortField) => {
+    if (sortBy === field) {
+      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
+    } else {
+      setSortBy(field);
+      setSortDir('desc');
+    }
+    setPage(1);
+  };
 
   // Si vienen filtros por query string (ej desde /dashboard/cdr), persistirlos en estado
   useEffect(() => {
@@ -113,7 +131,9 @@ export const TableProduct = () => {
     newOnly,
     mlFilter,
     minReadiness,
-    contentDirtyOnly
+    contentDirtyOnly,
+    sortBy,
+    sortDir
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -187,31 +207,9 @@ export const TableProduct = () => {
   const totalStock = (p: any) =>
     (p.variants ?? []).reduce((sum: number, v: any) => sum + (v?.stock ?? 0), 0);
 
-  // Ordena la página cargada según el criterio elegido. Sin criterio, respeta el
-  // orden que devuelve el servidor (created_at desc).
-  const displayedProducts = (() => {
-    if (!sortBy) return products;
-    const dir = sortDir === 'asc' ? 1 : -1;
-    const compare = (a: any, b: any) => {
-      switch (sortBy) {
-        case 'stock':
-          return (totalStock(a) - totalStock(b)) * dir;
-        case 'estado':
-          return ((a.active ? 1 : 0) - (b.active ? 1 : 0)) * dir;
-        case 'fecha':
-          return (
-            (new Date(a.created_at).getTime() - new Date(b.created_at).getTime()) * dir
-          );
-        case 'ml':
-          return (
-            ((a.ml_ready_percent ?? -1) - (b.ml_ready_percent ?? -1)) * dir
-          );
-        default:
-          return 0;
-      }
-    };
-    return [...products].sort(compare);
-  })();
+  // El orden ya viene resuelto por la base (products.total_stock, price_usd, etc.),
+  // así que la tabla renderiza tal cual lo que devuelve el servidor.
+  const displayedProducts = products;
 
   return (
     <div className="flex flex-col flex-1 border border-ink-200/70 rounded-2xl p-5 bg-white shadow-soft">
@@ -330,33 +328,9 @@ export const TableProduct = () => {
             <option value={100}>100% (listos para publicar)</option>
           </select>
 
-          <select
-            value={sortBy}
-            onChange={(e) =>
-              setSortBy(e.target.value as '' | 'stock' | 'estado' | 'fecha' | 'ml')
-            }
-            className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
-            title="Ordenar los productos de esta página"
-          >
-            <option value="">Ordenar por…</option>
-            <option value="stock">Stock</option>
-            <option value="estado">Estado</option>
-            <option value="fecha">Fecha</option>
-            <option value="ml">Listo ML</option>
-          </select>
+          {/* El orden ahora se maneja clickeando el encabezado de cada columna. */}
 
-          {sortBy && (
-            <button
-              type="button"
-              onClick={() => setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
-              className="inline-flex items-center gap-1 whitespace-nowrap rounded-lg border border-ink-300 px-3 py-2 text-sm font-semibold text-ink-700 transition-all hover:bg-ink-50"
-              title={sortDir === 'asc' ? 'Ascendente' : 'Descendente'}
-            >
-              {sortDir === 'asc' ? '↑ Ascendente' : '↓ Descendente'}
-            </button>
-          )}
-
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || sortBy) && (
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || sortBy !== 'created_at' || sortDir !== 'desc') && (
             <button
               type="button"
               onClick={() => {
@@ -368,7 +342,7 @@ export const TableProduct = () => {
                 setMlFilter('');
                 setMinReadiness(0);
                 setContentDirtyOnly(false);
-                setSortBy('');
+                setSortBy('created_at');
                 setSortDir('desc');
                 setSearchParams({}, { replace: true });
                 setPage(1);
@@ -479,7 +453,32 @@ export const TableProduct = () => {
             <tr className="text-sm font-bold">
               {tableHeaders.map((header, index) => (
                 <th key={index} className="h-12 px-4 text-left">
-                  {header}
+                  {header.sort ? (
+                    <button
+                      type="button"
+                      onClick={() => toggleSort(header.sort!)}
+                      aria-sort={
+                        sortBy === header.sort
+                          ? sortDir === 'asc' ? 'ascending' : 'descending'
+                          : 'none'
+                      }
+                      title={
+                        sortBy === header.sort
+                          ? `Ordenado ${sortDir === 'desc' ? 'de mayor a menor' : 'de menor a mayor'} — click para invertir`
+                          : `Ordenar por ${header.label.toLowerCase()}`
+                      }
+                      className={`group inline-flex items-center gap-1 rounded transition-colors hover:text-brand-700 ${
+                        sortBy === header.sort ? 'text-brand-700' : 'text-ink-900'
+                      }`}
+                    >
+                      {header.label}
+                      <span className={`text-[10px] leading-none ${sortBy === header.sort ? 'opacity-100' : 'opacity-30 group-hover:opacity-60'}`}>
+                        {sortBy === header.sort ? (sortDir === 'desc' ? '▼' : '▲') : '↕'}
+                      </span>
+                    </button>
+                  ) : (
+                    header.label
+                  )}
                 </th>
               ))}
             </tr>
@@ -568,9 +567,10 @@ export const TableProduct = () => {
                     )}
                   </td>
                   <PriceCellsForProduct product={product} mlCfg={mlCfg} />
-                  <CellTableProduct
-                    content={(selectedVariant.stock || 0).toString()}
-                  />
+                  {/* Stock TOTAL (suma de variantes), que es por lo que ordena la
+                      columna. Antes mostraba sólo la 1ª variante y con productos
+                      multi-variante el orden parecía equivocado. */}
+                  <CellTableProduct content={totalStock(product).toString()} />
                   <td className="p-4 align-middle">
                     {product.active ? (
                       <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
