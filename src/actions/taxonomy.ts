@@ -129,9 +129,20 @@ export const createSubcategory = async ({
 	name: string;
 	category_id: string;
 }): Promise<Subcategory> => {
+	// sort_order tiene default 0 en la base, así que sin esto toda subcategoría nueva
+	// se colaba PRIMERA en el menú del navbar. La mandamos al final (max + 1).
+	const { data: last } = await supabase
+		.from('subcategories')
+		.select('sort_order')
+		.eq('category_id', category_id)
+		.order('sort_order', { ascending: false })
+		.limit(1)
+		.maybeSingle();
+	const nextOrder = Number((last as { sort_order?: number } | null)?.sort_order ?? 0) + 1;
+
 	const { data, error } = await supabase
 		.from('subcategories')
-		.insert({ name, category_id })
+		.insert({ name, category_id, sort_order: nextOrder } as never)
 		.select('id, name, category_id')
 		.single();
 	if (error) throw new Error(error.message);

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
 	HiOutlinePlus,
 	HiOutlineTrash,
@@ -21,6 +22,7 @@ import {
 	type HomeBlockType,
 	type ProductSource,
 } from '../../actions';
+import { reorderSubcategories } from '../../actions/taxonomy';
 import { useHomeConfig, useUpdateHomeConfig, useTaxonomies } from '../../hooks';
 
 /* ------------------------------------------------------------------ */
@@ -91,18 +93,43 @@ const BLOCK_LABELS: Record<HomeBlockType, string> = {
 const NavFeaturedBlock = ({
 	initial,
 	categories,
+	subcategories,
 	onSave,
+	onReorderSubs,
+	reorderingSubs,
 	saving,
 }: {
 	initial: string[];
 	categories: { id: string; name: string }[];
+	subcategories: { id: string; name: string; category_id: string }[];
 	onSave: (ids: string[]) => void;
+	onReorderSubs: (orderedIds: string[]) => void;
+	reorderingSubs: boolean;
 	saving: boolean;
 }) => {
 	const [ids, setIds] = useState<string[]>(initial);
 	const [toAdd, setToAdd] = useState('');
+	// Categoría desplegada para ver/ordenar sus subcategorías.
+	const [openCatId, setOpenCatId] = useState<string | null>(null);
 
 	useEffect(() => setIds(initial), [initial]);
+
+	// subcategories ya viene ordenado por sort_order desde el server, así que sólo
+	// filtramos por categoría y respetamos ese orden.
+	const subsOf = (catId: string) =>
+		subcategories.filter(s => s.category_id === catId);
+
+	// El orden de subcategorías es GLOBAL (columna subcategories.sort_order), no parte
+	// de home_config: se guarda solo al tocar la flecha y es el mismo que usa el menú
+	// del navbar y la página de Taxonomías.
+	const moveSub = (catId: string, idx: number, dir: -1 | 1) => {
+		const subs = subsOf(catId);
+		const j = idx + dir;
+		if (j < 0 || j >= subs.length) return;
+		const next = [...subs];
+		[next[idx], next[j]] = [next[j], next[idx]];
+		onReorderSubs(next.map(s => s.id));
+	};
 
 	const nameOf = (id: string) =>
 		categories.find(c => c.id === id)?.name ?? '(categoría eliminada)';
@@ -154,27 +181,84 @@ const NavFeaturedBlock = ({
 			</div>
 
 			<ul className='mt-4 space-y-1.5'>
-				{ids.map((id, idx) => (
-					<li
-						key={id}
-						className='flex items-center gap-2 rounded-lg border border-ink-100 p-2'
-					>
-						<span className='flex-1 truncate text-sm text-ink-700'>
-							{nameOf(id)}
-						</span>
-						<div className='flex items-center gap-0.5'>
-							<MoveButtons idx={idx} total={ids.length} onMove={move} />
-							<button
-								type='button'
-								onClick={() => remove(id)}
-								className='grid h-8 w-8 place-items-center rounded-md text-ink-400 hover:bg-rose-50 hover:text-rose-600'
-								title='Quitar'
-							>
-								<HiOutlineTrash size={16} />
-							</button>
-						</div>
-					</li>
-				))}
+				{ids.map((id, idx) => {
+					const subs = subsOf(id);
+					const open = openCatId === id;
+					return (
+						<li key={id} className='rounded-lg border border-ink-100'>
+							<div className='flex items-center gap-2 p-2'>
+								<button
+									type='button'
+									onClick={() => setOpenCatId(open ? null : id)}
+									className={iconBtnClass}
+									title={open ? 'Ocultar subcategorías' : 'Ver subcategorías'}
+								>
+									<HiOutlineChevronUp
+										size={16}
+										className={`transition-transform ${open ? '' : 'rotate-180'}`}
+									/>
+								</button>
+								<span className='flex-1 truncate text-sm text-ink-700'>
+									{nameOf(id)}
+									<span className='ml-2 text-xs text-ink-400'>
+										{subs.length === 0
+											? 'sin subcategorías'
+											: `${subs.length} subcategoría${subs.length === 1 ? '' : 's'}`}
+									</span>
+								</span>
+								<div className='flex items-center gap-0.5'>
+									<MoveButtons idx={idx} total={ids.length} onMove={move} />
+									<button
+										type='button'
+										onClick={() => remove(id)}
+										className='grid h-8 w-8 place-items-center rounded-md text-ink-400 hover:bg-rose-50 hover:text-rose-600'
+										title='Quitar'
+									>
+										<HiOutlineTrash size={16} />
+									</button>
+								</div>
+							</div>
+
+							{open && (
+								<div className='border-t border-ink-100 bg-ink-50/50 px-2 py-2 pl-11'>
+									{subs.length === 0 ? (
+										<p className='py-2 text-xs text-ink-400'>
+											Esta categoría no tiene subcategorías.
+										</p>
+									) : (
+										<>
+											<p className='mb-1.5 text-[11px] text-ink-500'>
+												Orden en que aparecen dentro del menú. Se guarda solo.
+											</p>
+											<ul className='space-y-1'>
+												{subs.map((s, sIdx) => (
+													<li
+														key={s.id}
+														className='flex items-center gap-2 rounded-md border border-ink-100 bg-white px-2 py-1'
+													>
+														<span className='flex-1 truncate text-xs text-ink-600'>
+															{s.name}
+														</span>
+														<fieldset
+															disabled={reorderingSubs}
+															className='flex items-center gap-0.5 border-0 p-0'
+														>
+															<MoveButtons
+																idx={sIdx}
+																total={subs.length}
+																onMove={(i, dir) => moveSub(id, i, dir)}
+															/>
+														</fieldset>
+													</li>
+												))}
+											</ul>
+										</>
+									)}
+								</div>
+							)}
+						</li>
+					);
+				})}
 				{ids.length === 0 && (
 					<li className='py-6 text-center text-xs text-ink-400'>
 						Sin categorías destacadas.
@@ -963,8 +1047,25 @@ const BlockRow = ({
 
 export const DashboardHomeConfigPage = () => {
 	const { config, isLoading } = useHomeConfig();
-	const { categories } = useTaxonomies();
+	const { categories, subcategories } = useTaxonomies();
 	const update = useUpdateHomeConfig();
+	const queryClient = useQueryClient();
+
+	// Reordenar subcategorías escribe en subcategories.sort_order (orden global,
+	// compartido con el navbar y con /dashboard/taxonomias), no en home_config.
+	const reorderSubs = useMutation({
+		mutationFn: reorderSubcategories,
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ['subcategories'] });
+			toast.success('Orden de subcategorías actualizado', {
+				position: 'bottom-right',
+			});
+		},
+		onError: (e: Error) =>
+			toast.error(e.message || 'No se pudo guardar el orden', {
+				position: 'bottom-right',
+			}),
+	});
 
 	const [layout, setLayout] = useState<HomeBlock[]>(config.layout);
 	const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1024,8 +1125,11 @@ export const DashboardHomeConfigPage = () => {
 			<NavFeaturedBlock
 				initial={config.nav_featured}
 				categories={categories}
+				subcategories={subcategories}
 				saving={update.isPending}
 				onSave={ids => update.mutate({ nav_featured: ids })}
+				onReorderSubs={ids => reorderSubs.mutate(ids)}
+				reorderingSubs={reorderSubs.isPending}
 			/>
 
 			{/* Constructor de secciones */}

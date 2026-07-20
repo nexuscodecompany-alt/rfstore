@@ -145,7 +145,8 @@
       "Bash(cp \"/c/Users/Admin/Downloads/ezviz.png\"     public/img/brands/ezviz.png)",
       "Bash(cp \"/c/Users/Admin/Downloads/xiaomi.png\"    public/img/brands/xiaomi.png)",
       "Bash(cp \"/c/Users/Admin/Downloads/bambulabs.png\" public/img/brands/bambulab.png)",
-      "Bash(npx supabase *)"
+      "Bash(npx supabase *)",
+      "Bash(grep -v '^$')"
     ]
   }
 }
