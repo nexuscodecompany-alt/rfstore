@@ -15,6 +15,9 @@ import {
 	uploadHomeImage,
 	searchProducts,
 	getProductsByIds,
+	getHomeSectionIds,
+	updateHomeSectionIds,
+	type HomeSectionKey,
 	type HomeSlide,
 	type HomeCategoryTile,
 	type HomeBanner3D,
@@ -844,6 +847,71 @@ const ProductPicker = ({
 };
 
 /* ================================================================== */
+/*  Selección manual de las secciones automáticas (vitrina).          */
+/*  Edita app_settings.home_recent / home_featured: si hay productos  */
+/*  elegidos la home muestra esos; si la lista queda vacía, es        */
+/*  automático (igual que la vieja página /dashboard/vitrina).        */
+/* ================================================================== */
+
+const AutoSectionPicker = ({ source }: { source: 'recent' | 'featured' }) => {
+	const key: HomeSectionKey =
+		source === 'recent' ? 'home_recent' : 'home_featured';
+	const qc = useQueryClient();
+
+	const { data: savedIds = [], isLoading } = useQuery({
+		queryKey: ['home-section-ids', key],
+		queryFn: () => getHomeSectionIds(key),
+	});
+
+	// null = sin cambios locales (mostrar lo guardado).
+	const [draft, setDraft] = useState<string[] | null>(null);
+	const ids = draft ?? savedIds;
+	const dirty = draft !== null;
+
+	const save = useMutation({
+		mutationFn: () => updateHomeSectionIds(key, ids),
+		onSuccess: () => {
+			qc.invalidateQueries({ queryKey: ['home-section-ids', key] });
+			qc.invalidateQueries({ queryKey: ['home-sections'] });
+			setDraft(null);
+			toast.success('Selección guardada', { position: 'bottom-right' });
+		},
+		onError: (e: Error) =>
+			toast.error(e.message || 'No se pudo guardar la selección', {
+				position: 'bottom-right',
+			}),
+	});
+
+	if (isLoading) {
+		return <p className='text-xs text-ink-400'>Cargando selección…</p>;
+	}
+
+	return (
+		<div className='rounded-lg border border-ink-100 p-3'>
+			<p className='mb-1 text-xs font-medium text-ink-500'>
+				Productos de la vitrina
+			</p>
+			<p className='mb-2 text-xs text-ink-400'>
+				Elegí a mano qué productos se muestran en esta sección. Si dejás la
+				lista vacía, se completa de forma automática.
+			</p>
+			<ProductPicker ids={ids} onChange={setDraft} />
+			<div className='mt-3 flex justify-end border-t border-ink-100 pt-3'>
+				<button
+					type='button'
+					onClick={() => save.mutate()}
+					disabled={!dirty || save.isPending}
+					className={primaryBtn}
+				>
+					{save.isPending && <Spinner />}
+					Guardar selección
+				</button>
+			</div>
+		</div>
+	);
+};
+
+/* ================================================================== */
 /*  Fila de bloque dentro de la lista "Secciones de la home"          */
 /* ================================================================== */
 
@@ -1019,10 +1087,15 @@ const BlockRow = ({
 								</div>
 							)}
 
+							{(block.source === 'recent' || block.source === 'featured') && (
+								<AutoSectionPicker source={block.source} />
+							)}
+
 							<div className='flex items-center justify-between border-t border-ink-100 pt-3'>
 								<p className='text-xs text-ink-400'>
-									Nombre, subtítulo, origen y selección se guardan con “Guardar
-									cambios”.
+									{(block.source ?? 'manual') === 'manual'
+										? 'Nombre, subtítulo, origen y selección se guardan con “Guardar cambios”.'
+										: 'Nombre, subtítulo y origen se guardan con “Guardar cambios”. Los productos de la vitrina se guardan con “Guardar selección”.'}
 								</p>
 								<button
 									type='button'

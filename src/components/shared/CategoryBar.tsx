@@ -147,7 +147,7 @@ export const CategoryBar = () => {
 							>
 								<Link
 									to={catLink(cat.id)}
-									className={`flex items-center gap-1 rounded-md px-3 py-2.5 text-sm font-medium uppercase tracking-wide transition-colors ${
+									className={`flex items-center gap-1 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
 										openKey === cat.id
 											? 'text-white'
 											: 'text-white/80 hover:text-white'

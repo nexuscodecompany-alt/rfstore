@@ -146,7 +146,8 @@
       "Bash(cp \"/c/Users/Admin/Downloads/xiaomi.png\"    public/img/brands/xiaomi.png)",
       "Bash(cp \"/c/Users/Admin/Downloads/bambulabs.png\" public/img/brands/bambulab.png)",
       "Bash(npx supabase *)",
-      "Bash(grep -v '^$')"
+      "Bash(grep -v '^$')",
+      "PowerShell(npx tsc --noEmit 2>$null | Select-Object -First 30)"
     ]
   }
 }
