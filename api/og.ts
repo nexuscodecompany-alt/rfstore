@@ -27,12 +27,15 @@ const escapeHtml = (s: string) =>
 		.replace(/'/g, '&#39;');
 
 // Extrae texto plano de un documento TipTap (jsonb) para la descripción.
+// Los productos de CDR guardan la descripción como nodo {type:'html', html:'...'},
+// así que también hay que leer node.html (si no, la descripción salía vacía).
 const tiptapText = (node: any): string => {
 	if (!node) return '';
 	if (typeof node === 'string') return node;
 	if (Array.isArray(node)) return node.map(tiptapText).join(' ');
 	let out = '';
 	if (node.text) out += node.text;
+	if (node.html) out += ' ' + stripHtml(String(node.html));
 	if (node.content) out += ' ' + tiptapText(node.content);
 	return out;
 };
@@ -138,8 +141,9 @@ export default async function handler(request: Request): Promise<Response> {
 			`products?slug=eq.${encodeURIComponent(slug)}&select=name,images,description&limit=1`
 		);
 		if (!p) return fallback();
+		// trim: si la descripción queda en solo espacios, usar el copy de fallback
 		const desc =
-			clamp(tiptapText(p.description)) ||
+			clamp(tiptapText(p.description).replace(/\s+/g, ' ').trim()) ||
 			`Comprá ${p.name} en ${SITE_NAME}. Envíos a todo Uruguay.`;
 		const image = Array.isArray(p.images) && p.images[0] ? p.images[0] : '';
 		return html(
