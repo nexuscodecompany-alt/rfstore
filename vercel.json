@@ -31,6 +31,7 @@
       "destination": "/index.html"
     }
   ],
+  "trailingSlash": false,
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite"
