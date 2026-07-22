@@ -46,12 +46,15 @@ const CategoryPill = ({
 );
 
 export const CellPhonesPage = () => {
-	// Parámetros iniciales desde la URL: ?q= (búsqueda), ?category= y ?subcategory=
-	// (llegadas desde el buscador / mega-menú / tiles del header).
+	// Parámetros iniciales desde la URL: ?q= (búsqueda), ?category=, ?subcategory=
+	// y ?brand= (llegadas desde el buscador / mega-menú / tiles del header o links
+	// de publicidad). category/subcategory/brand aceptan id O nombre (ej.
+	// /tienda?category=notebooks&brand=asus) para que los links de ads sean legibles.
 	const [searchParams] = useSearchParams();
 	const qParam = searchParams.get('q') ?? '';
 	const catParam = searchParams.get('category') ?? '';
 	const subParam = searchParams.get('subcategory') ?? '';
+	const brandParam = searchParams.get('brand') ?? '';
 
 	const [page, setPage] = useState(1);
 	const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
@@ -72,14 +75,36 @@ export const CellPhonesPage = () => {
 		setSearchTerm(qParam);
 	}, [qParam]);
 
-	// Si cambian ?category= / ?subcategory= (navegación desde el header/tiles), sincronizar.
-	useEffect(() => {
-		setSelectedCategories(catParam ? [catParam] : []);
-		setSelectedSubcategories(subParam ? [subParam] : []);
-		setNewArrivalsOnly(false);
-	}, [catParam, subParam]);
+	const { categories, subcategories, brands } = useTaxonomies();
 
-	const { categories, subcategories } = useTaxonomies();
+	// Normaliza para comparar nombres llegados por URL: minúsculas y sin acentos.
+	const norm = (s: string) =>
+		s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+	// Acepta id o nombre exacto (case/acentos-insensitive). Si la lista todavía no
+	// cargó o no hay match, devuelve el valor tal cual (compat con los links por id).
+	const resolveId = (param: string, list: { id: string; name: string }[]) => {
+		if (!param) return '';
+		if (list.some(x => x.id === param)) return param;
+		return list.find(x => norm(x.name) === norm(param))?.id ?? param;
+	};
+
+	// Si cambian ?category= / ?subcategory= (navegación desde el header/tiles), sincronizar.
+	// También re-resuelve cuando cargan las taxonomías (para los links por nombre).
+	useEffect(() => {
+		setSelectedCategories(catParam ? [resolveId(catParam, categories)] : []);
+		setSelectedSubcategories(subParam ? [resolveId(subParam, subcategories)] : []);
+		setNewArrivalsOnly(false);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [catParam, subParam, categories, subcategories]);
+
+	// ?brand= (id o nombre) — para links de publicidad tipo /tienda?category=notebooks&brand=asus.
+	// Sólo aplica cuando viene el parámetro: no pisa el filtrado manual del usuario.
+	useEffect(() => {
+		if (!brandParam) return;
+		setSelectedBrands([resolveId(brandParam, brands)]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [brandParam, brands]);
 
 	useEffect(() => {
 		setPage(1);
