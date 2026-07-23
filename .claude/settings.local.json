@@ -158,7 +158,8 @@
       "PowerShell(npx tsc --noEmit -p tsconfig.json 2>$null; echo \"exit=$LASTEXITCODE\")",
       "PowerShell($dir = \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Admin-Desktop-NexusCode-Proyectos-rfstore\\\\ea55f96c-c35c-4e6c-b248-ec323128eafb\\\\scratchpad\"; $urls = @\\(\"https://bwjptocnkqedakdibosu.supabase.co/storage/v1/object/public/product-images/home/0e9b3d7b-2dec-4581-945a-346b7e16a93b.jpeg\",\"https://bwjptocnkqedakdibosu.supabase.co/storage/v1/object/public/product-images/home/86318ae3-f7cf-408f-a7e5-47f26630f4df.jpeg\",\"https://bwjptocnkqedakdibosu.supabase.co/storage/v1/object/public/product-images/home/4836a04d-0a4e-45bc-8474-356cb627924d.jpeg\"\\); Add-Type -AssemblyName System.Drawing; $i=0; foreach \\($u in $urls\\) { $f = Join-Path $dir \"slide$i.jpeg\"; Invoke-WebRequest -Uri $u -OutFile $f -UseBasicParsing; $img=[System.Drawing.Image]::FromFile\\($f\\); \"slide$i : $\\($img.Width\\) x $\\($img.Height\\)  \\(ratio $\\([math]::Round\\($img.Width/$img.Height,2\\)\\)\\)\"; $img.Dispose\\(\\); $i++ })",
       "PowerShell($dir = \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Admin-Desktop-NexusCode-Proyectos-rfstore\\\\ea55f96c-c35c-4e6c-b248-ec323128eafb\\\\scratchpad\"; Invoke-WebRequest -Uri \"https://bwjptocnkqedakdibosu.supabase.co/storage/v1/object/public/cdr-images/NOT3371/0.jpg\" -OutFile \"$dir\\\\mac-air.jpg\" -UseBasicParsing; Invoke-WebRequest -Uri \"https://bwjptocnkqedakdibosu.supabase.co/storage/v1/object/public/cdr-images/NOT3274/0.jpg\" -OutFile \"$dir\\\\mac-pro.jpg\" -UseBasicParsing; echo done)",
-      "PowerShell(Copy-Item *)"
+      "PowerShell(Copy-Item *)",
+      "PowerShell(npx tsc --noEmit 2>$null; echo \"exit: $LASTEXITCODE\")"
     ]
   }
 }

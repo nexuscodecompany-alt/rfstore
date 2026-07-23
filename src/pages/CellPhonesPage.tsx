@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { HiOutlineArrowDown, HiOutlineArrowUp, HiOutlineSearch } from 'react-icons/hi';
+import { HiOutlineArrowDown, HiOutlineArrowUp, HiOutlineSearch, HiOutlineSparkles } from 'react-icons/hi';
 import { CardProduct } from '../components/products/CardProduct';
 import { ContainerFilter } from '../components/products/ContainerFilter';
 import { prepareProducts } from '../helpers';
@@ -67,9 +67,9 @@ export const CellPhonesPage = () => {
 	const [priceMin, setPriceMin] = useState<number | undefined>(undefined);
 	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
 	const [searchTerm, setSearchTerm] = useState(qParam);
-	// Orden estándar: menor precio primero (pedido del cliente). El usuario
-	// puede cambiarlo con los botones de orden.
-	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>('asc');
+	// Orden por defecto: "Destacados" (featured_score: marcas top entreveradas,
+	// más vendidos primero). Menor/mayor precio SOLO si el usuario lo elige.
+	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
 	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
 
 	// Si cambia el ?q= (otra búsqueda desde el header estando ya en la tienda), sincronizar.
@@ -108,10 +108,10 @@ export const CellPhonesPage = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [brandParam, brands]);
 
-	// Al navegar a un link con filtros (banner del hero, tiles, menú), volver al
-	// orden estándar: menor precio primero.
+	// Al navegar (banner del hero, tiles, menú, con o sin filtros), volver al
+	// orden por defecto: Destacados.
 	useEffect(() => {
-		if (catParam || subParam || brandParam) setSortOrder('asc');
+		setSortOrder(undefined);
 	}, [catParam, subParam, brandParam]);
 
 	useEffect(() => {
@@ -258,6 +258,17 @@ export const CellPhonesPage = () => {
 				</div>
 
 				<div className='inline-flex items-center gap-1 p-1 bg-ink-100 rounded-lg border border-ink-200/70'>
+					<button
+						onClick={() => setSortOrder(undefined)}
+						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+							sortOrder === undefined
+								? 'bg-white text-ink-900 shadow-soft'
+								: 'text-ink-500 hover:text-ink-900'
+						}`}
+					>
+						<HiOutlineSparkles />
+						Destacados
+					</button>
 					<button
 						onClick={() => setSortOrder('desc')}
 						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
