@@ -27,7 +27,7 @@ export const Banner3D = () => {
 						src={b.image}
 						alt={b.title || 'Impresión 3D'}
 						loading='lazy'
-						className='block h-[320px] w-full object-cover object-center md:h-[460px]'
+						className='block h-auto w-full md:h-[460px] md:object-cover md:object-center'
 					/>
 				) : (
 					<div className='relative h-[320px] w-full bg-gradient-to-br from-brand-600 via-brand-800 to-ink-900 md:h-[460px]'>
@@ -40,9 +40,9 @@ export const Banner3D = () => {
 				{hasOverlay && (
 					<>
 						<div className='absolute inset-0 bg-gradient-to-r from-ink-900/80 via-ink-900/40 to-transparent' />
-						<div className='absolute inset-0 flex flex-col justify-center gap-3 p-8 md:p-12'>
+						<div className='absolute inset-0 flex flex-col justify-center gap-2 p-5 md:gap-3 md:p-12'>
 							{b.title && (
-								<h2 className='max-w-md text-2xl font-bold text-white md:text-4xl'>
+								<h2 className='max-w-md text-xl font-bold text-white md:text-4xl'>
 									{b.title}
 								</h2>
 							)}

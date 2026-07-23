@@ -8,7 +8,9 @@ import { supabase } from '../supabase/client';
 
 export interface HomeSlide {
 	id: string;
-	image: string;
+	image: string; // versión desktop (1920×700)
+	/** Versión mobile (800×400). Si falta, se usa `image` también en mobile. */
+	image_mobile?: string;
 	link: string; // a dónde lleva el slide (ej. /tienda?category=<id>)
 	alt: string;
 }

@@ -351,6 +351,12 @@ const HeroSlidesEditor = ({
 					}}
 				/>
 			</label>
+			<p className='mt-1.5 text-[11px] text-ink-500'>
+				Medidas: <strong>1920 × 700 px</strong> (desktop) y{' '}
+				<strong>800 × 400 px</strong> (mobile, opcional — si falta se usa la de
+				desktop). Usá las mismas medidas en todos los slides para que se vean
+				parejos y sin deformar.
+			</p>
 
 			<ul className='mt-4 space-y-3'>
 				{slides.map((s, idx) => (
@@ -358,11 +364,33 @@ const HeroSlidesEditor = ({
 						key={s.id}
 						className='flex gap-3 rounded-lg border border-ink-100 p-3'
 					>
-						<img
-							src={s.image}
-							alt={s.alt}
-							className='h-20 w-32 shrink-0 rounded-md border border-ink-100 object-cover'
-						/>
+						<div className='flex shrink-0 flex-col items-center gap-1'>
+							<img
+								src={s.image}
+								alt={s.alt}
+								className='h-20 w-32 rounded-md border border-ink-100 object-cover'
+							/>
+							<label className='flex cursor-pointer items-center gap-1 text-[11px] font-medium text-brand-600 hover:underline'>
+								<HiOutlinePhoto size={12} />
+								{s.image_mobile ? 'Mobile ✓ (cambiar)' : 'Subir versión mobile'}
+								<input
+									type='file'
+									accept='image/*'
+									className='hidden'
+									onChange={async e => {
+										const f = e.target.files?.[0];
+										e.target.value = '';
+										if (!f) return;
+										try {
+											const url = await uploadHomeImage(f);
+											patch(idx, { image_mobile: url });
+										} catch (err) {
+											console.error('uploadHomeImage:', err);
+										}
+									}}
+								/>
+							</label>
+						</div>
 						<div className='flex-1 space-y-2'>
 							<div>
 								<label className='mb-1 block text-xs font-medium text-ink-500'>

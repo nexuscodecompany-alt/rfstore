@@ -105,9 +105,9 @@ export const CardProduct = ({
 			</Link>
 
 			{/* INFO */}
-			<div className='flex flex-col gap-2 p-4'>
+			<div className='flex flex-1 flex-col gap-2 p-4'>
 				{(brandName || categoryName) && (
-					<p className='text-[10px] font-semibold tracking-wider uppercase text-brand-700'>
+					<p className='line-clamp-1 text-[10px] font-semibold tracking-wider uppercase text-brand-700'>
 						{brandName || ''}
 						{brandName && categoryName ? ' · ' : ''}
 						{categoryName || ''}
@@ -121,7 +121,7 @@ export const CardProduct = ({
 				</Link>
 
 				<div className='flex items-baseline gap-1.5 pt-1'>
-					<p className='text-base font-bold text-ink-900'>
+					<p className='whitespace-nowrap text-base font-bold text-ink-900'>
 						{formatPrice(displayPrice)}
 					</p>
 					<span className='text-[10px] text-ink-500 font-medium'>
@@ -135,10 +135,17 @@ export const CardProduct = ({
 						<button
 							onClick={handleAddClick}
 							disabled={isOutOfStock}
-							className='w-full inline-flex items-center justify-center gap-2 bg-ink-900 text-white text-xs font-semibold rounded-lg py-2.5 hover:bg-brand-600 transition-colors disabled:bg-ink-300 disabled:cursor-not-allowed'
+							className='w-full inline-flex items-center justify-center gap-1.5 whitespace-nowrap bg-ink-900 text-white text-xs font-semibold rounded-lg py-2.5 hover:bg-brand-600 transition-colors disabled:bg-ink-300 disabled:cursor-not-allowed'
 						>
-							<FiPlus size={16} />
-							{isOutOfStock ? 'Agotado' : 'Agregar al carrito'}
+							<FiPlus size={16} className='shrink-0' />
+							{isOutOfStock ? (
+								'Agotado'
+							) : (
+								<>
+									<span className='sm:hidden'>Agregar</span>
+									<span className='hidden sm:inline'>Agregar al carrito</span>
+								</>
+							)}
 						</button>
 					) : (
 						<a
@@ -146,10 +153,11 @@ export const CardProduct = ({
 							target='_blank'
 							rel='noopener noreferrer'
 							onClick={e => e.stopPropagation()}
-							className='w-full inline-flex items-center justify-center gap-2 bg-[#25D366] text-white text-xs font-semibold rounded-lg py-2.5 hover:bg-[#1ebe5d] transition-colors'
+							className='w-full inline-flex items-center justify-center gap-1.5 whitespace-nowrap bg-[#25D366] text-white text-xs font-semibold rounded-lg py-2.5 hover:bg-[#1ebe5d] transition-colors'
 						>
-							<FaWhatsapp size={16} />
-							Consultar por WhatsApp
+							<FaWhatsapp size={16} className='shrink-0' />
+							<span className='sm:hidden'>Consultar</span>
+							<span className='hidden sm:inline'>Consultar por WhatsApp</span>
 						</a>
 					)}
 				</div>

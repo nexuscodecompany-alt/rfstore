@@ -67,7 +67,9 @@ export const CellPhonesPage = () => {
 	const [priceMin, setPriceMin] = useState<number | undefined>(undefined);
 	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
 	const [searchTerm, setSearchTerm] = useState(qParam);
-	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
+	// Orden estándar: menor precio primero (pedido del cliente). El usuario
+	// puede cambiarlo con los botones de orden.
+	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>('asc');
 	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
 
 	// Si cambia el ?q= (otra búsqueda desde el header estando ya en la tienda), sincronizar.
@@ -105,6 +107,12 @@ export const CellPhonesPage = () => {
 		setSelectedBrands([resolveId(brandParam, brands)]);
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [brandParam, brands]);
+
+	// Al navegar a un link con filtros (banner del hero, tiles, menú), volver al
+	// orden estándar: menor precio primero.
+	useEffect(() => {
+		if (catParam || subParam || brandParam) setSortOrder('asc');
+	}, [catParam, subParam, brandParam]);
 
 	useEffect(() => {
 		setPage(1);
