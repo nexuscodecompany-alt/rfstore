@@ -18,6 +18,7 @@ import { useCounterStore } from "../store/counter.store";
 import { useCartStore } from "../store/cart.store";
 import toast from "react-hot-toast";
 import type { Product } from "../interfaces";
+import { trackViewContent, trackAddToCart } from "../lib/pixel";
 
 export const CellPhonePage = () => {
   const { slug } = useParams<{ slug: string }>();
@@ -46,6 +47,19 @@ export const CellPhonePage = () => {
     resetCounter();
   }, [variant?.id, resetCounter]);
 
+  // Meta Pixel: ViewContent al ver la ficha del producto.
+  useEffect(() => {
+    if (!product || !variant) return;
+    trackViewContent({
+      id: product.id,
+      name: product.name,
+      price: salePrice(variant.price, pricing),
+      category: (product as any).category?.name ?? null,
+    });
+    // Solo cuando cambia el producto mostrado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [product?.id, variant?.id]);
+
   const isCdr = product?.source === 'cdr' && paymentsEnabled;
   const whatsappHref = product
     ? `https://wa.me/59894116299?text=${encodeURIComponent(
@@ -68,6 +82,12 @@ export const CellPhonePage = () => {
       externalCode: product.external_code ?? null,
       stock: variant.stock,
     });
+    trackAddToCart({
+      id: product.id,
+      name: product.name,
+      price: salePrice(variant.price, pricing),
+      quantity: count,
+    });
     toast.success("Producto añadido al carrito", { position: "bottom-right" });
   };
 
@@ -86,6 +106,13 @@ export const CellPhonePage = () => {
       externalCode: product.external_code ?? null,
       stock: variant.stock,
     });
+    trackAddToCart({
+      id: product.id,
+      name: product.name,
+      price: salePrice(variant.price, pricing),
+      quantity: count,
+    });
+    // InitiateCheckout se dispara al montar CheckoutPage (fuente única), no acá.
     navigate("/checkout");
   };
 

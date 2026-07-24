@@ -8,6 +8,7 @@ import {
 	UserRegisterFormValues,
 	userRegisterSchema,
 } from '../lib/validators';
+import { trackCompleteRegistration } from '../lib/pixel';
 
 export const RegisterPage = () => {
 	const {
@@ -30,7 +31,13 @@ export const RegisterPage = () => {
 	const onRegister = handleSubmit(data => {
 		const { email, password, fullName, phone } = data;
 
-		mutate({ email, password, fullName, phone });
+		mutate(
+			{ email, password, fullName, phone },
+			{
+				// Meta Pixel: CompleteRegistration al crear la cuenta con éxito.
+				onSuccess: () => trackCompleteRegistration(),
+			}
+		);
 	});
 
 	if (isLoading) return <Loader />;

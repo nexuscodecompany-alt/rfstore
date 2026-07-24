@@ -10,6 +10,7 @@ import { useCartStore } from '../store/cart.store';
 import toast from 'react-hot-toast';
 import { HiOutlineCloudUpload, HiOutlineMail } from 'react-icons/hi';
 import { FaWhatsapp } from 'react-icons/fa';
+import { trackPurchase } from '../lib/pixel';
 
 interface TransferInfo {
 	banco?: string;
@@ -46,6 +47,24 @@ export const ThankyouPage = () => {
 			}
 		});
 	}, [navigate]);
+
+	// Meta Pixel: Purchase cuando la orden confirmada está cargada.
+	// trackPurchase deduplica por id de orden (no cuenta de más si refrescan).
+	useEffect(() => {
+		if (!data) return;
+		trackPurchase(
+			data.id,
+			data.orderItems.map(item => ({
+				id:
+					(item as any).variantId ??
+					(item as any).productId ??
+					item.productName,
+				quantity: item.quantity,
+				price: item.price,
+			})),
+			data.totalAmount
+		);
+	}, [data]);
 
 	useEffect(() => {
 		if (data?.paymentMethod !== 'transfer') return;

@@ -7,6 +7,7 @@ import { Tag } from '../shared/Tag';
 import { useCartStore } from '../../store/cart.store';
 import { usePaymentsEnabled, usePricingConfig } from '../../hooks';
 import toast from 'react-hot-toast';
+import { trackAddToCart } from '../../lib/pixel';
 
 const WHATSAPP_NUMBER = '59894116299';
 const whatsappLinkFor = (productName: string) =>
@@ -68,6 +69,12 @@ export const CardProduct = ({
 				source: source ?? 'local',
 				externalCode: externalCode ?? null,
 				stock: selectedVariant.stock,
+			});
+			trackAddToCart({
+				id: selectedVariant.id,
+				name,
+				price: salePrice(selectedVariant.price, pricing),
+				quantity: 1,
 			});
 			toast.success('Producto añadido al carrito', {
 				position: 'bottom-right',

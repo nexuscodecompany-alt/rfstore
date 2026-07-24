@@ -6,12 +6,14 @@ import { ItemsCheckout } from '../components/checkout/ItemsCheckout';
 import { ScrollToTop } from '../components/shared/ScrollToTop';
 import { useUser, usePaymentsEnabled } from '../hooks';
 import { Loader } from '../components/shared/Loader';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { supabase } from '../supabase/client';
+import { trackInitiateCheckout } from '../lib/pixel';
 
 export const CheckoutPage = () => {
 	const totalItems = useCartStore(state => state.totalItemsInCart);
 	const cartItems = useCartStore(state => state.items);
+	const totalAmount = useCartStore(state => state.totalAmount);
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
 	const allCdr = paymentsEnabled && cartItems.length > 0 && cartItems.every(i => i.source === 'cdr');
 	const anyCdr = paymentsEnabled && cartItems.some(i => i.source === 'cdr');
@@ -20,6 +22,21 @@ export const CheckoutPage = () => {
 	const { isLoading } = useUser();
 
 	const navigate = useNavigate();
+
+	// Meta Pixel: InitiateCheckout una sola vez al entrar con carrito cargado.
+	const checkoutTracked = useRef(false);
+	useEffect(() => {
+		if (checkoutTracked.current || cartItems.length === 0) return;
+		checkoutTracked.current = true;
+		trackInitiateCheckout(
+			cartItems.map(i => ({
+				id: i.variantId,
+				quantity: i.quantity,
+				price: i.price,
+			})),
+			totalAmount
+		);
+	}, [cartItems, totalAmount]);
 
 	useEffect(() => {
 		supabase.auth.onAuthStateChange(async (event, session) => {

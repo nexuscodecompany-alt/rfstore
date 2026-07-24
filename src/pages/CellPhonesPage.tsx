@@ -70,6 +70,13 @@ export const CellPhonesPage = () => {
 	// Orden por defecto: "Destacados" (featured_score: marcas top entreveradas,
 	// más vendidos primero). Menor/mayor precio SOLO si el usuario lo elige.
 	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
+	// ¿El usuario eligió un orden manualmente? Si NO, y hay filtros MANUALES,
+	// ordenamos por menor precio arriba por defecto (ver effectiveSort).
+	const [manualSort, setManualSort] = useState(false);
+	// ¿El usuario aplicó un filtro tocando la tienda? (pills de categoría,
+	// checkboxes de marca/subcategoría, precio). Los "landings" por link
+	// (?category=/?brand=/?subcategory=) NO cuentan: ahí se mantiene Destacados.
+	const [userFiltered, setUserFiltered] = useState(false);
 	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
 
 	// Si cambia el ?q= (otra búsqueda desde el header estando ya en la tienda), sincronizar.
@@ -108,15 +115,39 @@ export const CellPhonesPage = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [brandParam, brands]);
 
-	// Al navegar (banner del hero, tiles, menú, con o sin filtros), volver al
-	// orden por defecto: Destacados.
+	// Landing por link (banner del hero, tiles, menú, ads con ?category=/?brand=):
+	// NO es un filtro manual -> se mantiene el orden Destacados. Reseteamos el
+	// override de orden y la marca de "filtro manual".
 	useEffect(() => {
 		setSortOrder(undefined);
+		setManualSort(false);
+		setUserFiltered(false);
 	}, [catParam, subParam, brandParam]);
+
+	// ¿El cliente aplicó un filtro manual, o está buscando? La búsqueda cuenta
+	// siempre (la escriba en la tienda o llegue por ?q= del buscador del header).
+	const hasManualFilter = userFiltered || !!searchTerm.trim();
+
+	// Orden efectivo que va a la consulta:
+	//  - Si el usuario eligió un orden con los botones, se respeta ese.
+	//  - Si NO eligió y hay filtro manual/búsqueda -> menor precio arriba ('asc').
+	//  - Resto (vista "Todas" o landing por link) -> Destacados (undefined).
+	const effectiveSort: 'asc' | 'desc' | undefined = manualSort
+		? sortOrder
+		: hasManualFilter
+		? 'asc'
+		: undefined;
+
+	// Cuando cambia un filtro, volvemos al orden automático,
+	// salvo que el usuario vuelva a elegir manualmente. No incluye sortOrder
+	// para no pisar la elección manual del usuario.
+	useEffect(() => {
+		setManualSort(false);
+	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, newArrivalsOnly]);
 
 	useEffect(() => {
 		setPage(1);
-	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, sortOrder, newArrivalsOnly]);
+	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, effectiveSort, newArrivalsOnly]);
 
 	const selectCategory = (id: string) => {
 		// Selección exclusiva: una categoría a la vez en la barra de arriba.
@@ -124,8 +155,10 @@ export const CellPhonesPage = () => {
 		if (selectedCategories.includes(id) && selectedCategories.length === 1) {
 			// Click sobre la misma categoría = volver a "Todas".
 			setSelectedCategories([]);
+			setUserFiltered(false);
 		} else {
 			setSelectedCategories([id]);
+			setUserFiltered(true); // filtro manual -> orden por menor precio
 		}
 		setSelectedSubcategories([]);
 	};
@@ -134,18 +167,21 @@ export const CellPhonesPage = () => {
 		setNewArrivalsOnly(false);
 		setSelectedCategories([]);
 		setSelectedSubcategories([]);
+		setUserFiltered(false); // "Todas" -> vuelve a Destacados
 	};
 
 	const selectNewArrivals = () => {
 		setNewArrivalsOnly(true);
 		setSelectedCategories([]);
 		setSelectedSubcategories([]);
+		setUserFiltered(false);
 	};
 
 	const toggleSubcategory = (id: string) => {
 		setSelectedSubcategories(prev =>
 			prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
 		);
+		setUserFiltered(true); // filtro manual -> orden por menor precio
 	};
 
 	// Sólo mostramos subcategorías cuando hay una categoría seleccionada.
@@ -166,7 +202,7 @@ export const CellPhonesPage = () => {
 		priceMin,
 		priceMax,
 		searchTerm,
-		sortOrder,
+		sortOrder: effectiveSort,
 		newArrivalsOnly,
 	});
 
@@ -259,9 +295,12 @@ export const CellPhonesPage = () => {
 
 				<div className='inline-flex items-center gap-1 p-1 bg-ink-100 rounded-lg border border-ink-200/70'>
 					<button
-						onClick={() => setSortOrder(undefined)}
+						onClick={() => {
+							setManualSort(true);
+							setSortOrder(undefined);
+						}}
 						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-							sortOrder === undefined
+							effectiveSort === undefined
 								? 'bg-white text-ink-900 shadow-soft'
 								: 'text-ink-500 hover:text-ink-900'
 						}`}
@@ -270,9 +309,12 @@ export const CellPhonesPage = () => {
 						Destacados
 					</button>
 					<button
-						onClick={() => setSortOrder('desc')}
+						onClick={() => {
+							setManualSort(true);
+							setSortOrder('desc');
+						}}
 						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-							sortOrder === 'desc'
+							effectiveSort === 'desc'
 								? 'bg-white text-ink-900 shadow-soft'
 								: 'text-ink-500 hover:text-ink-900'
 						}`}
@@ -281,9 +323,12 @@ export const CellPhonesPage = () => {
 						Mayor precio
 					</button>
 					<button
-						onClick={() => setSortOrder('asc')}
+						onClick={() => {
+							setManualSort(true);
+							setSortOrder('asc');
+						}}
 						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
-							sortOrder === 'asc'
+							effectiveSort === 'asc'
 								? 'bg-white text-ink-900 shadow-soft'
 								: 'text-ink-500 hover:text-ink-900'
 						}`}
@@ -306,6 +351,7 @@ export const CellPhonesPage = () => {
 					priceMax={priceMax}
 					setPriceMin={setPriceMin}
 					setPriceMax={setPriceMax}
+					onManualFilter={setUserFiltered}
 				/>
 
 				{isLoading ? (
