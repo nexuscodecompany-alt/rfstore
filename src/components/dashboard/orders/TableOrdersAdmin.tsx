@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { HiChevronRight, HiOutlineShoppingCart } from 'react-icons/hi2';
 import {
@@ -6,22 +7,21 @@ import {
 	formatMoneyCur,
 	orderStatusBadge,
 	orderStatusOptions,
+	isUnpaidMpCheckout,
+	isTrulyAbandoned,
 } from '../../../helpers';
 import { OrderWithCustomer } from '../../../interfaces';
 import { useChangeStatusOrder } from '../../../hooks';
+import { Pagination } from '../../shared/Pagination';
+
+// Órdenes por página en el panel admin.
+const ORDERS_PER_PAGE = 20;
 
 interface Props {
 	orders: OrderWithCustomer[];
 	// Click en una venta manual: la gestiona el contenedor (abre el modal).
 	onManualClick?: (orderId: number) => void;
 }
-
-// Un "checkout sin pagar" es una orden de MercadoPago que NUNCA se pagó: el
-// cliente llegó al pago y no lo completó. NO es una venta — queda solo como
-// registro para seguimiento. (Transferencia/depósito pendientes SÍ son órdenes
-// reales a confirmar a mano, así que NO entran acá.)
-const isUnpaidMpCheckout = (o: OrderWithCustomer): boolean =>
-	o.payment_method === 'mercadopago' && o.payment_status !== 'paid';
 
 const didNotPay = (o: OrderWithCustomer): boolean =>
 	['expirado', 'Cancelado', 'cancelado', 'rechazado'].includes(o.status);
@@ -106,12 +106,28 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 			: goTo(row.rep.id);
 
 	const realOrders = orders.filter(o => !isUnpaidMpCheckout(o));
-	const unpaidCheckouts = orders.filter(isUnpaidMpCheckout);
+	// "Carritos abandonados" REALES: checkouts sin pagar que NO son un reintento
+	// de una compra que el mismo cliente sí completó después. Los reintentos (la
+	// venta real ya figura como orden pagada) se ocultan para no confundir.
+	const unpaidCheckouts = orders.filter(o => isTrulyAbandoned(o, orders));
 
 	// Las ventas de ML "en carrito" (varios productos) llegan partidas en una orden
 	// por producto, todas con el mismo ml_pack_id. Las unimos en UNA fila: total
 	// sumado y los pedidos juntos, para tratarlas como una sola venta.
 	const realRows = groupByPack(realOrders);
+
+	// Paginación de las órdenes reales (client-side: ya vienen todas cargadas).
+	const [page, setPage] = useState(1);
+	const totalPages = Math.max(1, Math.ceil(realRows.length / ORDERS_PER_PAGE));
+	// Si cambia el set de órdenes (p.ej. un filtro), volvemos a la primera página.
+	useEffect(() => {
+		setPage(1);
+	}, [realRows.length]);
+	const safePage = Math.min(page, totalPages);
+	const pagedRows = realRows.slice(
+		(safePage - 1) * ORDERS_PER_PAGE,
+		safePage * ORDERS_PER_PAGE
+	);
 
 	if (!orders.length) {
 		return (
@@ -170,7 +186,7 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 								</tr>
 							</thead>
 							<tbody className='divide-y divide-ink-100'>
-								{realRows.map(row => (
+								{pagedRows.map(row => (
 									<tr
 										key={row.key}
 										className='cursor-pointer transition-colors hover:bg-brand-50/40'
@@ -226,7 +242,7 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 
 					{/* Tarjetas — móvil */}
 					<div className='space-y-3 md:hidden'>
-						{realRows.map(row => (
+						{pagedRows.map(row => (
 							<div
 								key={row.key}
 								className='cursor-pointer rounded-2xl border border-ink-200/70 bg-white p-4 shadow-soft transition-all active:scale-[0.99]'
@@ -275,17 +291,28 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 				</>
 			)}
 
-			{/* ===== Checkouts sin pagar (NO son ventas) ===== */}
+			{/* Paginación de órdenes reales */}
+			{realRows.length > ORDERS_PER_PAGE && (
+				<Pagination
+					totalItems={realRows.length}
+					page={safePage}
+					setPage={setPage}
+					itemsPerPage={ORDERS_PER_PAGE}
+					noun='órdenes'
+				/>
+			)}
+
+			{/* ===== Carritos abandonados (NO son ventas) ===== */}
 			{unpaidCheckouts.length > 0 && (
 				<section className='rounded-2xl border border-dashed border-ink-300 bg-ink-50/50 p-4'>
 					<div className='mb-3 flex items-start gap-2'>
 						<HiOutlineShoppingCart size={20} className='mt-0.5 shrink-0 text-ink-400' />
 						<div>
 							<h2 className='text-sm font-bold text-ink-700'>
-								Checkouts sin pagar ({unpaidCheckouts.length})
+								Carritos abandonados ({unpaidCheckouts.length})
 							</h2>
 							<p className='text-xs text-ink-500'>
-								Llegaron al pago de Mercado Pago pero <b>no lo completaron</b>. No son ventas — quedan solo como registro para seguimiento.
+								Llegaron al pago de Mercado Pago pero <b>no lo completaron</b> y no compraron después. No son ventas — quedan solo como registro para seguimiento.
 							</p>
 						</div>
 					</div>

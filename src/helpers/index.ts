@@ -1,5 +1,44 @@
-import { Color, Product, VariantProduct } from '../interfaces';
+import { Color, OrderWithCustomer, Product, VariantProduct } from '../interfaces';
 import { supabase } from '../supabase/client';
+
+/* ====================================================================== */
+/*  CLASIFICACIÓN DE ÓRDENES (panel admin)                                 */
+/* ====================================================================== */
+
+// Un "checkout sin pagar": orden de Mercado Pago que nunca se pagó. El cliente
+// llegó al pago y no lo completó. NO es una venta.
+export const isUnpaidMpCheckout = (o: OrderWithCustomer): boolean =>
+	o.payment_method === 'mercadopago' && o.payment_status !== 'paid';
+
+// Ventana para considerar que un checkout sin pagar fue en realidad un REINTENTO
+// de una compra que el mismo cliente sí completó después (típicamente minutos).
+const RETRY_WINDOW_MS = 24 * 60 * 60 * 1000; // 24h
+
+// ¿Este checkout sin pagar es un intento previo de una compra que el MISMO
+// cliente sí pagó poco después? Esos NO son abandonos reales (son reintentos):
+// la venta real ya aparece como orden pagada, así que este duplicado se oculta.
+export const isRetryOfPaidOrder = (
+	o: OrderWithCustomer,
+	all: OrderWithCustomer[]
+): boolean => {
+	if (!isUnpaidMpCheckout(o)) return false;
+	if (!o.customer_id) return false;
+	const t = new Date(o.created_at).getTime();
+	return all.some(x => {
+		if (x.id === o.id) return false;
+		if (x.customer_id !== o.customer_id) return false;
+		if (x.payment_status !== 'paid') return false;
+		const tx = new Date(x.created_at).getTime();
+		return tx >= t && tx - t <= RETRY_WINDOW_MS;
+	});
+};
+
+// Abandono REAL: checkout sin pagar y sin una compra pagada posterior del mismo
+// cliente. Es lo que tiene sentido mostrar como "carrito abandonado".
+export const isTrulyAbandoned = (
+	o: OrderWithCustomer,
+	all: OrderWithCustomer[]
+): boolean => isUnpaidMpCheckout(o) && !isRetryOfPaidOrder(o, all);
 
 // Función para formatear el precio a dólares.
 // Sin decimales y redondeado hacia arriba; punto como separador de miles.

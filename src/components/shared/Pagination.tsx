@@ -2,9 +2,19 @@ interface Props {
 	totalItems: number;
 	page: number;
 	setPage: React.Dispatch<React.SetStateAction<number>>;
+	// Cantidad por página (debe coincidir con el page size real). Default 25.
+	itemsPerPage?: number;
+	// Sustantivo que se muestra en "de N ___". Default "productos".
+	noun?: string;
 }
 
-export const Pagination = ({ totalItems, page, setPage }: Props) => {
+export const Pagination = ({
+	totalItems,
+	page,
+	setPage,
+	itemsPerPage = 25,
+	noun = 'productos',
+}: Props) => {
 	const handleNextPage = () => {
 		setPage(page + 1);
 	};
@@ -13,7 +23,6 @@ export const Pagination = ({ totalItems, page, setPage }: Props) => {
 		setPage(prevPage => Math.max(prevPage - 1, 1));
 	};
 
-	const itemsPerPage = 25;
 	const totalPages = totalItems
 		? Math.ceil(totalItems / itemsPerPage)
 		: 1;
@@ -29,7 +38,7 @@ export const Pagination = ({ totalItems, page, setPage }: Props) => {
 				<span className='font-bold'>
 					{startItem} - {endItem}
 				</span>{' '}
-				de <span className='font-bold'> {totalItems}</span> productos
+				de <span className='font-bold'> {totalItems}</span> {noun}
 			</p>
 
 			<div className='flex gap-3'>

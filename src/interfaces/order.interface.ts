@@ -24,6 +24,7 @@ export interface OrderItemSingle {
 
 export interface OrderWithCustomer {
 	id: number;
+	customer_id?: string | null;
 	status: string;
 	total_amount: number;
 	total_original?: number | null;

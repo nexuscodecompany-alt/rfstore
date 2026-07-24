@@ -3,6 +3,7 @@ import { HiOutlinePlus } from 'react-icons/hi2';
 import { TableOrdersAdmin, ManualSaleModal } from '../../components/dashboard';
 import { Loader } from '../../components/shared/Loader';
 import { useAllOrders, useSaleConcepts } from '../../hooks';
+import { isUnpaidMpCheckout, isTrulyAbandoned } from '../../helpers';
 
 export const DashboardOrdersPage = () => {
 	const { data, isLoading } = useAllOrders();
@@ -21,15 +22,12 @@ export const DashboardOrdersPage = () => {
 		  )
 		: data;
 
-	// Los checkouts de MP sin pagar no son ventas: los contamos aparte.
-	const unpaid = filtered.filter(
-		o => o.payment_method === 'mercadopago' && o.payment_status !== 'paid'
-	).length;
+	// Carritos abandonados REALES: checkouts sin pagar que NO son un reintento de
+	// una compra que el mismo cliente sí completó después (esos se ocultan).
+	const unpaid = filtered.filter(o => isTrulyAbandoned(o, filtered)).length;
 	// Una venta ML en carrito (varias órdenes con el mismo ml_pack_id) cuenta como
 	// UNA sola venta, igual que se ve agrupada en la tabla.
-	const realOrders = filtered.filter(
-		o => !(o.payment_method === 'mercadopago' && o.payment_status !== 'paid')
-	);
+	const realOrders = filtered.filter(o => !isUnpaidMpCheckout(o));
 	const packs = new Set<string>();
 	let real = 0;
 	for (const o of realOrders) {
@@ -49,7 +47,7 @@ export const DashboardOrdersPage = () => {
 						{real} {real === 1 ? 'orden' : 'órdenes'}
 						{unpaid > 0 && (
 							<span className='text-ink-400'>
-								{' '}· {unpaid} checkout{unpaid === 1 ? '' : 's'} sin pagar
+								{' '}· {unpaid} carrito{unpaid === 1 ? '' : 's'} abandonado{unpaid === 1 ? '' : 's'}
 							</span>
 						)}
 					</p>
