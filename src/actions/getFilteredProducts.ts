@@ -15,6 +15,10 @@ type Args = {
   // "Recién llegados": productos CDR todavía sin categorizar (los que llegan
   // por sync y el admin aún no asignó categoría). Cuando está activo, ignora sortOrder.
   newArrivalsOnly?: boolean;
+  // Categoría ESPECIAL (campaña tipo "Día del Niño"): lista de ids elegidos a
+  // mano por el admin. Se aplica como filtro extra, así se puede combinar con
+  // marca/precio. `[]` = campaña vacía -> no hay resultados (no es "sin filtro").
+  specialProductIds?: string[] | null;
 };
 
 export async function getFilteredProducts({
@@ -27,9 +31,16 @@ export async function getFilteredProducts({
   searchTerm = '',
   sortOrder,
   newArrivalsOnly,
+  specialProductIds,
 }: Args) {
   const from = (page - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
+
+  // Campaña activa sin productos cargados: cortamos acá. Si mandáramos un
+  // `.in('id', [])` PostgREST devolvería todo el catálogo.
+  if (Array.isArray(specialProductIds) && specialProductIds.length === 0) {
+    return { data: [], count: 0 };
+  }
 
   // 1) Vista ya ORDENADA + PAGINADA
 let baseQuery = supabase
@@ -66,6 +77,7 @@ if (newArrivalsOnly) {
 baseQuery = baseQuery.order('id', { ascending: true });
 
 // aplicar filtros
+if (specialProductIds?.length) baseQuery = baseQuery.in('id', specialProductIds);
 if (brands?.length)        baseQuery = baseQuery.in('brand_id', brands);
 if (categories?.length)    baseQuery = baseQuery.in('category_id', categories);
 if (subcategories?.length) baseQuery = baseQuery.in('subcategory_id', subcategories);

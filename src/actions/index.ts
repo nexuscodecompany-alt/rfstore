@@ -2,6 +2,7 @@ export * from './product';
 export * from './auth';
 export * from './order';
 export * from './taxonomy';
+export * from './specialCategories';
 export * from './getFilteredProducts';
 export * from './cdr';
 export * from './pricing';

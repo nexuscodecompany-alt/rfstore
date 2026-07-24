@@ -10,6 +10,7 @@ import {
 	HiOutlineMagnifyingGlass,
 	HiOutlinePencilSquare,
 	HiOutlineChevronUp,
+	HiOutlineGift,
 } from 'react-icons/hi2';
 import {
 	uploadHomeImage,
@@ -26,7 +27,12 @@ import {
 	type ProductSource,
 } from '../../actions';
 import { reorderSubcategories } from '../../actions/taxonomy';
-import { useHomeConfig, useUpdateHomeConfig, useTaxonomies } from '../../hooks';
+import {
+	useHomeConfig,
+	useUpdateHomeConfig,
+	useTaxonomies,
+	useActiveSpecialCategories,
+} from '../../hooks';
 
 /* ------------------------------------------------------------------ */
 /*  UI helpers                                                         */
@@ -285,6 +291,35 @@ const NavFeaturedBlock = ({
 };
 
 /* ================================================================== */
+/*  Atajo: pegar el link de una campaña (categoría especial) en        */
+/*  cualquier campo de Link (hero, tiles, banner 3D) con un click,     */
+/*  para no tener que ir a copiar el slug a mano.                      */
+/* ================================================================== */
+
+const SpecialLinkShortcuts = ({ onPick }: { onPick: (link: string) => void }) => {
+	const { specialCategories } = useActiveSpecialCategories();
+	if (!specialCategories.length) return null;
+
+	return (
+		<div className='mt-1.5 flex flex-wrap items-center gap-1.5'>
+			<span className='text-[11px] text-ink-400'>Campañas:</span>
+			{specialCategories.map(sc => (
+				<button
+					key={sc.id}
+					type='button'
+					onClick={() => onPick(`/tienda?special=${sc.slug}`)}
+					className='inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 hover:bg-amber-100'
+					title={`/tienda?special=${sc.slug}`}
+				>
+					<HiOutlineGift size={12} />
+					{sc.name}
+				</button>
+			))}
+		</div>
+	);
+};
+
+/* ================================================================== */
 /*  Editor de contenido: Carrusel del hero (hero_slides)              */
 /* ================================================================== */
 
@@ -399,9 +434,10 @@ const HeroSlidesEditor = ({
 								<input
 									value={s.link}
 									onChange={e => patch(idx, { link: e.target.value })}
-									placeholder='/tienda?category=<id>'
+									placeholder='/tienda?category=<id> o /tienda?special=<campaña>'
 									className={inputClass}
 								/>
+								<SpecialLinkShortcuts onPick={link => patch(idx, { link })} />
 							</div>
 							<div>
 								<label className='mb-1 block text-xs font-medium text-ink-500'>
@@ -577,6 +613,7 @@ const CategoryTilesEditor = ({
 									placeholder='/tienda?category=… o https://wa.me/…'
 									className={inputClass}
 								/>
+								<SpecialLinkShortcuts onPick={link => patch(idx, { link })} />
 							</div>
 						</div>
 
@@ -716,9 +753,10 @@ const Banner3DEditor = ({
 						<input
 							value={banner.link}
 							onChange={e => patch({ link: e.target.value })}
-							placeholder='/tienda?category=<id>'
+							placeholder='/tienda?category=<id> o /tienda?special=<campaña>'
 							className={inputClass}
 						/>
+						<SpecialLinkShortcuts onPick={link => patch({ link })} />
 					</div>
 				</div>
 			</div>

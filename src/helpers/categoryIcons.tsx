@@ -13,6 +13,7 @@ import {
 	HiOutlineShieldCheck,
 	HiOutlineVideoCamera,
 	HiOutlinePuzzlePiece,
+	HiOutlineGift,
 } from 'react-icons/hi2';
 import { IconType } from 'react-icons';
 
@@ -35,6 +36,8 @@ const RULES: Array<{ keywords: string[]; icon: IconType }> = [
 
 export const ALL_ICON: IconType = HiOutlineSquares2X2;
 export const NEW_ARRIVALS_ICON: IconType = HiOutlineSparkles;
+// Categorías especiales / campañas (Día del Niño, Black Friday…).
+export const SPECIAL_ICON: IconType = HiOutlineGift;
 export const NEW_ARRIVALS_ID = '__new_arrivals__';
 
 export const getCategoryIcon = (name?: string): IconType => {

@@ -7,9 +7,15 @@ import { prepareProducts } from '../helpers';
 import {
 	ALL_ICON,
 	NEW_ARRIVALS_ICON,
+	SPECIAL_ICON,
 	getCategoryIcon,
 } from '../helpers/categoryIcons';
-import { useFilteredProducts, useTaxonomies } from '../hooks';
+import {
+	useActiveSpecialCategories,
+	useFilteredProducts,
+	useSpecialCategoryBySlug,
+	useTaxonomies,
+} from '../hooks';
 import { Pagination } from '../components/shared/Pagination';
 import WhatsAppButton from '../components/shared/WhatsAppButton';
 import { IconType } from 'react-icons';
@@ -50,11 +56,14 @@ export const CellPhonesPage = () => {
 	// y ?brand= (llegadas desde el buscador / mega-menú / tiles del header o links
 	// de publicidad). category/subcategory/brand aceptan id O nombre (ej.
 	// /tienda?category=notebooks&brand=asus) para que los links de ads sean legibles.
-	const [searchParams] = useSearchParams();
+	// ?special=<slug> = categoría ESPECIAL / campaña (Día del Niño, Black Friday…):
+	// va por encima de la taxonomía real, los productos los elige el admin a mano.
+	const [searchParams, setSearchParams] = useSearchParams();
 	const qParam = searchParams.get('q') ?? '';
 	const catParam = searchParams.get('category') ?? '';
 	const subParam = searchParams.get('subcategory') ?? '';
 	const brandParam = searchParams.get('brand') ?? '';
+	const specialParam = searchParams.get('special') ?? '';
 
 	const [page, setPage] = useState(1);
 	const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
@@ -70,13 +79,9 @@ export const CellPhonesPage = () => {
 	// Orden por defecto: "Destacados" (featured_score: marcas top entreveradas,
 	// más vendidos primero). Menor/mayor precio SOLO si el usuario lo elige.
 	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
-	// ¿El usuario eligió un orden manualmente? Si NO, y hay filtros MANUALES,
-	// ordenamos por menor precio arriba por defecto (ver effectiveSort).
+	// ¿El usuario eligió un orden manualmente? Si NO, y hay CUALQUIER filtro
+	// activo, ordenamos por menor precio arriba por defecto (ver effectiveSort).
 	const [manualSort, setManualSort] = useState(false);
-	// ¿El usuario aplicó un filtro tocando la tienda? (pills de categoría,
-	// checkboxes de marca/subcategoría, precio). Los "landings" por link
-	// (?category=/?brand=/?subcategory=) NO cuentan: ahí se mantiene Destacados.
-	const [userFiltered, setUserFiltered] = useState(false);
 	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
 
 	// Si cambia el ?q= (otra búsqueda desde el header estando ya en la tienda), sincronizar.
@@ -85,6 +90,13 @@ export const CellPhonesPage = () => {
 	}, [qParam]);
 
 	const { categories, subcategories, brands } = useTaxonomies();
+	// Campañas activas (pills destacadas) y la campaña abierta por ?special=.
+	const { specialCategories } = useActiveSpecialCategories();
+	const {
+		specialCategory,
+		productIds: specialProductIds,
+		isLoading: isLoadingSpecial,
+	} = useSpecialCategoryBySlug(specialParam);
 
 	// Normaliza para comparar nombres llegados por URL: minúsculas y sin acentos.
 	const norm = (s: string) =>
@@ -115,26 +127,44 @@ export const CellPhonesPage = () => {
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [brandParam, brands]);
 
-	// Landing por link (banner del hero, tiles, menú, ads con ?category=/?brand=):
-	// NO es un filtro manual -> se mantiene el orden Destacados. Reseteamos el
-	// override de orden y la marca de "filtro manual".
+	// Landing por link (banner del hero, tiles, menú, ads con ?category=/?brand=/?special=):
+	// al cambiar el link reseteamos el override de orden para volver a la regla
+	// automática (que con filtros = menor precio arriba).
 	useEffect(() => {
 		setSortOrder(undefined);
 		setManualSort(false);
-		setUserFiltered(false);
-	}, [catParam, subParam, brandParam]);
+	}, [catParam, subParam, brandParam, specialParam]);
 
-	// ¿El cliente aplicó un filtro manual, o está buscando? La búsqueda cuenta
-	// siempre (la escriba en la tienda o llegue por ?q= del buscador del header).
-	const hasManualFilter = userFiltered || !!searchTerm.trim();
+	// Abrir una campaña arranca de cero: sin categoría/marca/precio previos, para
+	// que se vea la selección completa que armó el admin.
+	useEffect(() => {
+		if (!specialParam) return;
+		setSelectedBrands([]);
+		setSelectedCategories([]);
+		setSelectedSubcategories([]);
+		setPriceMin(undefined);
+		setPriceMax(undefined);
+		setNewArrivalsOnly(false);
+	}, [specialParam]);
+
+	// ¿Hay algún filtro activo? Da igual el origen: pills/checkboxes de la tienda,
+	// precio, búsqueda, campaña, o landing por link (?category=/?subcategory=/?brand=/?q=).
+	const hasAnyFilter =
+		selectedBrands.length > 0 ||
+		selectedCategories.length > 0 ||
+		selectedSubcategories.length > 0 ||
+		priceMin !== undefined ||
+		priceMax !== undefined ||
+		!!searchTerm.trim() ||
+		specialProductIds !== null;
 
 	// Orden efectivo que va a la consulta:
 	//  - Si el usuario eligió un orden con los botones, se respeta ese.
-	//  - Si NO eligió y hay filtro manual/búsqueda -> menor precio arriba ('asc').
-	//  - Resto (vista "Todas" o landing por link) -> Destacados (undefined).
+	//  - Si NO eligió y hay CUALQUIER filtro/búsqueda -> menor precio arriba ('asc').
+	//  - Sólo la tienda sin filtros ("Todas") -> Destacados (undefined).
 	const effectiveSort: 'asc' | 'desc' | undefined = manualSort
 		? sortOrder
-		: hasManualFilter
+		: hasAnyFilter
 		? 'asc'
 		: undefined;
 
@@ -147,41 +177,52 @@ export const CellPhonesPage = () => {
 
 	useEffect(() => {
 		setPage(1);
-	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, effectiveSort, newArrivalsOnly]);
+	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, effectiveSort, newArrivalsOnly, specialParam]);
+
+	// Entrar/salir de una campaña. Va por la URL para que el link sea compartible
+	// (ads, WhatsApp) y el botón "atrás" del navegador funcione.
+	const setSpecial = (slug: string | null) => {
+		const next = new URLSearchParams(searchParams);
+		if (slug) next.set('special', slug);
+		else next.delete('special');
+		setSearchParams(next);
+	};
 
 	const selectCategory = (id: string) => {
 		// Selección exclusiva: una categoría a la vez en la barra de arriba.
+		if (specialParam) setSpecial(null); // salir de la campaña
 		setNewArrivalsOnly(false);
 		if (selectedCategories.includes(id) && selectedCategories.length === 1) {
 			// Click sobre la misma categoría = volver a "Todas".
 			setSelectedCategories([]);
-			setUserFiltered(false);
 		} else {
 			setSelectedCategories([id]);
-			setUserFiltered(true); // filtro manual -> orden por menor precio
 		}
 		setSelectedSubcategories([]);
 	};
 
 	const selectAll = () => {
+		if (specialParam) setSpecial(null);
 		setNewArrivalsOnly(false);
 		setSelectedCategories([]);
 		setSelectedSubcategories([]);
-		setUserFiltered(false); // "Todas" -> vuelve a Destacados
 	};
 
 	const selectNewArrivals = () => {
+		if (specialParam) setSpecial(null);
 		setNewArrivalsOnly(true);
 		setSelectedCategories([]);
 		setSelectedSubcategories([]);
-		setUserFiltered(false);
 	};
+
+	// Pill de campaña: si ya está abierta, volver a "Todas".
+	const selectSpecial = (slug: string) =>
+		setSpecial(specialParam === slug ? null : slug);
 
 	const toggleSubcategory = (id: string) => {
 		setSelectedSubcategories(prev =>
 			prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
 		);
-		setUserFiltered(true); // filtro manual -> orden por menor precio
 	};
 
 	// Sólo mostramos subcategorías cuando hay una categoría seleccionada.
@@ -204,17 +245,28 @@ export const CellPhonesPage = () => {
 		searchTerm,
 		sortOrder: effectiveSort,
 		newArrivalsOnly,
+		specialProductIds,
+		// Esperamos a resolver ?special= antes de consultar: si no, se vería un
+		// flash con todo el catálogo antes de aplicar el filtro de la campaña.
+		enabled: !isLoadingSpecial,
 	});
 
 	const preparedProducts = prepareProducts(products);
 
 	return (
 		<>
+			{/* Con una campaña abierta, el encabezado toma su nombre. */}
 			<div className='text-center mb-10 space-y-3'>
-				<p className='section-eyebrow'>Tienda</p>
-				<h1 className='section-title'>Catálogo completo</h1>
+				<p className='section-eyebrow'>
+					{specialCategory ? 'Selección especial' : 'Tienda'}
+				</p>
+				<h1 className='section-title'>
+					{specialCategory ? specialCategory.name : 'Catálogo completo'}
+				</h1>
 				<p className='text-sm text-ink-500 max-w-xl mx-auto'>
-					Explorá todos nuestros productos. Filtrá por marca, categoría o precio.
+					{specialCategory
+						? 'Una selección elegida para la ocasión. Tocá "Todas" para volver al catálogo completo.'
+						: 'Explorá todos nuestros productos. Filtrá por marca, categoría o precio.'}
 				</p>
 			</div>
 
@@ -224,11 +276,27 @@ export const CellPhonesPage = () => {
 					<div className='grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-7 gap-2'>
 						{/* Todas */}
 						<CategoryPill
-							active={!newArrivalsOnly && selectedCategories.length === 0}
+							active={
+								!newArrivalsOnly &&
+								!specialParam &&
+								selectedCategories.length === 0
+							}
 							label='Todas'
 							Icon={ALL_ICON}
 							onClick={selectAll}
 						/>
+
+						{/* Campañas activas (categorías especiales): van primero y destacadas. */}
+						{specialCategories.map(sc => (
+							<CategoryPill
+								key={sc.id}
+								active={specialParam === sc.slug}
+								label={sc.name}
+								Icon={SPECIAL_ICON}
+								onClick={() => selectSpecial(sc.slug)}
+								highlight
+							/>
+						))}
 
 						{/* Recién Llegados (categoría virtual) */}
 						<CategoryPill
@@ -242,7 +310,7 @@ export const CellPhonesPage = () => {
 						{categories.map(cat => (
 							<CategoryPill
 								key={cat.id}
-								active={selectedCategories.includes(cat.id)}
+								active={!specialParam && selectedCategories.includes(cat.id)}
 								label={cat.name}
 								Icon={getCategoryIcon(cat.name)}
 								onClick={() => selectCategory(cat.id)}
@@ -351,10 +419,9 @@ export const CellPhonesPage = () => {
 					priceMax={priceMax}
 					setPriceMin={setPriceMin}
 					setPriceMax={setPriceMax}
-					onManualFilter={setUserFiltered}
 				/>
 
-				{isLoading ? (
+				{isLoading || isLoadingSpecial ? (
 					<div className='col-span-2 lg:col-span-2 xl:col-span-4 flex items-center justify-center h-[500px]'>
 						<div className='animate-pulse text-ink-500'>Cargando productos…</div>
 					</div>

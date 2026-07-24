@@ -13,9 +13,6 @@ interface Props {
 	priceMax?: number;
 	setPriceMin: (v?: number) => void;
 	setPriceMax: (v?: number) => void;
-	// Se dispara SOLO cuando el usuario toca el panel de filtros (no en syncs por
-	// URL ni en el pruneo interno de marcas). true = aplicó filtro; false = limpió.
-	onManualFilter?: (active: boolean) => void;
 }
 
 const VISIBLE = 6;
@@ -96,7 +93,6 @@ export const ContainerFilter = ({
 	priceMax,
 	setPriceMin,
 	setPriceMax,
-	onManualFilter,
 }: Props) => {
 	const { brands, categories, subcategories } = useTaxonomies();
 	const { data: availableBrandIds } = useBrandsByCategories(
@@ -126,7 +122,6 @@ export const ContainerFilter = ({
 	const toggle = (list: string[], setList: (v: string[]) => void, id: string) => {
 		if (list.includes(id)) setList(list.filter(b => b !== id));
 		else setList([...list, id]);
-		onManualFilter?.(true); // interacción real del usuario
 	};
 
 	// Subcategorías visibles: si hay categorías seleccionadas, sólo las de esas categorías.
@@ -138,12 +133,10 @@ export const ContainerFilter = ({
 	const applyMin = (v: string) => {
 		setLocalMin(v);
 		setPriceMin(v === '' ? undefined : Number(v));
-		onManualFilter?.(true);
 	};
 	const applyMax = (v: string) => {
 		setLocalMax(v);
 		setPriceMax(v === '' ? undefined : Number(v));
-		onManualFilter?.(true);
 	};
 
 	const totalActive =
@@ -161,7 +154,6 @@ export const ContainerFilter = ({
 		setLocalMax('');
 		setPriceMin(undefined);
 		setPriceMax(undefined);
-		onManualFilter?.(false); // limpiar -> vuelve a Destacados
 	};
 
 	return (

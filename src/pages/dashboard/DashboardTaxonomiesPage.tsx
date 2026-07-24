@@ -10,6 +10,7 @@ import {
 	HiOutlineChevronDown,
 	HiOutlineArrowUp,
 	HiOutlineArrowDown,
+	HiOutlineSparkles,
 } from 'react-icons/hi2';
 import {
 	getBrandsAdmin,
@@ -27,6 +28,8 @@ import {
 	reorderSubcategories,
 	type Subcategory,
 } from '../../actions';
+import { SpecialCategoriesSection } from '../../components/dashboard/SpecialCategoriesSection';
+import { useSpecialCategoryMutations } from '../../hooks';
 
 /* ---------- fila editable reutilizable ---------- */
 const EditableItem = ({
@@ -140,6 +143,71 @@ const AddInput = ({
 	);
 };
 
+/* Alta de categoría: normal o ESPECIAL.
+   - Normal   -> categoría de verdad del producto (products.category_id).
+   - Especial -> campaña que va POR ENCIMA (Día del Niño, Black Friday): el
+     producto entra sin perder su categoría real y se puede borrar sin secuelas. */
+const AddCategoryInput = ({
+	onAdd,
+}: {
+	onAdd: (name: string, special: boolean) => void;
+}) => {
+	const [value, setValue] = useState('');
+	const [special, setSpecial] = useState(false);
+
+	const submit = () => {
+		const v = value.trim();
+		if (!v) return;
+		onAdd(v, special);
+		setValue('');
+		setSpecial(false);
+	};
+
+	return (
+		<div className='space-y-2'>
+			<div className='flex gap-2'>
+				<input
+					value={value}
+					onChange={e => setValue(e.target.value)}
+					onKeyDown={e => e.key === 'Enter' && submit()}
+					placeholder={special ? 'Nueva campaña (ej: Día del Niño)' : 'Nueva categoría'}
+					className='flex-1 rounded-lg border border-ink-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-300'
+				/>
+				<button
+					onClick={submit}
+					disabled={!value.trim()}
+					className={`inline-flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-semibold text-white transition-all disabled:opacity-50 ${
+						special ? 'bg-amber-500 hover:bg-amber-600' : 'bg-brand-600 hover:bg-brand-700'
+					}`}
+				>
+					<HiOutlinePlus size={16} />
+				</button>
+			</div>
+
+			<label className='inline-flex cursor-pointer items-center gap-2 text-xs text-ink-600'>
+				<input
+					type='checkbox'
+					checked={special}
+					onChange={e => setSpecial(e.target.checked)}
+					className='h-4 w-4 accent-amber-500'
+				/>
+				<span className='inline-flex items-center gap-1'>
+					<HiOutlineSparkles size={14} className='text-amber-500' />
+					Categoría <strong>especial</strong> (campaña temporal)
+				</span>
+			</label>
+
+			{special && (
+				<p className='rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800'>
+					Los productos que agregues <strong>no pierden su categoría actual</strong>. La
+					campaña aparece como filtro destacado en la tienda y podés eliminarla cuando
+					termine sin afectar nada.
+				</p>
+			)}
+		</div>
+	);
+};
+
 export const DashboardTaxonomiesPage = () => {
 	const qc = useQueryClient();
 	const [openCat, setOpenCat] = useState<string | null>(null);
@@ -175,6 +243,10 @@ export const DashboardTaxonomiesPage = () => {
 	const mAddCat = useMutation({ mutationFn: createCategory, onSuccess: () => inv('categories'), onError: onErr });
 	const mEditCat = useMutation({ mutationFn: updateCategory, onSuccess: () => inv('categories'), onError: onErr });
 	const mDelCat = useMutation({ mutationFn: deleteCategory, onSuccess: () => inv('categories'), onError: onErr });
+
+	// Categorías especiales (campañas). Viven en sus propias tablas: no tocan
+	// products.category_id, por eso crearlas/borrarlas no afecta el catálogo.
+	const { create: mAddSpecial } = useSpecialCategoryMutations();
 
 	// Subcategorías
 	const mAddSub = useMutation({ mutationFn: createSubcategory, onSuccess: () => inv('subcategories'), onError: onErr });
@@ -216,9 +288,10 @@ export const DashboardTaxonomiesPage = () => {
 						Categorías y subcategorías
 					</h2>
 
-					<AddInput
-						placeholder='Nueva categoría'
-						onAdd={name => mAddCat.mutate(name)}
+					<AddCategoryInput
+						onAdd={(name, special) =>
+							special ? mAddSpecial.mutate(name) : mAddCat.mutate(name)
+						}
 					/>
 
 					<div className='mt-4 space-y-2'>
@@ -348,6 +421,9 @@ export const DashboardTaxonomiesPage = () => {
 					</div>
 				</div>
 			</div>
+
+			{/* Campañas / categorías especiales */}
+			<SpecialCategoriesSection />
 		</div>
 	);
 };

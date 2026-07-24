@@ -42,6 +42,7 @@ export * from './orders/useOrderAdmin';
 /* ********************************** */
 export * from './taxonomy/useTaxonomies';
 export * from './taxonomy/useBrandsByCategories';
+export * from './taxonomy/useSpecialCategories';
 
 /* ********************************** */
 /*                HOME                */
