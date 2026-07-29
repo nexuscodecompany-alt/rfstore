@@ -60,7 +60,9 @@ export const checkCdrStock = (
 ) => invokeFn<CheckStockResult>('cdr-check-stock', { codes, qty });
 
 export interface CartItemForMP {
-	external_code: string;
+	// Sólo los productos CDR tienen código externo; los manuales habilitados
+	// para pago online mandan null.
+	external_code: string | null;
 	variant_id: string;
 	quantity: number;
 	title: string;
@@ -103,10 +105,28 @@ export const confirmManualPayment = (orderId: number, action: 'approve' | 'rejec
 		action,
 	});
 
-export const sendTransferEmail = (orderId: number) =>
-	invokeFn<{ ok: boolean; message_id?: string; sent_to?: string }>('send-transfer-email', {
-		order_id: orderId,
-	});
+/**
+ * Manda al comprador los datos para pagar su pedido: banco (transferencia) o
+ * Abitab/Redpagos (depósito), y avisa al admin que hay un pedido esperando pago.
+ * El slug de la edge function quedó como 'send-transfer-email' por historia.
+ */
+export const sendPaymentInstructionsEmail = (orderId: number) =>
+	invokeFn<{
+		ok: boolean;
+		message_id?: string;
+		sent_to?: string;
+		method?: 'transfer' | 'deposit';
+	}>('send-transfer-email', { order_id: orderId });
+
+/**
+ * Avisa al admin que el cliente subió el comprobante de pago. Al cliente no se
+ * le manda nada (ya lo ve confirmado en pantalla).
+ */
+export const notifyPaymentProofUploaded = (orderId: number) =>
+	invokeFn<{ ok: boolean; message_id?: string; sent_to?: string }>(
+		'send-transfer-email',
+		{ order_id: orderId, kind: 'proof_uploaded' }
+	);
 
 export const getAppSettings = async () => {
 	const { data, error } = await supabase.from('app_settings').select('key, value');

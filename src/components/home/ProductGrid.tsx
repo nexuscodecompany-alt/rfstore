@@ -89,6 +89,7 @@ export const ProductGrid = ({ title, products }: Props) => {
 						categoryName={product.categoryName}
 						source={product.source}
 						externalCode={product.external_code}
+						onlinePayment={product.online_payment}
 					/>
 				))}
 			</div>

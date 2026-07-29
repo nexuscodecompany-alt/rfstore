@@ -6,6 +6,7 @@ import { RiSecurePaymentLine } from 'react-icons/ri';
 import { CartItem } from './CartItem';
 import { useCartStore } from '../../store/cart.store';
 import { usePaymentsEnabled } from '../../hooks';
+import { canBuyOnline } from '../../helpers';
 
 export const Cart = () => {
 	const closeSheet = useGlobalStore(state => state.closeSheet);
@@ -16,11 +17,19 @@ export const Cart = () => {
 		state => state.totalItemsInCart
 	);
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
-	const allCdr =
-		paymentsEnabled &&
+	// Mismo criterio que el checkout: compra directa sólo si TODO el carrito se
+	// vende online (CDR o manual habilitado); si no, es cotización.
+	const allOnline =
 		cartItems.length > 0 &&
-		cartItems.every(i => i.source === 'cdr');
-	const ctaLabel = allCdr ? 'Continuar con tu compra' : 'Continuar con la cotización';
+		cartItems.every(i =>
+			canBuyOnline(
+				{ source: i.source, online_payment: i.onlinePayment },
+				paymentsEnabled
+			)
+		);
+	const ctaLabel = allOnline
+		? 'Continuar con tu compra'
+		: 'Continuar con la cotización';
 
 	return (
 		<div className='flex flex-col h-full'>

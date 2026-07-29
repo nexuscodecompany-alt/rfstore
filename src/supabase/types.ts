@@ -710,6 +710,7 @@ export type Database = {
           last_synced_at: string | null
           markup_percent: number | null
           name: string
+          online_payment: boolean
           price_usd: number | null
           slug: string
           source: string
@@ -733,6 +734,7 @@ export type Database = {
           last_synced_at?: string | null
           markup_percent?: number | null
           name: string
+          online_payment?: boolean
           price_usd?: number | null
           slug: string
           source?: string
@@ -756,6 +758,7 @@ export type Database = {
           last_synced_at?: string | null
           markup_percent?: number | null
           name?: string
+          online_payment?: boolean
           price_usd?: number | null
           slug?: string
           source?: string
@@ -884,6 +887,7 @@ export type Database = {
           id: string | null
           images: string[] | null
           name: string | null
+          online_payment: boolean | null
           price: number | null
           slug: string | null
           source: string | null

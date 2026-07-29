@@ -60,10 +60,33 @@ export interface HomeBlock {
 	product_ids?: string[];
 }
 
+/* ------------------------- BARRA DE NAVEGACIÓN ------------------------ */
+// `nav_featured` mezcla dos cosas en una sola lista ordenada:
+//   - id de categoría real  → "5f3c…"
+//   - categoría especial    → "special:5f3c…" (campañas: Día del Niño, etc.)
+// Se guarda con prefijo en vez de en un array aparte para que el admin pueda
+// intercalar campañas entre las categorías en el orden que quiera, y para que
+// las configuraciones ya guardadas (sólo ids de categoría) sigan funcionando.
+
+export const SPECIAL_NAV_PREFIX = 'special:';
+
+/** Entrada de nav_featured para una categoría especial. */
+export const specialNavEntry = (specialCategoryId: string) =>
+	`${SPECIAL_NAV_PREFIX}${specialCategoryId}`;
+
+/** Devuelve el id de la especial si la entrada es una campaña; si no, null. */
+export const parseSpecialNavEntry = (entry: string): string | null =>
+	entry.startsWith(SPECIAL_NAV_PREFIX)
+		? entry.slice(SPECIAL_NAV_PREFIX.length)
+		: null;
+
 export interface HomeConfig {
 	/** Orden y contenido de las secciones de la home. */
 	layout: HomeBlock[];
-	/** Categorías destacadas en la barra de navegación (ids), en orden. */
+	/**
+	 * Ítems destacados de la barra de navegación, en orden. Cada entrada es un id
+	 * de categoría o `special:<id>` de una categoría especial (ver arriba).
+	 */
 	nav_featured: string[];
 	/** Slides del carrusel del hero, en orden. */
 	hero_slides: HomeSlide[];

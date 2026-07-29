@@ -14,6 +14,12 @@ export interface ICartItem {
 	image: string;
 	source?: 'local' | 'cdr';
 	externalCode?: string | null;
+	/**
+	 * Producto manual habilitado para compra online. Los items guardados en el
+	 * carrito ANTES de esta función no lo traen (undefined = por consulta), así
+	 * que un carrito viejo nunca pasa a pagarse online por accidente.
+	 */
+	onlinePayment?: boolean;
 	stock?: number;
 }
 

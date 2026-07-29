@@ -42,6 +42,12 @@ export interface Product {
 	category?: ProductCategory | null;
 	source?: 'local' | 'cdr';
 	external_code?: string | null;
+	/**
+	 * Producto manual habilitado para compra online (carrito + pasarela). Los
+	 * productos CDR se venden online siempre; los manuales sólo si el admin
+	 * prendió esta bandera, si no van por "Consultar por WhatsApp".
+	 */
+	online_payment?: boolean;
 	price_usd?: number | null;
 	markup_percent?: number | null;
 }
@@ -64,6 +70,7 @@ export interface PreparedProducts {
 	categoryName?: string;
 	source?: 'local' | 'cdr';
 	external_code?: string | null;
+	online_payment?: boolean;
 }
 
 export interface ProductInput {
@@ -76,6 +83,8 @@ export interface ProductInput {
 	brandId: string;
 	categoryId: string;
 	subcategoryId?: string | null;
+	/** Compra online habilitada (productos manuales). */
+	onlinePayment?: boolean;
 }
 
 export interface VariantInput {

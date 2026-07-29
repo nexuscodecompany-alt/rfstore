@@ -73,6 +73,24 @@ export const formatMoneyCur = (price: number, currency: 'UYU' | 'USD') => {
 };
 
 /* ====================================================================== */
+/*  ¿SE COMPRA ONLINE O ES POR CONSULTA?                                  */
+/* ====================================================================== */
+// Regla única de toda la tienda (tarjeta, ficha, carrito y checkout):
+//   - CDR (source='cdr'): pago online siempre.
+//   - Manual (source='local'): pago online SÓLO si el admin prendió
+//     `online_payment` en el producto; si no, WhatsApp.
+//   - `paymentsEnabled` es el interruptor global del panel: apagado, todo
+//     vuelve a ser consulta.
+// El servidor repite esta misma validación (place_cdr_order y
+// mp-create-preference), así que tocar sólo el front no habilita nada.
+export const canBuyOnline = (
+	product: { source?: string | null; online_payment?: boolean | null },
+	paymentsEnabled: boolean
+): boolean =>
+	paymentsEnabled &&
+	(product.source === 'cdr' || product.online_payment === true);
+
+/* ====================================================================== */
 /*  PRECIOS: margen por tramo (sobre el costo) + IVA -> precio de venta   */
 /* ====================================================================== */
 export interface PricingTier {
@@ -305,6 +323,7 @@ export const prepareProducts = (products: Product[]) => {
 			categoryName: (product as any).category?.name,
 			source: (product as any).source ?? 'local',
 			external_code: (product as any).external_code ?? null,
+			online_payment: (product as any).online_payment === true,
 		};
 	});
 };

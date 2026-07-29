@@ -18,6 +18,8 @@ import {
 	getProductsByIds,
 	getHomeSectionIds,
 	updateHomeSectionIds,
+	parseSpecialNavEntry,
+	specialNavEntry,
 	type HomeSectionKey,
 	type HomeSlide,
 	type HomeCategoryTile,
@@ -116,6 +118,8 @@ const NavFeaturedBlock = ({
 	reorderingSubs: boolean;
 	saving: boolean;
 }) => {
+	// La lista mezcla categorías reales e ítems `special:<id>` (campañas).
+	const { specialCategories } = useActiveSpecialCategories();
 	const [ids, setIds] = useState<string[]>(initial);
 	const [toAdd, setToAdd] = useState('');
 	// Categoría desplegada para ver/ordenar sus subcategorías.
@@ -140,9 +144,20 @@ const NavFeaturedBlock = ({
 		onReorderSubs(next.map(s => s.id));
 	};
 
-	const nameOf = (id: string) =>
-		categories.find(c => c.id === id)?.name ?? '(categoría eliminada)';
+	const nameOf = (entry: string) => {
+		const specialId = parseSpecialNavEntry(entry);
+		if (specialId) {
+			return (
+				specialCategories.find(s => s.id === specialId)?.name ??
+				'(campaña eliminada o apagada)'
+			);
+		}
+		return categories.find(c => c.id === entry)?.name ?? '(categoría eliminada)';
+	};
 	const available = categories.filter(c => !ids.includes(c.id));
+	const availableSpecials = specialCategories.filter(
+		s => !ids.includes(specialNavEntry(s.id))
+	);
 
 	const add = () => {
 		if (!toAdd || ids.includes(toAdd)) return;
@@ -162,7 +177,9 @@ const NavFeaturedBlock = ({
 		<section className={cardClass}>
 			<h2 className='font-bold text-ink-900'>Barra de categorías destacadas</h2>
 			<p className='mb-4 text-xs text-ink-500'>
-				Categorías que aparecen en la barra de navegación, en orden.
+				Categorías y campañas que aparecen en la barra de navegación, en orden.
+				Las campañas llevan directo a <code>/tienda?special=…</code> y se muestran
+				resaltadas.
 			</p>
 
 			<div className='flex gap-2'>
@@ -171,12 +188,25 @@ const NavFeaturedBlock = ({
 					onChange={e => setToAdd(e.target.value)}
 					className={inputClass}
 				>
-					<option value=''>Elegí una categoría…</option>
-					{available.map(c => (
-						<option key={c.id} value={c.id}>
-							{c.name}
-						</option>
-					))}
+					<option value=''>Elegí una categoría o campaña…</option>
+					{available.length > 0 && (
+						<optgroup label='Categorías'>
+							{available.map(c => (
+								<option key={c.id} value={c.id}>
+									{c.name}
+								</option>
+							))}
+						</optgroup>
+					)}
+					{availableSpecials.length > 0 && (
+						<optgroup label='Campañas (categorías especiales)'>
+							{availableSpecials.map(s => (
+								<option key={s.id} value={specialNavEntry(s.id)}>
+									{s.name}
+								</option>
+							))}
+						</optgroup>
+					)}
 				</select>
 				<button
 					type='button'
@@ -191,29 +221,42 @@ const NavFeaturedBlock = ({
 
 			<ul className='mt-4 space-y-1.5'>
 				{ids.map((id, idx) => {
-					const subs = subsOf(id);
-					const open = openCatId === id;
+					const isSpecial = !!parseSpecialNavEntry(id);
+					const subs = isSpecial ? [] : subsOf(id);
+					const open = !isSpecial && openCatId === id;
 					return (
 						<li key={id} className='rounded-lg border border-ink-100'>
 							<div className='flex items-center gap-2 p-2'>
-								<button
-									type='button'
-									onClick={() => setOpenCatId(open ? null : id)}
-									className={iconBtnClass}
-									title={open ? 'Ocultar subcategorías' : 'Ver subcategorías'}
-								>
-									<HiOutlineChevronUp
-										size={16}
-										className={`transition-transform ${open ? '' : 'rotate-180'}`}
-									/>
-								</button>
+								{isSpecial ? (
+									<span className='grid h-8 w-8 place-items-center text-amber-500'>
+										<HiOutlineGift size={16} />
+									</span>
+								) : (
+									<button
+										type='button'
+										onClick={() => setOpenCatId(open ? null : id)}
+										className={iconBtnClass}
+										title={open ? 'Ocultar subcategorías' : 'Ver subcategorías'}
+									>
+										<HiOutlineChevronUp
+											size={16}
+											className={`transition-transform ${open ? '' : 'rotate-180'}`}
+										/>
+									</button>
+								)}
 								<span className='flex-1 truncate text-sm text-ink-700'>
 									{nameOf(id)}
-									<span className='ml-2 text-xs text-ink-400'>
-										{subs.length === 0
-											? 'sin subcategorías'
-											: `${subs.length} subcategoría${subs.length === 1 ? '' : 's'}`}
-									</span>
+									{isSpecial ? (
+										<span className='ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-700'>
+											Campaña
+										</span>
+									) : (
+										<span className='ml-2 text-xs text-ink-400'>
+											{subs.length === 0
+												? 'sin subcategorías'
+												: `${subs.length} subcategoría${subs.length === 1 ? '' : 's'}`}
+										</span>
+									)}
 								</span>
 								<div className='flex items-center gap-0.5'>
 									<MoveButtons idx={idx} total={ids.length} onMove={move} />
@@ -270,7 +313,7 @@ const NavFeaturedBlock = ({
 				})}
 				{ids.length === 0 && (
 					<li className='py-6 text-center text-xs text-ink-400'>
-						Sin categorías destacadas.
+						Sin destacados en la barra.
 					</li>
 				)}
 			</ul>

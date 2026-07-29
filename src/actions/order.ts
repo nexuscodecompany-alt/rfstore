@@ -182,7 +182,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 		.select(
 			`
 				id, total_amount, status, created_at, channel, ml_order_id, ml_pack_id,
-				payment_method, payment_status,
+				payment_method, payment_status, payment_proof_url, paid_at,
 				ml_currency, fx_rate, total_original,
 				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 				shipping_zone, shipping_barrio, shipping_department, shipping_cost_usd,
@@ -250,6 +250,8 @@ export const getOrderByIdAdmin = async (id: number) => {
 		packOrderIds,
 		paymentMethod: (order.payment_method as string | null) ?? null,
 		paymentStatus: (order.payment_status as string | null) ?? null,
+		paymentProofUrl: (order.payment_proof_url as string | null) ?? null,
+		paidAt: (order.paid_at as string | null) ?? null,
 		orderItems: (order.order_items as any[]).map((item: any) => ({
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',

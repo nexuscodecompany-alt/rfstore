@@ -5,6 +5,7 @@ import { CdrCheckoutForm } from '../components/checkout/CdrCheckoutForm';
 import { ItemsCheckout } from '../components/checkout/ItemsCheckout';
 import { ScrollToTop } from '../components/shared/ScrollToTop';
 import { useUser, usePaymentsEnabled } from '../hooks';
+import { canBuyOnline } from '../helpers';
 import { Loader } from '../components/shared/Loader';
 import { useEffect, useRef } from 'react';
 import { supabase } from '../supabase/client';
@@ -15,9 +16,17 @@ export const CheckoutPage = () => {
 	const cartItems = useCartStore(state => state.items);
 	const totalAmount = useCartStore(state => state.totalAmount);
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
-	const allCdr = paymentsEnabled && cartItems.length > 0 && cartItems.every(i => i.source === 'cdr');
-	const anyCdr = paymentsEnabled && cartItems.some(i => i.source === 'cdr');
-	const mixed = anyCdr && !allCdr;
+	// "Comprable online" ya no es sólo CDR: también los manuales que el admin
+	// habilitó con pago online. El checkout con pasarela sólo aparece si TODO el
+	// carrito lo es; si se mezcla con productos por consulta, va a cotización.
+	const isOnline = (i: (typeof cartItems)[number]) =>
+		canBuyOnline(
+			{ source: i.source, online_payment: i.onlinePayment },
+			paymentsEnabled
+		);
+	const allOnline = cartItems.length > 0 && cartItems.every(isOnline);
+	const anyOnline = cartItems.some(isOnline);
+	const mixed = anyOnline && !allOnline;
 
 	const { isLoading } = useUser();
 
@@ -86,13 +95,13 @@ export const CheckoutPage = () => {
 						<div className='w-full md:w-[50%] p-10'>
 							{mixed && (
 								<div className='bg-yellow-50 border border-yellow-300 p-3 rounded mb-4 text-sm'>
-									Tu carrito mezcla productos con pago online (CDR) y productos
-									por consulta. Por ahora generamos cotización por WhatsApp para
+									Tu carrito mezcla productos con pago online y productos por
+									consulta. Por ahora generamos cotización por WhatsApp para
 									todos. Para pagar online, dejá solo productos marcados como
-									"Comprar online".
+									"Pago online".
 								</div>
 							)}
-							{allCdr ? <CdrCheckoutForm /> : <FormCheckout />}
+							{allOnline ? <CdrCheckoutForm /> : <FormCheckout />}
 						</div>
 
 						<div

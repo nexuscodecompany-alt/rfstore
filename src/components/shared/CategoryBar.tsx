@@ -4,23 +4,37 @@ import {
 	HiOutlineSquares2X2,
 	HiOutlineChevronDown,
 	HiOutlineChevronRight,
+	HiOutlineGift,
 } from 'react-icons/hi2';
-import { useTaxonomies, useHomeConfig } from '../../hooks';
+import {
+	useTaxonomies,
+	useHomeConfig,
+	useActiveSpecialCategories,
+} from '../../hooks';
 import { getCategoryIcon } from '../../helpers/categoryIcons';
+import { parseSpecialNavEntry } from '../../actions/homeConfig';
 import type { Category, Subcategory } from '../../actions/taxonomy';
 
 const catLink = (id: string) => `/tienda?category=${id}`;
 const subLink = (catId: string, subId: string) =>
 	`/tienda?category=${catId}&subcategory=${subId}`;
+const specialLink = (slug: string) => `/tienda?special=${slug}`;
+
+/** Ítem resuelto de la barra: categoría real o campaña (categoría especial). */
+type NavItem =
+	| { kind: 'category'; key: string; name: string; to: string; categoryId: string }
+	| { kind: 'special'; key: string; name: string; to: string };
 
 /**
  * Barra de categorías estilo marketplace, siempre visible:
  *  - "Todas las categorías": mega-menú de 2 columnas (categorías + subcategorías al hover).
- *  - Categorías destacadas (configurables desde admin): cada una abre sus subcategorías.
+ *  - Destacados (configurables desde admin): categorías, que abren sus subcategorías,
+ *    y campañas / categorías especiales, que linkean directo a `/tienda?special=`.
  */
 export const CategoryBar = () => {
 	const { categories, subcategories } = useTaxonomies();
 	const { config } = useHomeConfig();
+	const { specialCategories } = useActiveSpecialCategories();
 
 	const [openKey, setOpenKey] = useState<string | null>(null); // 'all' | categoryId | null
 	const [hoveredCat, setHoveredCat] = useState<string | null>(null);
@@ -29,10 +43,34 @@ export const CategoryBar = () => {
 	const subsOf = (catId: string): Subcategory[] =>
 		subcategories.filter(s => s.category_id === catId);
 
-	// Categorías destacadas resueltas (respeta el orden configurado; ignora ids inválidos).
-	const featured: Category[] = config.nav_featured
-		.map(id => categories.find(c => c.id === id))
-		.filter(Boolean) as Category[];
+	// Destacados resueltos: respeta el orden configurado y descarta lo que ya no
+	// existe (categoría borrada) o está apagado (especial inactiva).
+	const featured: NavItem[] = config.nav_featured
+		.map((entry): NavItem | null => {
+			const specialId = parseSpecialNavEntry(entry);
+			if (specialId) {
+				const sc = specialCategories.find(s => s.id === specialId);
+				return sc
+					? {
+							kind: 'special',
+							key: entry,
+							name: sc.name,
+							to: specialLink(sc.slug),
+					  }
+					: null;
+			}
+			const cat = categories.find((c: Category) => c.id === entry);
+			return cat
+				? {
+						kind: 'category',
+						key: entry,
+						name: cat.name,
+						to: catLink(cat.id),
+						categoryId: cat.id,
+				  }
+				: null;
+		})
+		.filter(Boolean) as NavItem[];
 
 	const open = (key: string) => {
 		if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -134,35 +172,50 @@ export const CategoryBar = () => {
 					)}
 				</div>
 
-				{/* Categorías destacadas */}
+				{/* Destacados: categorías (con subcategorías) y campañas */}
 				<div className='hidden items-center gap-0.5 md:flex'>
-					{featured.map(cat => {
-						const subs = subsOf(cat.id);
+					{featured.map(item => {
+						// Las campañas no tienen subcategorías: link directo, con acento
+						// dorado para que se distingan de la taxonomía real.
+						if (item.kind === 'special') {
+							return (
+								<Link
+									key={item.key}
+									to={item.to}
+									className='flex items-center gap-1 rounded-md px-3 py-2.5 text-sm font-semibold text-amber-300 transition-colors hover:text-amber-200'
+								>
+									<HiOutlineGift size={14} />
+									{item.name}
+								</Link>
+							);
+						}
+
+						const subs = subsOf(item.categoryId);
 						return (
 							<div
-								key={cat.id}
+								key={item.key}
 								className='relative'
-								onMouseEnter={() => open(cat.id)}
+								onMouseEnter={() => open(item.key)}
 								onMouseLeave={scheduleClose}
 							>
 								<Link
-									to={catLink(cat.id)}
+									to={item.to}
 									className={`flex items-center gap-1 rounded-md px-3 py-2.5 text-sm font-medium transition-colors ${
-										openKey === cat.id
+										openKey === item.key
 											? 'text-white'
 											: 'text-white/80 hover:text-white'
 									}`}
 								>
-									{cat.name}
+									{item.name}
 									{subs.length > 0 && <HiOutlineChevronDown size={13} />}
 								</Link>
 
-								{openKey === cat.id && subs.length > 0 && (
+								{openKey === item.key && subs.length > 0 && (
 									<div className='absolute left-0 top-full z-50 min-w-[220px] overflow-hidden rounded-xl border border-ink-200 bg-white py-2 shadow-2xl animate-fade-in'>
 										{subs.map(sub => (
 											<Link
 												key={sub.id}
-												to={subLink(cat.id, sub.id)}
+												to={subLink(item.categoryId, sub.id)}
 												onClick={() => setOpenKey(null)}
 												className='block px-4 py-2 text-sm text-ink-600 hover:bg-brand-50 hover:text-brand-800 transition-colors'
 											>

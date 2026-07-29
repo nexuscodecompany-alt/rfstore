@@ -46,7 +46,7 @@ export async function getFilteredProducts({
 let baseQuery = supabase
   .from('products_with_price')
   .select(
-    'id, name, slug, images, features, description, created_at, brand_id, category_id, subcategory_id, price, source, external_code',
+    'id, name, slug, images, features, description, created_at, brand_id, category_id, subcategory_id, price, source, external_code, online_payment',
     { count: 'exact' }
   )
   .range(from, to);
@@ -141,6 +141,7 @@ if (searchTerm?.trim()) {
         category: null,
         source: ((r as any).source as 'local' | 'cdr') ?? 'local',
         external_code: ((r as any).external_code as string | null) ?? null,
+        online_payment: (r as any).online_payment === true,
       };
     });
 

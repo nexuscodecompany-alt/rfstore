@@ -5,7 +5,7 @@ import {
 	createMpPreference,
 	getAppSettings,
 	checkCdrStock,
-	sendTransferEmail,
+	sendPaymentInstructionsEmail,
 	type CartItemForMP,
 } from '../../actions';
 import { useUser, useUsdUyuRate } from '../../hooks';
@@ -272,51 +272,60 @@ export const CdrCheckoutForm = () => {
 					console.warn('persist customer:', e);
 				}
 			}
-			// 1. Validar stock real contra CDR.
+			// 1. Validar stock real contra CDR (sólo para los items CDR: los
+			// productos manuales con pago online no están en el WS de CDR, su stock
+			// es el de la base y lo validan place_cdr_order / mp-create-preference).
 			// IMPORTANTE: si el WS responde error o "sin stock" para todos los items,
 			// no bloqueamos la compra. Logueamos para debug y avisamos al cliente que
 			// confirmaremos el stock por WhatsApp. Esto evita perder ventas cuando el
 			// SOAP de CDR está inestable o devuelve códigos que no matchean.
-			const codes = cartItems.map(i => i.externalCode!).filter(Boolean);
+			const codes = cartItems
+				.filter(i => i.source === 'cdr')
+				.map(i => i.externalCode!)
+				.filter(Boolean);
 			const qtyMap: Record<string, number> = {};
 			for (const it of cartItems) {
-				if (!it.externalCode) continue;
+				if (it.source !== 'cdr' || !it.externalCode) continue;
 				qtyMap[it.externalCode] = (qtyMap[it.externalCode] ?? 0) + it.quantity;
 			}
 			// El edge function ya combina SOAP CDR + fallback a variants.stock,
 			// así que confiamos en su resultado. Si "ok" es false, bloqueamos
 			// con el detalle de los códigos sin stock.
-			try {
-				const stockRes = await checkCdrStock(codes, qtyMap);
-				if (!stockRes.ok) {
-					const all = [...stockRes.insufficient, ...stockRes.missing];
-					console.warn('[checkout] CDR stock check no-ok:', stockRes);
-					// Mapeamos códigos → nombres para que el toast sea útil al cliente.
-					const namesByCode = new Map(
-						cartItems
-							.filter(i => i.externalCode)
-							.map(i => [i.externalCode!, i.name])
+			if (codes.length > 0) {
+				try {
+					const stockRes = await checkCdrStock(codes, qtyMap);
+					if (!stockRes.ok) {
+						const all = [...stockRes.insufficient, ...stockRes.missing];
+						console.warn('[checkout] CDR stock check no-ok:', stockRes);
+						// Mapeamos códigos → nombres para que el toast sea útil al cliente.
+						const namesByCode = new Map(
+							cartItems
+								.filter(i => i.externalCode)
+								.map(i => [i.externalCode!, i.name])
+						);
+						const names = all.map(c => namesByCode.get(c) ?? c);
+						toast.error(`Sin stock: ${names.join(', ')}`);
+						setSubmitting(false);
+						return;
+					}
+				} catch (stockErr) {
+					// El edge function devolvió 5xx (red caída, etc.). En este caso no
+					// pudimos validar nada — bloqueamos para evitar oversell y pedimos
+					// reintentar.
+					console.warn('[checkout] CDR stock check failed:', stockErr);
+					toast.error(
+						'No pudimos verificar disponibilidad. Reintentá en unos segundos.'
 					);
-					const names = all.map(c => namesByCode.get(c) ?? c);
-					toast.error(`Sin stock: ${names.join(', ')}`);
 					setSubmitting(false);
 					return;
 				}
-			} catch (stockErr) {
-				// El edge function devolvió 5xx (red caída, etc.). En este caso no
-				// pudimos validar nada — bloqueamos para evitar oversell y pedimos
-				// reintentar.
-				console.warn('[checkout] CDR stock check failed:', stockErr);
-				toast.error(
-					'No pudimos verificar disponibilidad. Reintentá en unos segundos.'
-				);
-				setSubmitting(false);
-				return;
 			}
 
 			if (method === 'mercadopago') {
 				const items: CartItemForMP[] = cartItems.map(i => ({
-					external_code: i.externalCode!,
+					// null en los manuales: la edge function resuelve origen y precio
+					// por variant_id contra la base.
+					external_code: i.externalCode ?? null,
 					variant_id: i.variantId,
 					quantity: i.quantity,
 					title: i.name,
@@ -376,14 +385,16 @@ export const CdrCheckoutForm = () => {
 			if (rpcErr) throw new Error(rpcErr.message);
 			const orderId = orderIdData as number;
 
-			// Si es transferencia, mandamos el mail con datos bancarios al comprador.
-			// No bloqueamos el checkout si el mail falla — el cliente igual ve los datos
-			// en /thank-you.
-			if (method === 'transfer') {
+			// Transferencia Y depósito: le mandamos al comprador los datos para pagar
+			// (y al admin el aviso de pedido pendiente). Antes esto sólo corría para
+			// 'transfer', así que quien elegía depósito no recibía ningún mail.
+			// No bloqueamos el checkout si el mail falla — el cliente igual ve los
+			// datos en /thank-you.
+			if (method === 'transfer' || method === 'deposit') {
 				try {
-					await sendTransferEmail(orderId);
+					await sendPaymentInstructionsEmail(orderId);
 				} catch (mailErr) {
-					console.warn('No se pudo enviar mail de transferencia:', mailErr);
+					console.warn('No se pudo enviar el mail con los datos de pago:', mailErr);
 				}
 			}
 

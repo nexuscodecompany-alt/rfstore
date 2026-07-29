@@ -36,7 +36,9 @@ async function fetchGetStock(email: string, token: string, codigos: string[]): P
 	return parsed.map((it: any) => ({ codigo: String(it.codigo), stock: typeof it.stock === 'number' ? it.stock : Number(it.stock) }));
 }
 
-interface CartItem { external_code: string; variant_id: string; quantity: number; title: string; unit_price_usd: number; }
+// external_code sólo lo tienen los productos CDR. Los manuales (source=local)
+// habilitados con products.online_payment lo mandan null/ausente.
+interface CartItem { external_code?: string | null; variant_id: string; quantity: number; title: string; unit_price_usd: number; }
 interface ReqBody {
 	items: CartItem[];
 	address: { line1: string; line2?: string; city: string; state: string; postal_code: string; country: string; };
@@ -58,12 +60,49 @@ Deno.serve(async req => {
 	try {
 		const body: ReqBody = await req.json();
 		if (!body.items?.length) return new Response(JSON.stringify({ error: 'items vacío' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-		for (const it of body.items) { if (!it.external_code) return new Response(JSON.stringify({ error: `El item "${it.title}" no es vendible online (sin external_code)` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }); }
-		const codes = body.items.map(i => i.external_code);
+
+		// Origen/precio/stock de cada item resueltos desde la DB por variant_id.
+		// NUNCA confiamos en lo que manda el cliente: ni el external_code ni el
+		// precio ni la condición de "vendible online".
+		//   source = 'cdr'                         -> se vende online siempre (stock real vía SOAP)
+		//   source = 'local' + online_payment=true -> se vende online (stock de variants)
+		//   resto                                  -> sólo consulta, se rechaza acá
+		const variantIds = [...new Set(body.items.map(i => i.variant_id))];
+		const { data: variantRows, error: varErr } = await supabaseAdmin
+			.from('variants')
+			.select('id, price, stock, products(name, source, online_payment, external_code, price_usd)')
+			.in('id', variantIds);
+		if (varErr) throw new Error(`variants: ${varErr.message}`);
+		interface VarInfo { price: number; stock: number; source: string; onlinePayment: boolean; externalCode: string | null; costUsd: number | null; }
+		const infoByVariant = new Map<string, VarInfo>();
+		for (const row of (variantRows ?? []) as any[]) {
+			const p = Array.isArray(row.products) ? row.products[0] : row.products;
+			infoByVariant.set(String(row.id), {
+				price: Number(row.price) || 0,
+				stock: Number(row.stock) || 0,
+				source: String(p?.source ?? 'local'),
+				onlinePayment: p?.online_payment === true,
+				externalCode: p?.external_code ?? null,
+				costUsd: p?.price_usd === null || p?.price_usd === undefined ? null : Number(p.price_usd),
+			});
+		}
+		for (const it of body.items) {
+			const info = infoByVariant.get(it.variant_id);
+			if (!info) return new Response(JSON.stringify({ error: `El item "${it.title}" ya no está disponible` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			const buyable = info.source === 'cdr' || info.onlinePayment;
+			if (!buyable) return new Response(JSON.stringify({ error: `El item "${it.title}" es solo por consulta` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			if (info.source === 'cdr' && !info.externalCode) return new Response(JSON.stringify({ error: `El item "${it.title}" no es vendible online (sin external_code)` }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+		}
+
+		// --- Stock CDR (SOAP + fallback a la DB, igual que siempre) ---
+		const cdrItems = body.items.filter(i => infoByVariant.get(i.variant_id)!.source === 'cdr');
+		const codes = cdrItems.map(i => infoByVariant.get(i.variant_id)!.externalCode!);
 		const qtyMap: Record<string, number> = {};
-		for (const it of body.items) qtyMap[it.external_code] = (qtyMap[it.external_code] ?? 0) + it.quantity;
+		for (const it of cdrItems) { const code = infoByVariant.get(it.variant_id)!.externalCode!; qtyMap[code] = (qtyMap[code] ?? 0) + it.quantity; }
 		const soapMap = new Map<string, number>();
-		try { const soapStocks = await fetchGetStock(CDR_EMAIL, CDR_TOKEN, codes); for (const s of soapStocks) { if (s.stock === -999) continue; soapMap.set(s.codigo, s.stock); } } catch (e) { console.warn('SOAP stock failed:', e); }
+		if (codes.length > 0) {
+			try { const soapStocks = await fetchGetStock(CDR_EMAIL, CDR_TOKEN, codes); for (const s of soapStocks) { if (s.stock === -999) continue; soapMap.set(s.codigo, s.stock); } } catch (e) { console.warn('SOAP stock failed:', e); }
+		}
 		const missingFromSoap = codes.filter(c => !soapMap.has(c));
 		const dbStockMap = new Map<string, number>();
 		if (missingFromSoap.length > 0) {
@@ -71,7 +110,17 @@ Deno.serve(async req => {
 			for (const p of prods ?? []) { const pr = p as unknown as { external_code: string; variants: { stock: number }[] }; const total = (pr.variants ?? []).reduce((acc, v) => acc + (Number(v.stock) || 0), 0); dbStockMap.set(pr.external_code, total); }
 		}
 		const insufficient: string[] = [];
-		for (const code of codes) { const stock = soapMap.get(code) ?? dbStockMap.get(code) ?? -1; const needed = qtyMap[code] ?? 0; if (stock < needed) insufficient.push(code); }
+		for (const code of new Set(codes)) { const stock = soapMap.get(code) ?? dbStockMap.get(code) ?? -1; const needed = qtyMap[code] ?? 0; if (stock < needed) insufficient.push(code); }
+
+		// --- Stock de los manuales: la única fuente es variants.stock ---
+		const localQtyByVariant: Record<string, number> = {};
+		for (const it of body.items) { if (infoByVariant.get(it.variant_id)!.source !== 'cdr') localQtyByVariant[it.variant_id] = (localQtyByVariant[it.variant_id] ?? 0) + it.quantity; }
+		for (const [vid, needed] of Object.entries(localQtyByVariant)) {
+			if (infoByVariant.get(vid)!.stock < needed) {
+				const title = body.items.find(i => i.variant_id === vid)?.title ?? vid;
+				insufficient.push(title);
+			}
+		}
 		if (insufficient.length > 0) return new Response(JSON.stringify({ error: 'stock_insuficiente', codes: insufficient }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
 		const { data: userData, error: userErr } = await supabaseUser.auth.getUser();
@@ -83,16 +132,20 @@ Deno.serve(async req => {
 		// storefront (SQL rf_sale_price). NO se aplica ningun markup extra ni se confia
 		// en el precio enviado por el cliente. ANTES se multiplicaba por
 		// cdr_markup_percent_global -> DOBLE MARKUP: el cliente veia 62 y se le cobraba 74.4.
-		const { data: priceRows } = await supabaseAdmin.from('products').select('external_code, price_usd').in('external_code', codes);
-		const costByCode = new Map((priceRows ?? []).map((p: any) => [p.external_code, Number(p.price_usd) || 0]));
-		const saleByCode = new Map<string, number>();
-		for (const code of new Set(codes)) {
-			const cost = costByCode.get(code) ?? 0;
+		// El COSTO sale de products.price_usd en los CDR y de variants.price en los
+		// manuales (que es donde el admin lo carga: "Precio (USD, costo sin IVA)").
+		const costByVariant = new Map<string, number>();
+		for (const [vid, info] of infoByVariant) {
+			const cost = info.source === 'cdr' ? (info.costUsd ?? info.price) : info.price;
+			costByVariant.set(vid, Number(cost) || 0);
+		}
+		const saleByCost = new Map<number, number>();
+		for (const cost of new Set(costByVariant.values())) {
 			const { data: sp } = await supabaseAdmin.rpc('rf_sale_price', { cost });
-			saleByCode.set(code, Number(sp) || 0);
+			saleByCost.set(cost, Number(sp) || 0);
 		}
 		const lineTotals = body.items.map(it => {
-			const sp = saleByCode.get(it.external_code) ?? 0;
+			const sp = saleByCost.get(costByVariant.get(it.variant_id) ?? 0) ?? 0;
 			const unitFinal = sp > 0 ? sp : Number(Number(it.unit_price_usd).toFixed(2));
 			return { ...it, unit_final_usd: unitFinal, line_total: unitFinal * it.quantity };
 		});
@@ -101,7 +154,6 @@ Deno.serve(async req => {
 		const requestedShipping = Number(body.shipping_cost_usd ?? 0);
 		const isMvd = body.shipping_zone === 'montevideo';
 		const isMetro = body.shipping_zone === 'metropolitana';
-		const isInterior = body.shipping_zone === 'interior';
 		// Montevideo y zona metropolitana (agencia) cobran envío; interior = DAC (0).
 		// Envío gratis a partir de FREE_SHIPPING_MIN_USD en las zonas que cobran.
 		const chargesShipping = isMvd || isMetro;

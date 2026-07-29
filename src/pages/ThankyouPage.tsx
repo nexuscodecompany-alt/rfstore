@@ -5,7 +5,11 @@ import { CiCircleCheck } from 'react-icons/ci';
 import { formatPrice } from '../helpers';
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase/client';
-import { getAppSettings, uploadPaymentProof } from '../actions';
+import {
+	getAppSettings,
+	uploadPaymentProof,
+	notifyPaymentProofUploaded,
+} from '../actions';
 import { useCartStore } from '../store/cart.store';
 import toast from 'react-hot-toast';
 import { HiOutlineCloudUpload, HiOutlineMail } from 'react-icons/hi';
@@ -284,6 +288,11 @@ const PaymentProofBlock = ({ orderId }: { orderId: number }) => {
 			await uploadPaymentProof(orderId, file);
 			setUploaded(true);
 			toast.success('Comprobante recibido. Vamos a verificarlo.');
+			// Aviso al admin. No bloqueamos ni mostramos error al cliente: el
+			// comprobante ya quedó guardado, el mail es sólo la alerta interna.
+			notifyPaymentProofUploaded(orderId).catch(err =>
+				console.warn('No se pudo avisar al admin del comprobante:', err)
+			);
 		} catch (err) {
 			toast.error((err as Error).message || 'No se pudo subir el comprobante');
 		} finally {

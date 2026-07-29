@@ -43,6 +43,9 @@ const initialState: ProductFormValues = {
   variants: [
     { price: 0, stock: 0, storage: "", color: "#000000", colorName: "Único" },
   ],
+  // Por defecto los productos manuales van "por consulta" (WhatsApp), igual
+  // que antes de existir esta opción. El admin lo prende por producto.
+  onlinePayment: false,
 };
 
 interface ProductFormState {
@@ -155,6 +158,8 @@ export const FormProduct = ({ titleForm }: Props) => {
             },
           ];
         })(),
+
+        onlinePayment: product.online_payment === true,
       };
 
       // Actualizamos el form y el store
@@ -175,6 +180,7 @@ export const FormProduct = ({ titleForm }: Props) => {
       brandId: data.brandId,
       categoryId: data.categoryId,
       subcategoryId: data.subcategoryId || null,
+      onlinePayment: data.onlinePayment === true,
     };
 
     if (slug) {
@@ -338,6 +344,27 @@ export const FormProduct = ({ titleForm }: Props) => {
             errors={errors}
             register={register}
           />
+
+          {/* Forma de venta: pago online vs. consulta por WhatsApp. */}
+          <div className="p-3 mt-4 border rounded-lg bg-slate-50 border-slate-200">
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 accent-emerald-600"
+                {...register("onlinePayment")}
+              />
+              <span className="text-sm">
+                <span className="font-semibold text-slate-800">
+                  Habilitar pago online
+                </span>
+                <span className="block mt-0.5 text-xs text-slate-500">
+                  {watch("onlinePayment")
+                    ? "El cliente lo agrega al carrito y paga por Mercado Pago o transferencia. Se descuenta del stock cargado arriba."
+                    : "Se muestra con el botón “Consultar por WhatsApp” (sin carrito ni pasarela)."}
+                </span>
+              </span>
+            </label>
+          </div>
         </SectionFormProduct>
 
         <SectionFormProduct titleSection="Imágenes del producto">

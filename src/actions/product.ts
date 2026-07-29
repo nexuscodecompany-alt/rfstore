@@ -340,6 +340,8 @@ export const createProduct = async (productInput: ProductInput) => {
             brand_id: productInput.brandId,
             category_id: productInput.categoryId,
             subcategory_id: productInput.subcategoryId || null,
+            // Sin esto el producto queda "por consulta" (comportamiento histórico).
+            online_payment: productInput.onlinePayment === true,
         })
         .select()
         .single();
@@ -474,6 +476,7 @@ export const updateProduct = async (
             brand_id: productInput.brandId,
             category_id: productInput.categoryId,
             subcategory_id: productInput.subcategoryId || null,
+            online_payment: productInput.onlinePayment === true,
         })
         .eq('id', productId)
         .select()

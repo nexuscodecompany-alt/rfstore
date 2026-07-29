@@ -547,9 +547,20 @@ export const TableProduct = () => {
                         CDR
                       </span>
                     ) : (
-                      <span className="inline-flex items-center rounded-full bg-ink-50 px-2.5 py-1 text-xs font-semibold text-ink-700 ring-1 ring-ink-200">
-                        Manual
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <span className="inline-flex items-center rounded-full bg-ink-50 px-2.5 py-1 text-xs font-semibold text-ink-700 ring-1 ring-ink-200">
+                          Manual
+                        </span>
+                        {/* Los manuales pueden venderse online o ser sólo consulta. */}
+                        {(product as any).online_payment === true && (
+                          <span
+                            title="Se compra desde la web (carrito + pasarela)"
+                            className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-200"
+                          >
+                            Pago online
+                          </span>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="p-4 align-middle text-sm text-ink-700">

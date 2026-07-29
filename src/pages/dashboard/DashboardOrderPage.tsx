@@ -2,12 +2,42 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { IoChevronBack } from 'react-icons/io5';
-import { HiOutlineMapPin, HiOutlineUser, HiOutlineTruck } from 'react-icons/hi2';
+import {
+	HiOutlineMapPin,
+	HiOutlineUser,
+	HiOutlineTruck,
+	HiOutlineCreditCard,
+} from 'react-icons/hi2';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useOrderAdmin } from '../../hooks';
-import { updateOrderMlCosts, updatePackMlCosts } from '../../actions';
+import {
+	updateOrderMlCosts,
+	updatePackMlCosts,
+	sendPaymentInstructionsEmail,
+	getPaymentProofSignedUrl,
+} from '../../actions';
 import { Loader } from '../../components/shared/Loader';
 import { formatPriceCurrency, formatDateTime, orderStatusBadge } from '../../helpers';
+
+/* Método de pago en criollo, para no tener que adivinar mirando la orden. */
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+	mercadopago: 'Mercado Pago',
+	transfer: 'Transferencia bancaria',
+	deposit: 'Depósito en redes (Abitab / Redpagos)',
+};
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+	paid: 'Pagado',
+	pending: 'Pendiente de pago',
+	rejected: 'Rechazado',
+	refunded: 'Reintegrado',
+	not_required: 'Sin cobro',
+};
+const paymentStatusClass = (s: string | null) =>
+	s === 'paid'
+		? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+		: s === 'rejected'
+		? 'bg-rose-50 text-rose-700 ring-rose-200'
+		: 'bg-amber-50 text-amber-800 ring-amber-200';
 
 // fx_rate (pesos por USD) cuando la orden se cobró en pesos vía ML; 1 en otro caso.
 const orderFx = (o: { channel?: string | null; mlCurrency?: string | null; fxRate?: number }) =>
@@ -38,6 +68,24 @@ export const DashboardOrderPage = () => {
 			setOther(Math.round(order.mlOtherCostsUsd * fx * 100) / 100);
 		}
 	}, [order]);
+
+	// Comprobante de pago: bucket privado, se abre con URL firmada temporal.
+	const openProof = async (path: string) => {
+		try {
+			const url = await getPaymentProofSignedUrl(path);
+			window.open(url, '_blank', 'noopener');
+		} catch (e) {
+			toast.error((e as Error).message || 'No se pudo abrir el comprobante');
+		}
+	};
+
+	// Reenvío manual del mail con los datos de pago (transferencia / depósito).
+	const { mutate: resendPaymentEmail, isPending: resendingEmail } = useMutation({
+		mutationFn: () => sendPaymentInstructionsEmail(Number(id)),
+		onSuccess: res =>
+			toast.success(`Mail enviado a ${res.sent_to ?? 'el cliente'}`),
+		onError: (e: Error) => toast.error(e.message),
+	});
 
 	const { mutate: saveCosts, isPending: savingCosts } = useMutation({
 		mutationFn: () => {
@@ -295,6 +343,77 @@ export const DashboardOrderPage = () => {
 							</div>
 						</div>
 					</div>
+
+					{/* Pago: método + estado. Antes no figuraba en ningún lado y había
+					    que adivinar si el pedido era por transferencia o depósito. */}
+					{order.channel !== 'ml' && (
+						<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft'>
+							<h2 className='mb-3 flex items-center gap-2 font-bold text-ink-900'>
+								<HiOutlineCreditCard className='text-brand-600' size={18} />
+								Pago
+							</h2>
+							<div className='space-y-2 text-sm'>
+								<div className='flex items-center justify-between gap-3'>
+									<span className='text-ink-500'>Método</span>
+									<span className='text-right font-semibold text-ink-800'>
+										{order.paymentMethod
+											? PAYMENT_METHOD_LABEL[order.paymentMethod] ?? order.paymentMethod
+											: 'Cotización (sin pago online)'}
+									</span>
+								</div>
+								<div className='flex items-center justify-between gap-3'>
+									<span className='text-ink-500'>Estado</span>
+									<span
+										className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${paymentStatusClass(
+											order.paymentStatus
+										)}`}
+									>
+										{order.paymentStatus
+											? PAYMENT_STATUS_LABEL[order.paymentStatus] ?? order.paymentStatus
+											: '—'}
+									</span>
+								</div>
+								{order.paidAt && (
+									<div className='flex items-center justify-between gap-3'>
+										<span className='text-ink-500'>Pagado el</span>
+										<span className='text-ink-700'>{formatDateTime(order.paidAt)}</span>
+									</div>
+								)}
+								<div className='flex items-center justify-between gap-3'>
+									<span className='text-ink-500'>Comprobante</span>
+									{order.paymentProofUrl ? (
+										// El archivo vive en un bucket privado: se abre con URL firmada.
+										<button
+											onClick={() => openProof(order.paymentProofUrl!)}
+											className='font-semibold text-brand-600 hover:underline'
+										>
+											Ver comprobante
+										</button>
+									) : (
+										<span className='text-ink-700'>Sin subir</span>
+									)}
+								</div>
+							</div>
+
+							{(order.paymentMethod === 'transfer' ||
+								order.paymentMethod === 'deposit') && (
+								<div className='mt-4 border-t border-ink-100 pt-3'>
+									<button
+										onClick={() => resendPaymentEmail()}
+										disabled={resendingEmail}
+										className='w-full rounded-lg border border-ink-200 px-3 py-2 text-xs font-semibold text-ink-700 transition hover:bg-ink-50 disabled:opacity-50'
+									>
+										{resendingEmail
+											? 'Enviando…'
+											: 'Reenviar mail con los datos de pago'}
+									</button>
+									<p className='mt-1.5 text-[11px] text-ink-400'>
+										Le llega al cliente con dónde pagar y cómo mandar el comprobante.
+									</p>
+								</div>
+							)}
+						</div>
+					)}
 
 					<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft'>
 						<h2 className='mb-3 flex items-center gap-2 font-bold text-ink-900'>

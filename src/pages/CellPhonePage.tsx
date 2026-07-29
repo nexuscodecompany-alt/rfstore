@@ -1,6 +1,6 @@
 import { LuMinus, LuPlus } from "react-icons/lu";
 import { Separator } from "../components/shared/Separator";
-import { formatPrice, prepareProducts, salePrice } from "../helpers";
+import { canBuyOnline, formatPrice, prepareProducts, salePrice } from "../helpers";
 import { usePaymentsEnabled, usePricingConfig } from "../hooks";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { BsChatLeftText } from "react-icons/bs";
@@ -60,7 +60,8 @@ export const CellPhonePage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product?.id, variant?.id]);
 
-  const isCdr = product?.source === 'cdr' && paymentsEnabled;
+  // CDR o manual habilitado por el admin -> carrito + pasarela. Si no, consulta.
+  const buyOnline = !!product && canBuyOnline(product, paymentsEnabled);
   const whatsappHref = product
     ? `https://wa.me/59894116299?text=${encodeURIComponent(
         `Hola, me interesa el producto "${product.name}". ¿Está disponible?`
@@ -80,6 +81,7 @@ export const CellPhonePage = () => {
       quantity: count,
       source: (product.source as 'local' | 'cdr') || 'local',
       externalCode: product.external_code ?? null,
+      onlinePayment: product.online_payment === true,
       stock: variant.stock,
     });
     trackAddToCart({
@@ -104,6 +106,7 @@ export const CellPhonePage = () => {
       quantity: count,
       source: (product.source as 'local' | 'cdr') || 'local',
       externalCode: product.external_code ?? null,
+      onlinePayment: product.online_payment === true,
       stock: variant.stock,
     });
     trackAddToCart({
@@ -174,8 +177,8 @@ export const CellPhonePage = () => {
             >
               Agotado
             </button>
-          ) : !isCdr ? (
-            // Productos no-CDR: solo consulta por WhatsApp.
+          ) : !buyOnline ? (
+            // Producto por consulta: solo WhatsApp.
             <div className="flex flex-col gap-3">
               <a
                 href={whatsappHref}

@@ -109,6 +109,10 @@ export const productSchema = z.object({
 		)
 		.length(1, 'Debe haber un único precio + stock'),
 	images: z.array(z.any()).min(1, 'Debe haber al menos una imagen'),
+	// Pago online: si está prendido, el producto se compra desde la web
+	// (carrito + pasarela). Apagado = "Consultar por WhatsApp", que es como se
+	// comportaban TODOS los productos manuales antes.
+	onlinePayment: z.boolean().optional().default(false),
 });
 
 export type ProductFormValues = z.infer<typeof productSchema>;
