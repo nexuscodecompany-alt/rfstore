@@ -7,6 +7,7 @@ import {
 	HiOutlineUser,
 	HiOutlineTruck,
 	HiOutlineCreditCard,
+	HiOutlineArrowTopRightOnSquare,
 } from 'react-icons/hi2';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useOrderAdmin } from '../../hooks';
@@ -15,6 +16,7 @@ import {
 	updatePackMlCosts,
 	sendPaymentInstructionsEmail,
 	getPaymentProofSignedUrl,
+	confirmManualPayment,
 } from '../../actions';
 import { Loader } from '../../components/shared/Loader';
 import { formatPriceCurrency, formatDateTime, orderStatusBadge } from '../../helpers';
@@ -87,6 +89,25 @@ export const DashboardOrderPage = () => {
 		onError: (e: Error) => toast.error(e.message),
 	});
 
+	// Aprobar / rechazar un pago manual (transferencia o depósito). La edge marca
+	// la orden pagada y dispara el mail de confirmación al cliente; al rechazar
+	// cancela y devuelve el stock.
+	const { mutate: confirmPayment, isPending: confirmingPayment } = useMutation({
+		mutationFn: (action: 'approve' | 'reject') =>
+			confirmManualPayment(Number(id), action),
+		onSuccess: (_res, action) => {
+			toast.success(
+				action === 'approve'
+					? 'Pago confirmado — se le avisó al cliente'
+					: 'Pago rechazado y stock devuelto'
+			);
+			queryClient.invalidateQueries({ queryKey: ['order', 'admin', Number(id)] });
+			queryClient.invalidateQueries({ queryKey: ['orders'] });
+			queryClient.invalidateQueries({ queryKey: ['pending_payments'] });
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
+
 	const { mutate: saveCosts, isPending: savingCosts } = useMutation({
 		mutationFn: () => {
 			const fx = order ? orderFx(order) : 1;
@@ -155,6 +176,9 @@ export const DashboardOrderPage = () => {
 	// Inputs de costos ML están en moneda nativa; pasamos a USD para la ganancia real.
 	const mlCostsTotalUsd = (commission + shipping + other) / fx;
 	const realProfit = margin - mlCostsTotalUsd;
+	// Pago manual (transferencia / depósito): lo confirma el admin a mano.
+	const isManualPayment =
+		order.paymentMethod === 'transfer' || order.paymentMethod === 'deposit';
 	// Total que se muestra: para ML/UYU el monto exacto en pesos que pagó el comprador.
 	const displayTotal = isUyu && order.totalOriginal != null ? order.totalOriginal : order.totalAmount * fx;
 
@@ -214,6 +238,27 @@ export const DashboardOrderPage = () => {
 				</div>
 			)}
 
+			{/* La orden dice "Concretado" pero el pago sigue pendiente: pasa cuando el
+			    admin cambia el estado a mano sin confirmar el cobro. Son dos cosas
+			    distintas (estado del pedido / estado del pago) y así queda a la vista. */}
+			{isManualPayment &&
+				order.paymentStatus !== 'paid' &&
+				order.status === 'Concretado' && (
+					<div className='flex items-start gap-3 rounded-xl border border-amber-300 bg-amber-50/70 p-4'>
+						<span className='text-xl'>⚠️</span>
+						<div className='text-sm'>
+							<p className='font-semibold text-amber-900'>
+								La orden está Concretada pero el pago figura pendiente
+							</p>
+							<p className='text-amber-800'>
+								Si ya te entró la plata, tocá <b>“Confirmar que ya pagó”</b> acá
+								abajo: recién ahí queda registrada como cobrada y le llega el mail
+								de confirmación al cliente.
+							</p>
+						</div>
+					</div>
+				)}
+
 			{order.paymentMethod === 'mercadopago' && order.paymentStatus !== 'paid' && (
 				<div className='flex items-start gap-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 p-4'>
 					<span className='text-xl'>🛒</span>
@@ -244,7 +289,15 @@ export const DashboardOrderPage = () => {
 									key={index}
 									className='flex items-center gap-4 px-5 py-4'
 								>
-									<div className='h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-ink-100 bg-ink-50'>
+									<a
+										href={item.productSlug ? `/producto/${item.productSlug}` : undefined}
+										target='_blank'
+										rel='noopener noreferrer'
+										className={`h-16 w-16 shrink-0 overflow-hidden rounded-xl border border-ink-100 bg-ink-50 ${
+											item.productSlug ? 'transition hover:border-brand-300' : 'pointer-events-none'
+										}`}
+										title={item.productSlug ? 'Ver el producto en la tienda' : undefined}
+									>
 										{item.productImage && (
 											<img
 												src={item.productImage}
@@ -252,16 +305,38 @@ export const DashboardOrderPage = () => {
 												className='h-full w-full object-contain'
 											/>
 										)}
-									</div>
+									</a>
 									<div className='min-w-0 flex-1'>
-										<h3 className='truncate font-medium text-ink-800'>
-											{item.productName}
-										</h3>
+										{/* Link a la ficha real: con dos productos que se llaman igual,
+										    es la forma de saber cuál compró el cliente. */}
+										{item.productSlug ? (
+											<a
+												href={`/producto/${item.productSlug}`}
+												target='_blank'
+												rel='noopener noreferrer'
+												className='flex items-center gap-1 truncate font-medium text-ink-800 hover:text-brand-600 hover:underline'
+												title='Ver el producto en la tienda'
+											>
+												<span className='truncate'>{item.productName}</span>
+												<HiOutlineArrowTopRightOnSquare className='shrink-0 text-ink-400' size={14} />
+											</a>
+										) : (
+											<h3 className='truncate font-medium text-ink-800'>
+												{item.productName}
+											</h3>
+										)}
 										<p className='text-xs text-ink-500'>
 											{[item.color_name, item.storage]
 												.filter(Boolean)
 												.join(' / ')}
 										</p>
+										{/* Código CDR: dos productos pueden llamarse igual y salir lo
+										    mismo; el código es lo único que los distingue. */}
+										{item.productCode && (
+											<p className='mt-0.5 font-mono text-[11px] text-ink-400'>
+												Cód. {item.productCode}
+											</p>
+										)}
 										<p className='mt-1 text-sm text-ink-600'>
 											{money(item.price)} × {item.quantity}
 										</p>
@@ -395,8 +470,55 @@ export const DashboardOrderPage = () => {
 								</div>
 							</div>
 
-							{(order.paymentMethod === 'transfer' ||
-								order.paymentMethod === 'deposit') && (
+							{/* Confirmar el pago manual desde la propia orden. Antes esto sólo
+							    existía en /dashboard/pagos y nadie lo encontraba: se cambiaba el
+							    estado de la orden a mano y el pago quedaba "pendiente" para
+							    siempre (y el cliente nunca recibía el mail de pago confirmado). */}
+							{isManualPayment && (
+								<div className='mt-4 space-y-2 border-t border-ink-100 pt-3'>
+									{order.paymentStatus === 'paid' ? (
+										<p className='rounded-lg bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700'>
+											✓ Pago confirmado. Ya se le avisó al cliente por mail.
+										</p>
+									) : (
+										<>
+											<button
+												onClick={() => {
+													if (
+														window.confirm(
+															`¿Confirmás que recibiste el pago del pedido #${order.id}?\n\nSe marca como pagado y se le manda el mail de confirmación al cliente.`
+														)
+													)
+														confirmPayment('approve');
+												}}
+												disabled={confirmingPayment}
+												className='w-full rounded-lg bg-emerald-600 px-3 py-2.5 text-xs font-bold text-white transition hover:bg-emerald-700 disabled:opacity-50'
+											>
+												{confirmingPayment ? 'Confirmando…' : '✓ Confirmar que ya pagó'}
+											</button>
+											<button
+												onClick={() => {
+													if (
+														window.confirm(
+															`¿Rechazar el pago del pedido #${order.id}?\n\nLa orden queda cancelada y se devuelve el stock.`
+														)
+													)
+														confirmPayment('reject');
+												}}
+												disabled={confirmingPayment}
+												className='w-full rounded-lg border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-700 transition hover:bg-rose-50 disabled:opacity-50'
+											>
+												Rechazar el pago
+											</button>
+											<p className='text-[11px] text-ink-400'>
+												Confirmalo recién cuando veas la plata acreditada.
+											</p>
+										</>
+									)}
+								</div>
+							)}
+
+							{isManualPayment && (
 								<div className='mt-4 border-t border-ink-100 pt-3'>
 									<button
 										onClick={() => resendPaymentEmail()}

@@ -111,6 +111,8 @@ export const FormProduct = ({ titleForm }: Props) => {
   const { brands, categories, subcategories } = useTaxonomiesAdmin();
   const navigate = useNavigate();
 
+  const isCdrProduct = product?.source === "cdr";
+
   const watchCategory = watch("categoryId");
   const filteredSubcategories = subcategories.filter(
     (s) => s.category_id === watchCategory
@@ -345,25 +347,36 @@ export const FormProduct = ({ titleForm }: Props) => {
             register={register}
           />
 
-          {/* Forma de venta: pago online vs. consulta por WhatsApp. */}
+          {/* Forma de venta: pago online vs. consulta por WhatsApp.
+              Los productos de CDR se venden online siempre, así que ahí la
+              opción no aplica (mostramos el estado, sin checkbox). */}
           <div className="p-3 mt-4 border rounded-lg bg-slate-50 border-slate-200">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                className="mt-0.5 h-4 w-4 accent-emerald-600"
-                {...register("onlinePayment")}
-              />
-              <span className="text-sm">
-                <span className="font-semibold text-slate-800">
-                  Habilitar pago online
-                </span>
+            {isCdrProduct ? (
+              <p className="text-sm text-slate-600">
+                <span className="font-semibold text-slate-800">Pago online</span>
                 <span className="block mt-0.5 text-xs text-slate-500">
-                  {watch("onlinePayment")
-                    ? "El cliente lo agrega al carrito y paga por Mercado Pago o transferencia. Se descuenta del stock cargado arriba."
-                    : "Se muestra con el botón “Consultar por WhatsApp” (sin carrito ni pasarela)."}
+                  Este producto viene del catálogo de CDR: se vende online siempre.
                 </span>
-              </span>
-            </label>
+              </p>
+            ) : (
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 accent-emerald-600"
+                  {...register("onlinePayment")}
+                />
+                <span className="text-sm">
+                  <span className="font-semibold text-slate-800">
+                    Habilitar pago online
+                  </span>
+                  <span className="block mt-0.5 text-xs text-slate-500">
+                    {watch("onlinePayment")
+                      ? "El cliente lo agrega al carrito y paga por Mercado Pago o transferencia. Se descuenta del stock cargado arriba."
+                      : "Se muestra con el botón “Consultar por WhatsApp” (sin carrito ni pasarela)."}
+                  </span>
+                </span>
+              </label>
+            )}
           </div>
         </SectionFormProduct>
 

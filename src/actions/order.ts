@@ -187,7 +187,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 				shipping_zone, shipping_barrio, shipping_department, shipping_cost_usd,
 				addresses:addresses(*),
-				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images))),
+				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images, slug, external_code))),
 				customers:customers(full_name, email)
 			`
 		)
@@ -209,7 +209,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 				`
 					id, total_amount, total_original, ml_order_id,
 					ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
-					order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images)))
+					order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images, slug, external_code)))
 				`
 			)
 			.eq('ml_pack_id', packId)
@@ -255,6 +255,10 @@ export const getOrderByIdAdmin = async (id: number) => {
 		orderItems: (order.order_items as any[]).map((item: any) => ({
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',
+			// Slug para linkear a la ficha en la tienda: con dos productos de nombre
+			// idéntico es la única forma de saber cuál se vendió.
+			productSlug: (item.variants?.products?.slug as string | null) ?? null,
+			productCode: (item.variants?.products?.external_code as string | null) ?? null,
 			price: item.price,
 			cost: (item as { cost_usd: number | null }).cost_usd ?? null,
 			quantity: item.quantity,

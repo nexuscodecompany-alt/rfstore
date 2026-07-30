@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import { HiChevronRight, HiOutlineShoppingCart } from 'react-icons/hi2';
+import { confirmManualPayment } from '../../../actions';
 import {
 	formatDateLong,
 	formatPrice,
@@ -25,6 +28,12 @@ interface Props {
 
 const didNotPay = (o: OrderWithCustomer): boolean =>
 	['expirado', 'Cancelado', 'cancelado', 'rechazado'].includes(o.status);
+
+/** Pago manual (transferencia/depósito) todavía sin confirmar por el admin. */
+export const needsPaymentConfirm = (o: OrderWithCustomer): boolean =>
+	(o.payment_method === 'transfer' || o.payment_method === 'deposit') &&
+	o.payment_status !== 'paid' &&
+	!didNotPay(o);
 
 // Una fila del listado. Para una venta normal representa una orden; para una venta
 // ML en carrito (pack) agrupa todas las órdenes del pack en una sola.
@@ -94,9 +103,43 @@ const StatusSelect = ({
 export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 	const navigate = useNavigate();
 	const { mutate } = useChangeStatusOrder();
+	const queryClient = useQueryClient();
 
-	const handleStatusChange = (ids: number[], status: string) =>
-		ids.forEach(id => mutate({ id, status }));
+	// Confirmar el cobro de un pago manual (la edge marca pagado + Concretado y
+	// dispara el mail). En un pack ML no aplica, pero lo dejamos por id igual.
+	const { mutate: confirmPayment } = useMutation({
+		mutationFn: async (ids: number[]) => {
+			for (const id of ids) await confirmManualPayment(id, 'approve');
+		},
+		onSuccess: () => {
+			toast.success('Pago confirmado — se le avisó al cliente');
+			queryClient.invalidateQueries({ queryKey: ['orders', 'admin'] });
+			queryClient.invalidateQueries({ queryKey: ['order', 'admin'] });
+			queryClient.invalidateQueries({ queryKey: ['pending_payments'] });
+			queryClient.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
+
+	// Poner "Concretado" a mano en una orden de transferencia/depósito dejaba el
+	// pago en "pendiente": la orden decía una cosa y el pago otra. Ahora concretar
+	// una de esas órdenes ES confirmar el cobro (marca pagado + mail al cliente).
+	const handleStatusChange = (row: OrderRow, status: string) => {
+		const o = row.rep;
+		if (status === 'Concretado' && needsPaymentConfirm(o)) {
+			if (
+				!window.confirm(
+					`El pedido #${o.id} se pagó por ${
+						o.payment_method === 'deposit' ? 'depósito' : 'transferencia'
+					} y el pago figura PENDIENTE.\n\nAl concretarlo queda como pagado y se le manda el mail de confirmación al cliente. ¿Ya recibiste la plata?`
+				)
+			)
+				return; // No tocamos nada: la orden sigue como estaba.
+			confirmPayment(row.ids);
+			return;
+		}
+		row.ids.forEach(id => mutate({ id, status }));
+	};
 
 	const goTo = (id: number) => navigate(`/dashboard/ordenes/${id}`);
 	// Las ventas manuales se gestionan en un modal dentro de la misma página.
@@ -224,9 +267,14 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 											<StatusSelect
 												value={row.rep.status}
 												onChange={status =>
-													handleStatusChange(row.ids, status)
+													handleStatusChange(row, status)
 												}
 											/>
+											{needsPaymentConfirm(row.rep) && (
+												<span className='mt-1.5 block text-[11px] font-semibold text-amber-700'>
+													⚠ Pago sin confirmar
+												</span>
+											)}
 										</td>
 										<td className='px-5 py-4 text-right font-semibold text-ink-900'>
 											{formatMoneyCur(row.realTotal, row.currency)}
@@ -282,8 +330,13 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 								<div className='mt-3' onClick={e => e.stopPropagation()}>
 									<StatusSelect
 										value={row.rep.status}
-										onChange={status => handleStatusChange(row.ids, status)}
+										onChange={status => handleStatusChange(row, status)}
 									/>
+									{needsPaymentConfirm(row.rep) && (
+										<span className='mt-1.5 block text-[11px] font-semibold text-amber-700'>
+											⚠ Pago sin confirmar
+										</span>
+									)}
 								</div>
 							</div>
 						))}
