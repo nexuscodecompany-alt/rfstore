@@ -11,6 +11,11 @@
 /*    InitiateCheckout      -> entrar al checkout [CheckoutPage/buyNow]      */
 /*    Purchase              -> compra confirmada [ThankyouPage]             */
 /*    CompleteRegistration  -> alta de cuenta [RegisterPage]                 */
+/*                                                                          */
+/*  content_ids: SIEMPRE el id del producto (products.id, uuid). Es el mismo */
+/*  valor que la columna `id` del feed de catálogo (/feed.csv -> api/feed.ts)*/
+/*  para que Meta pueda matchear los eventos con los items del catálogo.     */
+/*  No usar el id de variante acá.                                           */
 /* ======================================================================= */
 
 type FbqParams = Record<string, unknown>;

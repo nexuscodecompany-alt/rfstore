@@ -436,6 +436,7 @@ export const CellPhonesPage = () => {
 							{preparedProducts.map(product => (
 								<CardProduct
 									key={product.id}
+									id={product.id}
 									name={product.name}
 									price={product.price}
 									img={product.images[0]}

@@ -16,6 +16,8 @@ const whatsappLinkFor = (productName: string) =>
 	)}`;
 
 interface Props {
+	/** id del producto (products.id). Es el content_id que se manda a Meta. */
+	id: string;
 	img: string;
 	name: string;
 	price: number;
@@ -30,6 +32,7 @@ interface Props {
 }
 
 export const CardProduct = ({
+	id,
 	img,
 	name,
 	price,
@@ -65,7 +68,7 @@ export const CardProduct = ({
 		if (selectedVariant && selectedVariant.stock > 0) {
 			addItem({
 				variantId: selectedVariant.id,
-				productId: slug,
+				productId: id,
 				name,
 				image: img,
 				color: '',
@@ -78,7 +81,8 @@ export const CardProduct = ({
 				stock: selectedVariant.stock,
 			});
 			trackAddToCart({
-				id: selectedVariant.id,
+				// content_id = id del producto (igual que en el feed del catálogo).
+				id,
 				name,
 				price: salePrice(selectedVariant.price, pricing),
 				quantity: 1,

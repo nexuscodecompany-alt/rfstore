@@ -59,10 +59,8 @@ export const ThankyouPage = () => {
 		trackPurchase(
 			data.id,
 			data.orderItems.map(item => ({
-				id:
-					(item as any).variantId ??
-					(item as any).productId ??
-					item.productName,
+				// content_id = id del producto (igual que en el feed del catálogo).
+				id: (item as any).productId || item.productName,
 				quantity: item.quantity,
 				price: item.price,
 			})),

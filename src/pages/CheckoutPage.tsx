@@ -39,7 +39,8 @@ export const CheckoutPage = () => {
 		checkoutTracked.current = true;
 		trackInitiateCheckout(
 			cartItems.map(i => ({
-				id: i.variantId,
+				// content_id = id del producto (igual que en el feed del catálogo).
+				id: i.productId,
 				quantity: i.quantity,
 				price: i.price,
 			})),

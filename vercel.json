@@ -5,6 +5,14 @@
       "destination": "/api/:path*"
     },
     {
+      "source": "/feed.csv",
+      "destination": "/api/feed"
+    },
+    {
+      "source": "/feed.xml",
+      "destination": "/api/feed?format=xml"
+    },
+    {
       "source": "/producto/:slug",
       "has": [
         {

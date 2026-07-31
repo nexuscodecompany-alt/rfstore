@@ -100,7 +100,7 @@ export const getOrderById = async (orderId: number) => {
 			`
 				id, total_amount, status, created_at, payment_method, payment_status,
 				addresses:addresses(*),
-				order_items:order_items(quantity, price, variants(color_name, storage, products(name, images)))
+				order_items:order_items(quantity, price, variants(color_name, storage, products(id, name, images)))
 			`
 		)
 		.eq('id', orderId)
@@ -115,6 +115,8 @@ export const getOrderById = async (orderId: number) => {
 	return {
 		id: order.id,
 		orderItems: order.order_items.map(item => ({
+			// productId = content_id del catálogo de Meta (ver src/lib/pixel.ts).
+			productId: item.variants?.products?.id || '',
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',
 			price: item.price,
