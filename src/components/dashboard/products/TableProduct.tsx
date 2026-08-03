@@ -15,6 +15,7 @@ import {
   useSetProductContentLocked,
   useSetProductStockLocked,
   useSetProductSyncPaused,
+  useSetMlItemStatus,
   useSetVariantStock,
   useRecalcMlReadiness,
   useSetProductActive,
@@ -153,6 +154,7 @@ export const TableProduct = () => {
   const { setContentLocked } = useSetProductContentLocked();
   const { setStockLocked } = useSetProductStockLocked();
   const { setSyncPaused } = useSetProductSyncPaused();
+  const { setMlStatus, isSettingMlStatus, mlStatusVars } = useSetMlItemStatus();
 
   // "Sync pausada" = los tres candados puestos (contenido + precio + stock).
   const isSyncPaused = (p: any) =>
@@ -690,7 +692,51 @@ export const TableProduct = () => {
                               ✓ En Mercado Libre
                             </span>
                           )
-                        ) : (
+                        ) : null}
+                        {/* Activar / pausar la publicacion A MANO. Caso tipico: compraron
+                            todo el stock en CDR, la publicacion se pauso al quedar en 0 y
+                            despues de cargar stock manual hay que volver a levantarla. */}
+                        {(product as any).is_in_ml && mlMapping && (
+                          <button
+                            disabled={
+                              isSettingMlStatus && mlStatusVars?.productId === product.id
+                            }
+                            className={`block w-full px-4 py-2 text-left text-xs font-semibold disabled:opacity-50 ${
+                              mlMapping.status === 'active'
+                                ? 'text-ink-600 hover:bg-ink-50'
+                                : 'text-emerald-700 hover:bg-emerald-50'
+                            }`}
+                            onClick={() => {
+                              const activating = mlMapping.status !== 'active';
+                              setOpenMenuIndex(null);
+                              if (
+                                activating &&
+                                totalStock(product) <= 0 &&
+                                !window.confirm(
+                                  `"${product.name}" está en 0 en RF Store.\n\nSin stock la publicación no se puede activar. ¿Seguir igual?`
+                                )
+                              )
+                                return;
+                              setMlStatus({
+                                productId: product.id,
+                                action: activating ? 'activate' : 'pause',
+                                variantId: mlMapping.variant_id ?? selectedVariant?.id,
+                              });
+                            }}
+                            title={
+                              mlMapping.status === 'active'
+                                ? 'Pausar la publicación en Mercado Libre'
+                                : 'Activar la publicación en Mercado Libre con el stock actual de RF Store'
+                            }
+                          >
+                            {isSettingMlStatus && mlStatusVars?.productId === product.id
+                              ? 'Aplicando…'
+                              : mlMapping.status === 'active'
+                              ? '⏸ Pausar publicación en ML'
+                              : '▶ Activar publicación en ML'}
+                          </button>
+                        )}
+                        {!(product as any).is_in_ml && (
                           <button
                             disabled={
                               isPublishing && publishingVars?.productId === product.id

@@ -234,6 +234,33 @@ export interface UpdateMlContentResult {
 export const updateMlContent = (product_id: string, variant_id?: string) =>
 	invokeMlFn<UpdateMlContentResult>('ml-update-content', { product_id, variant_id });
 
+// --------- Activar / pausar la publicación a mano ---------
+export interface MlItemActivateResult {
+	ok: boolean;
+	ml_item_id?: string;
+	ml_status?: string;
+	sub_status?: string[];
+	available_quantity?: number | null;
+	stock?: number;
+	permalink?: string | null;
+	error?: string;
+	detail?: unknown;
+}
+
+// Activa (o pausa) la publicación de ML del producto desde el panel. La función
+// RELEE el estado en ML después del cambio, así que el resultado es el real: ML a
+// veces responde OK y deja la publicación igual (p. ej. si la tiene en revisión).
+export const setMlItemStatus = (
+	product_id: string,
+	action: 'activate' | 'pause',
+	variant_id?: string
+) =>
+	invokeMlFn<MlItemActivateResult>('ml-item-activate', {
+		product_id,
+		variant_id,
+		action,
+	});
+
 // --------- Readiness (% real listo para ML) ---------
 export interface ReadinessResult {
 	ok: boolean;
