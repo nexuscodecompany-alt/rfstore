@@ -339,6 +339,29 @@ export const setProductStockLocked = async (id: string, locked: boolean) => {
     if (error) throw new Error(error.message);
 };
 
+// Candado de PRECIO: con esto en true el sync de CDR no pisa el costo del producto.
+export const setProductPriceLocked = async (id: string, locked: boolean) => {
+    const { error } = await supabase
+        .from('products')
+        .update({ price_locked: locked } as never)
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
+// Pausa TOTAL del sync de CDR para un producto: prende (o apaga) los tres candados
+// de una — contenido, precio y stock. El producto queda 100% manual hasta reanudar.
+export const setProductSyncPaused = async (id: string, paused: boolean) => {
+    const { error } = await supabase
+        .from('products')
+        .update({
+            content_locked: paused,
+            price_locked: paused,
+            stock_locked: paused,
+        } as never)
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
 // Stock manual de una variante. El trigger variants_stock_to_ml encola el cambio
 // para Mercado Libre, así que la publicación queda con la misma cantidad.
 export const setVariantStock = async (variantId: string, stock: number) => {

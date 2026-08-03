@@ -14,6 +14,7 @@ import {
   useUpdateMlContent,
   useSetProductContentLocked,
   useSetProductStockLocked,
+  useSetProductSyncPaused,
   useSetVariantStock,
   useRecalcMlReadiness,
   useSetProductActive,
@@ -151,6 +152,11 @@ export const TableProduct = () => {
   const { updateContent, isUpdatingContent, updatingContentVars } = useUpdateMlContent();
   const { setContentLocked } = useSetProductContentLocked();
   const { setStockLocked } = useSetProductStockLocked();
+  const { setSyncPaused } = useSetProductSyncPaused();
+
+  // "Sync pausada" = los tres candados puestos (contenido + precio + stock).
+  const isSyncPaused = (p: any) =>
+    p.content_locked === true && p.price_locked === true && p.stock_locked === true;
   const { recalc, isRecalculating, recalcVars } = useRecalcMlReadiness();
 
   const handleUpdateMlContent = (product: any, variantId: string | undefined) => {
@@ -521,21 +527,42 @@ export const TableProduct = () => {
                           Nuevo
                         </span>
                       )}
-                      {(product as any).content_locked && (
+                      {/* Con los tres candados puestos mostramos uno solo, más claro
+                          que repetir tres chips diciendo lo mismo. */}
+                      {isSyncPaused(product) ? (
                         <span
-                          title="Contenido bloqueado: el sync de CDR no pisa el nombre/descripción de este producto"
-                          className="inline-flex items-center rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-700 ring-1 ring-ink-300"
+                          title="Sync de CDR pausada: CDR no toca nombre, descripción, precio ni stock de este producto"
+                          className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-400"
                         >
-                          🔒 Candado
+                          ⏸ Sync pausada
                         </span>
-                      )}
-                      {(product as any).stock_locked && (
-                        <span
-                          title="Stock manual: el sync de CDR no toca el stock de este producto. El precio se sigue actualizando."
-                          className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800 ring-1 ring-violet-300"
-                        >
-                          📦 Stock manual
-                        </span>
+                      ) : (
+                        <>
+                          {(product as any).content_locked && (
+                            <span
+                              title="Contenido bloqueado: el sync de CDR no pisa el nombre/descripción de este producto"
+                              className="inline-flex items-center rounded-full bg-ink-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-ink-700 ring-1 ring-ink-300"
+                            >
+                              🔒 Candado
+                            </span>
+                          )}
+                          {(product as any).price_locked && (
+                            <span
+                              title="Precio bloqueado: el sync de CDR no pisa el costo de este producto"
+                              className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800 ring-1 ring-emerald-300"
+                            >
+                              💲 Precio fijo
+                            </span>
+                          )}
+                          {(product as any).stock_locked && (
+                            <span
+                              title="Stock manual: el sync de CDR no toca el stock de este producto. El precio se sigue actualizando."
+                              className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800 ring-1 ring-violet-300"
+                            >
+                              📦 Stock manual
+                            </span>
+                          )}
+                        </>
                       )}
                       {(product as any).ml_content_dirty && (product as any).is_in_ml && (
                         <span
@@ -696,6 +723,28 @@ export const TableProduct = () => {
                             updatingContentVars?.productId === product.id
                               ? 'Actualizando…'
                               : 'Actualizar en ML'}
+                          </button>
+                        )}
+                        {product.source === 'cdr' && (
+                          <button
+                            className="block w-full border-t border-ink-100 px-4 py-2 text-left text-xs font-bold text-amber-700 hover:bg-amber-50"
+                            onClick={() => {
+                              const pausing = !isSyncPaused(product);
+                              if (
+                                !pausing ||
+                                window.confirm(
+                                  `¿Pausar la sync de CDR de "${product.name}"?\n\nCDR deja de tocar TODO: nombre, descripción, precio y stock. El producto queda 100% manual hasta que la reanudes.`
+                                )
+                              ) {
+                                setSyncPaused({ id: product.id, paused: pausing });
+                              }
+                              setOpenMenuIndex(null);
+                            }}
+                            title="Frena por completo el sync de CDR para este producto (contenido + precio + stock)"
+                          >
+                            {isSyncPaused(product)
+                              ? '▶ Reanudar sync de CDR'
+                              : '⏸ Pausar sync de CDR'}
                           </button>
                         )}
                         {product.source === 'cdr' && (
