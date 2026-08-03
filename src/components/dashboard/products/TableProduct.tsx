@@ -13,6 +13,8 @@ import {
   usePublishMlItem,
   useUpdateMlContent,
   useSetProductContentLocked,
+  useSetProductStockLocked,
+  useSetVariantStock,
   useRecalcMlReadiness,
   useSetProductActive,
   useTaxonomiesAdmin,
@@ -148,6 +150,7 @@ export const TableProduct = () => {
   });
   const { updateContent, isUpdatingContent, updatingContentVars } = useUpdateMlContent();
   const { setContentLocked } = useSetProductContentLocked();
+  const { setStockLocked } = useSetProductStockLocked();
   const { recalc, isRecalculating, recalcVars } = useRecalcMlReadiness();
 
   const handleUpdateMlContent = (product: any, variantId: string | undefined) => {
@@ -526,6 +529,14 @@ export const TableProduct = () => {
                           🔒 Candado
                         </span>
                       )}
+                      {(product as any).stock_locked && (
+                        <span
+                          title="Stock manual: el sync de CDR no toca el stock de este producto. El precio se sigue actualizando."
+                          className="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-800 ring-1 ring-violet-300"
+                        >
+                          📦 Stock manual
+                        </span>
+                      )}
                       {(product as any).ml_content_dirty && (product as any).is_in_ml && (
                         <span
                           title="CDR cambió el título o la descripción. Actualizá la publicación de Mercado Libre desde el menú."
@@ -581,7 +592,7 @@ export const TableProduct = () => {
                   {/* Stock TOTAL (suma de variantes), que es por lo que ordena la
                       columna. Antes mostraba sólo la 1ª variante y con productos
                       multi-variante el orden parecía equivocado. */}
-                  <CellTableProduct content={totalStock(product).toString()} />
+                  <StockCell product={product} total={totalStock(product)} />
                   <td className="p-4 align-middle">
                     {product.active ? (
                       <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
@@ -689,6 +700,31 @@ export const TableProduct = () => {
                         )}
                         {product.source === 'cdr' && (
                           <button
+                            className="block w-full text-left px-4 py-2 text-xs font-medium text-violet-700 hover:bg-violet-50"
+                            onClick={() => {
+                              const locking = !(product as any).stock_locked;
+                              if (
+                                !locking ||
+                                window.confirm(
+                                  `¿Poner "${product.name}" en stock manual?\n\nEl sync de CDR va a dejar de tocarle el stock: lo manejás vos desde la columna Stock. El precio se sigue actualizando.\n\nCuando CDR vuelva a tener stock, sacale el candado para que se sincronice de nuevo.`
+                                )
+                              ) {
+                                setStockLocked({
+                                  id: product.id,
+                                  locked: locking,
+                                });
+                              }
+                              setOpenMenuIndex(null);
+                            }}
+                            title="Si el stock es manual, el sync de CDR no lo pisa (para cuando tenés mercadería propia y CDR está en 0)"
+                          >
+                            {(product as any).stock_locked
+                              ? 'Volver a stock de CDR'
+                              : 'Stock manual (CDR)'}
+                          </button>
+                        )}
+                        {product.source === 'cdr' && (
+                          <button
                             className="block w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
                             onClick={() => {
                               setContentLocked({
@@ -768,6 +804,62 @@ export const TableProduct = () => {
         />
       )}
     </div>
+  );
+};
+
+// Celda "Stock". Con el candado de stock puesto es editable a mano: el sync de CDR
+// ya no la pisa. Si el producto está en ML, guardar dispara el sync de cantidad.
+const StockCell = ({ product, total }: { product: any; total: number }) => {
+  const { setStock, isSettingStock, stockVars } = useSetVariantStock();
+  const variants = product.variants ?? [];
+  const editable = product.stock_locked && variants.length === 1;
+  const variantId = variants[0]?.id as string | undefined;
+  const [value, setValue] = useState(String(total));
+
+  // Si el stock cambia por fuera (venta, sync), reflejarlo mientras no se edite.
+  useEffect(() => setValue(String(total)), [total]);
+
+  if (!editable) {
+    return <CellTableProduct content={total.toString()} />;
+  }
+
+  const saving = isSettingStock && stockVars?.variantId === variantId;
+  const parsed = Math.max(0, Math.floor(Number(value)));
+  const dirty = Number.isFinite(parsed) && parsed !== total;
+
+  const save = () => {
+    if (!variantId || !dirty || !Number.isFinite(parsed)) return;
+    setStock({ variantId, stock: parsed });
+  };
+
+  return (
+    <td className="p-4 align-middle">
+      <div className="flex items-center gap-1.5">
+        <input
+          type="number"
+          min={0}
+          value={value}
+          disabled={saving}
+          onChange={e => setValue(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') save();
+            if (e.key === 'Escape') setValue(String(total));
+          }}
+          onBlur={() => !dirty && setValue(String(total))}
+          className="w-16 rounded-md border border-violet-300 bg-violet-50/40 px-2 py-1 text-sm font-semibold text-ink-900 outline-none focus:ring-2 focus:ring-violet-300 disabled:opacity-50"
+          title="Stock manual: escribí la cantidad y guardá"
+        />
+        {dirty && (
+          <button
+            onClick={save}
+            disabled={saving}
+            className="rounded-md bg-violet-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-violet-700 disabled:opacity-50"
+          >
+            {saving ? '…' : 'Guardar'}
+          </button>
+        )}
+      </div>
+    </td>
   );
 };
 

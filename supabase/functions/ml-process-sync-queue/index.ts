@@ -18,6 +18,12 @@
 //    Ahora se empuja SIEMPRE la moneda OBJETIVO (la que dicta el umbral). Si ML rechaza el
 //    cambio de moneda (algunos items con ventas pueden bloquearlo), se hace FALLBACK a la
 //    moneda actual del item convirtiendo el precio con el dolar, para no fallar la operacion.
+//
+// v9 (2026-08-03):
+//  - El stock que se publica en ML es SIEMPRE el de RF Store (variants.stock). Los productos
+//    con STOCK MANUAL (products.stock_locked = mercaderia propia comprada a CDR) usan umbral 0
+//    en vez de app_settings.ml_stock_threshold: se venden hasta la ultima unidad, porque el
+//    stock esta fisicamente y no depende de que CDR lo tenga.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -94,13 +100,19 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
   const reactivateEnabled = settings.get('ml_auto_reactivate_enabled') === true;
 
   let externalCode: string | null = null;
+  let stockLocked = false;
   if (mapping.product_id) {
-    const { data: prod } = await supabase.from('products').select('external_code').eq('id', mapping.product_id).maybeSingle();
+    const { data: prod } = await supabase.from('products').select('external_code, stock_locked').eq('id', mapping.product_id).maybeSingle();
     externalCode = prod?.external_code ?? null;
+    stockLocked = (prod as any)?.stock_locked === true;
   }
   const baseLog = { ml_item_id: mlItemId, variant_id: item.variant_id, external_code: externalCode, operation: item.operation, old_ml_status: mapping.status, source };
 
-  const threshold = Number(settings.get('ml_stock_threshold') ?? 0);
+  // v9 (2026-08-03): ML publica SIEMPRE el stock de RF Store (variants.stock), nunca el de CDR.
+  // El umbral de pausa es un colchon anti-oversell que solo tiene sentido en dropship puro,
+  // donde el stock es una PROMESA de CDR. Si el producto tiene STOCK MANUAL (products.stock_locked)
+  // la mercaderia es propia y esta fisicamente: se vende hasta la ultima unidad -> umbral 0.
+  const threshold = stockLocked ? 0 : Number(settings.get('ml_stock_threshold') ?? 0);
 
   switch (item.operation) {
     case 'update_stock': {

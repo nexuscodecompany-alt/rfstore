@@ -328,6 +328,27 @@ export const setProductContentLocked = async (id: string, locked: boolean) => {
     if (error) throw new Error(error.message);
 };
 
+// Candado de STOCK: cuando está en true, el sync de CDR NO pisa el stock de las
+// variantes de este producto. Se usa cuando RF compró la mercadería y la tiene
+// físicamente aunque CDR ya no tenga (el precio se sigue sincronizando).
+export const setProductStockLocked = async (id: string, locked: boolean) => {
+    const { error } = await supabase
+        .from('products')
+        .update({ stock_locked: locked } as never)
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
+// Stock manual de una variante. El trigger variants_stock_to_ml encola el cambio
+// para Mercado Libre, así que la publicación queda con la misma cantidad.
+export const setVariantStock = async (variantId: string, stock: number) => {
+    const { error } = await supabase
+        .from('variants')
+        .update({ stock } as never)
+        .eq('id', variantId);
+    if (error) throw new Error(error.message);
+};
+
 export const createProduct = async (productInput: ProductInput) => {
     const { data: product, error: productError } = await supabase
         .from('products')

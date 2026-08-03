@@ -11,6 +11,7 @@ import {
 	deleteSaleConcept,
 	getManualSales,
 	getSaleConcepts,
+	updateManualSale,
 	type ManualSaleInput,
 } from '../../actions';
 
@@ -62,6 +63,24 @@ export const useCreateManualSale = () => {
 			qc.invalidateQueries({ queryKey: ['admin-products'] });
 			qc.invalidateQueries({ queryKey: ['products'] });
 			toast.success('Venta registrada');
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
+};
+
+export const useUpdateManualSale = () => {
+	const qc = useQueryClient();
+	return useMutation({
+		mutationFn: ({ id, input }: { id: number; input: ManualSaleInput }) =>
+			updateManualSale(id, input),
+		onSuccess: () => {
+			qc.invalidateQueries({ queryKey: ['manual_sales'] });
+			qc.invalidateQueries({ queryKey: ['orders', 'admin'] });
+			qc.invalidateQueries({ queryKey: ['dashboard-metrics'] });
+			// El stock pudo cambiar (ventas con producto vinculado).
+			qc.invalidateQueries({ queryKey: ['admin-products'] });
+			qc.invalidateQueries({ queryKey: ['products'] });
+			toast.success('Venta actualizada');
 		},
 		onError: (e: Error) => toast.error(e.message),
 	});

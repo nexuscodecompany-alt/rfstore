@@ -37,7 +37,7 @@ export interface ManualSale {
 	grossProfit: number; // venta - costo
 	profit: number; // neta = venta - costo - comisión - envío - otros
 	// Productos del catálogo vinculados (los que descontaron stock).
-	items: { label: string; quantity: number }[];
+	items: ManualSaleItem[];
 }
 
 export interface ManualSaleInput {
@@ -97,7 +97,7 @@ export const getManualSales = async (
 			 total_amount, total_original, ml_currency, fx_rate,
 			 manual_cost_usd, ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 			 sale_concepts:concept_id(name, color),
-			 order_items:order_items(quantity, variants(color_name, storage, products(name)))`
+			 order_items:order_items(variant_id, quantity, variants(color_name, storage, products(name)))`
 		)
 		.eq('channel', 'manual')
 		.order('created_at', { ascending: false });
@@ -138,6 +138,7 @@ export const getManualSales = async (
 			grossProfit: saleAmount - cost,
 			profit: saleAmount - cost - commission - shipping - other,
 			items: ((o.order_items ?? []) as any[]).map(it => ({
+				variantId: it.variant_id as string,
 				label:
 					[
 						it.variants?.products?.name,
@@ -182,6 +183,38 @@ export const createManualSale = async (
 	});
 	if (error) throw new Error(error.message);
 	return { id: data as number };
+};
+
+export const updateManualSale = async (
+	id: number,
+	input: ManualSaleInput
+): Promise<void> => {
+	const isUyu = input.currency === 'UYU';
+	const fx = isUyu ? Number(input.fxRate) || 1 : 1;
+	const toUsd = (n: number) => (isUyu ? n / fx : n);
+	const round2 = (n: number) => Math.round(n * 100) / 100;
+
+	// El RPC reconcilia el stock: devuelve el de los items viejos y descuenta el
+	// de los nuevos (lo que dispara el sync a ML), todo de forma atómica.
+	const { error } = await (supabase as any).rpc('update_manual_sale', {
+		p_order_id: id,
+		p_concept_id: input.conceptId,
+		p_description: input.description?.trim() || null,
+		p_currency: input.currency,
+		p_sale_amount: input.saleAmount,
+		p_total_usd: round2(toUsd(input.saleAmount)),
+		p_fx_rate: fx,
+		p_cost_usd: round2(toUsd(input.cost)),
+		p_commission_usd: round2(toUsd(input.commission)),
+		p_shipping_usd: round2(toUsd(input.shipping)),
+		p_other_usd: round2(toUsd(input.other)),
+		p_sale_date: input.saleDate || null,
+		p_items: input.items.map(i => ({
+			variant_id: i.variantId,
+			quantity: i.quantity,
+		})),
+	});
+	if (error) throw new Error(error.message);
 };
 
 export const deleteManualSale = async (id: number): Promise<void> => {

@@ -14,6 +14,8 @@ export * from './products/useHomeSections';
 export * from './products/usePublishMlItem';
 export * from './products/useUpdateMlContent';
 export * from './products/useSetProductContentLocked';
+export * from './products/useSetProductStockLocked';
+export * from './products/useSetVariantStock';
 export * from './products/useRecalcMlReadiness';
 
 

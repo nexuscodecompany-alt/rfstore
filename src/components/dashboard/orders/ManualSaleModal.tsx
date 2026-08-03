@@ -1,17 +1,23 @@
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { HiOutlineTrash, HiXMark, HiOutlinePlus } from 'react-icons/hi2';
+import {
+	HiOutlineTrash,
+	HiXMark,
+	HiOutlinePlus,
+	HiOutlinePencilSquare,
+} from 'react-icons/hi2';
 import {
 	useSaleConcepts,
 	useCreateSaleConcept,
 	useDeleteSaleConcept,
 	useManualSales,
 	useCreateManualSale,
+	useUpdateManualSale,
 	useDeleteManualSale,
 	useUsdUyuRate,
 } from '../../../hooks';
 import { supabase } from '../../../supabase/client';
-import type { ManualSaleItem } from '../../../actions';
+import type { ManualSale, ManualSaleItem } from '../../../actions';
 import { formatMoneyCur, formatDateLong } from '../../../helpers';
 
 type Currency = 'USD' | 'UYU';
@@ -29,24 +35,37 @@ interface ProductRow {
 }
 
 const todayISODate = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+const toISODate = (iso: string) => new Date(iso).toLocaleDateString('en-CA');
 
 interface Props {
 	open: boolean;
 	onClose: () => void;
-	// Si viene un id, el modal muestra esa venta manual (ver + eliminar).
+	// Si viene un id, el modal muestra esa venta manual (ver + editar + eliminar).
 	// Si no, muestra el formulario para crear una nueva.
 	saleId?: number | null;
 }
 
 export const ManualSaleModal = ({ open, onClose, saleId }: Props) => {
+	const [editing, setEditing] = useState(false);
+
+	// Al cerrar (o cambiar de venta) volvemos siempre al modo lectura.
+	useEffect(() => {
+		if (!open) setEditing(false);
+	}, [open, saleId]);
+
 	if (!open) return null;
+
+	const title = !saleId
+		? 'Nueva venta manual'
+		: editing
+		? 'Editar venta manual'
+		: 'Venta manual';
+
 	return (
 		<div className='fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/50 p-4 backdrop-blur-sm'>
 			<div className='my-8 w-full max-w-2xl rounded-2xl bg-white shadow-2xl'>
 				<div className='flex items-center justify-between border-b border-ink-100 px-5 py-4'>
-					<h2 className='text-lg font-bold text-ink-900'>
-						{saleId ? 'Venta manual' : 'Nueva venta manual'}
-					</h2>
+					<h2 className='text-lg font-bold text-ink-900'>{title}</h2>
 					<button
 						onClick={onClose}
 						className='grid h-9 w-9 place-items-center rounded-lg text-ink-400 hover:bg-ink-100'
@@ -57,9 +76,20 @@ export const ManualSaleModal = ({ open, onClose, saleId }: Props) => {
 				</div>
 				<div className='p-5'>
 					{saleId ? (
-						<ViewManualSale saleId={saleId} onClose={onClose} />
+						editing ? (
+							<EditManualSale
+								saleId={saleId}
+								onClose={() => setEditing(false)}
+							/>
+						) : (
+							<ViewManualSale
+								saleId={saleId}
+								onClose={onClose}
+								onEdit={() => setEditing(true)}
+							/>
+						)
 					) : (
-						<CreateManualSale onClose={onClose} />
+						<ManualSaleForm onClose={onClose} />
 					)}
 				</div>
 				<style>{`.inp{width:100%;border:1px solid #d6d3d1;border-radius:0.5rem;padding:0.5rem 0.75rem;font-size:0.875rem;outline:none}.inp:focus{box-shadow:0 0 0 2px rgba(99,102,241,.3)}`}</style>
@@ -68,13 +98,30 @@ export const ManualSaleModal = ({ open, onClose, saleId }: Props) => {
 	);
 };
 
-/* ----------------------------- Ver / eliminar ----------------------------- */
-const ViewManualSale = ({
+/* ------------------------------ Editar venta ------------------------------ */
+// Carga la venta y reusa el mismo formulario que el alta, precargado.
+const EditManualSale = ({
 	saleId,
 	onClose,
 }: {
 	saleId: number;
 	onClose: () => void;
+}) => {
+	const { data: sales = [] } = useManualSales(null);
+	const sale = sales.find(s => s.id === saleId);
+	if (!sale) return <p className='text-sm text-ink-500'>Cargando…</p>;
+	return <ManualSaleForm sale={sale} onClose={onClose} />;
+};
+
+/* ------------------------- Ver / editar / eliminar ------------------------- */
+const ViewManualSale = ({
+	saleId,
+	onClose,
+	onEdit,
+}: {
+	saleId: number;
+	onClose: () => void;
+	onEdit: () => void;
 }) => {
 	const { data: sales = [] } = useManualSales(null);
 	const deleteSale = useDeleteManualSale();
@@ -136,7 +183,13 @@ const ViewManualSale = ({
 					<span>{formatMoneyCur(sale.grossProfit, sale.currency)}</span>
 				</div>
 			</div>
-			<div className='flex justify-end'>
+			<div className='flex flex-wrap justify-end gap-2'>
+				<button
+					onClick={onEdit}
+					className='inline-flex items-center gap-1.5 rounded-full border border-ink-300 px-4 py-2 text-sm font-semibold text-ink-700 hover:bg-ink-50'
+				>
+					<HiOutlinePencilSquare size={16} /> Editar venta
+				</button>
 				<button
 					onClick={() => {
 						if (confirm('¿Eliminar esta venta manual?'))
@@ -184,34 +237,52 @@ const Row = ({
 	</div>
 );
 
-/* ------------------------------- Crear venta ------------------------------- */
-const CreateManualSale = ({ onClose }: { onClose: () => void }) => {
+/* --------------------------- Crear / editar venta --------------------------- */
+// Mismo formulario para el alta y la edición: si viene `sale`, arranca precargado
+// y guarda con update (el RPC reconcilia el stock de los productos vinculados).
+const ManualSaleForm = ({
+	sale,
+	onClose,
+}: {
+	sale?: ManualSale;
+	onClose: () => void;
+}) => {
 	const { data: concepts = [] } = useSaleConcepts();
 	const createConcept = useCreateSaleConcept();
 	const deleteConcept = useDeleteSaleConcept();
 	const createSale = useCreateManualSale();
+	const updateSale = useUpdateManualSale();
 	const { data: fx } = useUsdUyuRate();
 
-	const [conceptId, setConceptId] = useState('');
-	const [description, setDescription] = useState('');
-	const [currency, setCurrency] = useState<Currency>('UYU');
-	const [saleAmount, setSaleAmount] = useState('');
-	const [cost, setCost] = useState('');
-	const [commission, setCommission] = useState('');
-	const [shipping, setShipping] = useState('');
-	const [other, setOther] = useState('');
-	const [fxRate, setFxRate] = useState('');
-	const [saleDate, setSaleDate] = useState(todayISODate());
+	const isEdit = !!sale;
+	// En edición mostramos los montos ya convertidos a la moneda real de la venta.
+	const num = (v: number | undefined) => (v ? String(v) : '');
+
+	const [conceptId, setConceptId] = useState(sale?.conceptId ?? '');
+	const [description, setDescription] = useState(sale?.description ?? '');
+	const [currency, setCurrency] = useState<Currency>(sale?.currency ?? 'UYU');
+	const [saleAmount, setSaleAmount] = useState(num(sale?.saleAmount));
+	const [cost, setCost] = useState(num(sale?.cost));
+	const [commission, setCommission] = useState(num(sale?.commission));
+	const [shipping, setShipping] = useState(num(sale?.shipping));
+	const [other, setOther] = useState(num(sale?.other));
+	const [fxRate, setFxRate] = useState(
+		sale && sale.currency === 'UYU' ? String(sale.fxRate) : ''
+	);
+	const [saleDate, setSaleDate] = useState(
+		sale ? toISODate(sale.created_at) : todayISODate()
+	);
 	const [newConcept, setNewConcept] = useState('');
 	const [showConcepts, setShowConcepts] = useState(false);
-	const [items, setItems] = useState<ManualSaleItem[]>([]);
+	const [items, setItems] = useState<ManualSaleItem[]>(sale?.items ?? []);
 
 	const n = (s: string) => Number(s) || 0;
 	const grossProfit = n(saleAmount) - n(cost);
 	const profit = grossProfit - n(commission) - n(shipping) - n(other);
 	const effectiveFx = currency === 'UYU' ? n(fxRate) || fx?.rate || 0 : 1;
+	const saving = createSale.isPending || updateSale.isPending;
 
-	const handleCreate = () => {
+	const handleSubmit = () => {
 		if (n(saleAmount) <= 0) {
 			alert('Ingresá el precio de venta.');
 			return;
@@ -220,24 +291,23 @@ const CreateManualSale = ({ onClose }: { onClose: () => void }) => {
 			alert('Falta la cotización del dólar (pesos por USD).');
 			return;
 		}
-		createSale.mutate(
-			{
-				conceptId: conceptId || null,
-				description,
-				currency,
-				saleAmount: n(saleAmount),
-				cost: n(cost),
-				commission: n(commission),
-				shipping: n(shipping),
-				other: n(other),
-				fxRate: effectiveFx,
-				saleDate: saleDate
-					? new Date(`${saleDate}T12:00:00`).toISOString()
-					: null,
-				items,
-			},
-			{ onSuccess: onClose }
-		);
+		const input = {
+			conceptId: conceptId || null,
+			description,
+			currency,
+			saleAmount: n(saleAmount),
+			cost: n(cost),
+			commission: n(commission),
+			shipping: n(shipping),
+			other: n(other),
+			fxRate: effectiveFx,
+			saleDate: saleDate
+				? new Date(`${saleDate}T12:00:00`).toISOString()
+				: null,
+			items,
+		};
+		if (sale) updateSale.mutate({ id: sale.id, input }, { onSuccess: onClose });
+		else createSale.mutate(input, { onSuccess: onClose });
 	};
 
 	const addItem = (item: ManualSaleItem) =>
@@ -493,11 +563,15 @@ const CreateManualSale = ({ onClose }: { onClose: () => void }) => {
 						Cancelar
 					</button>
 					<button
-						onClick={handleCreate}
-						disabled={createSale.isPending}
+						onClick={handleSubmit}
+						disabled={saving}
 						className='rounded-full bg-brand-600 px-5 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60'
 					>
-						{createSale.isPending ? 'Guardando…' : 'Registrar venta'}
+						{saving
+							? 'Guardando…'
+							: isEdit
+							? 'Guardar cambios'
+							: 'Registrar venta'}
 					</button>
 				</div>
 			</div>
