@@ -24,6 +24,13 @@
 //    con STOCK MANUAL (products.stock_locked = mercaderia propia comprada a CDR) usan umbral 0
 //    en vez de app_settings.ml_stock_threshold: se venden hasta la ultima unidad, porque el
 //    stock esta fisicamente y no depende de que CDR lo tenga.
+//
+// v10 (2026-08-03):
+//  - REACTIVACION en productos con stock_locked: se reactiva tambien la publicacion que ML
+//    reporta como 'paused_by_seller' (antes solo la de 'out_of_stock'). Motivo: cuando el
+//    admin carga stock manual esta declarando mercaderia propia, y ML marca como "pausada por
+//    el vendedor" tanto las pausas manuales como las que hicimos nosotros por stock 0 -> la
+//    publicacion quedaba muerta con stock cargado. Las MODERADAS por ML se siguen respetando.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -143,7 +150,13 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
         const mlStatus = itq.data?.status;
         const subStatus: string[] = Array.isArray(itq.data?.sub_status) ? itq.data.sub_status.map((s: any) => String(s)) : [];
         const pausedByStock = itq.ok && mlStatus === 'paused' && subStatus.includes('out_of_stock') && !isModerated(mlStatus, subStatus);
-        if (!pausedByStock) {
+        // v10 (2026-08-03): en productos con STOCK MANUAL (stock_locked) cargar stock es una
+        // decision explicita del admin sobre mercaderia que tiene fisicamente, asi que tambien
+        // se reactiva la que figura 'paused_by_seller' (incluye las que pausamos nosotros por
+        // stock 0: ML las reporta como pausadas por el vendedor, no como out_of_stock).
+        // Las MODERADAS por ML se siguen respetando siempre.
+        const pausedBySellerOnStockLock = itq.ok && mlStatus === 'paused' && stockLocked && !isModerated(mlStatus, subStatus);
+        if (!pausedByStock && !pausedBySellerOnStockLock) {
           await supabase.from('ml_item_mapping').update({ last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
           await logSync({ ...baseLog, action: 'skipped_not_stock_pause', new_ml_status: 'paused', stock, result: 'ok', error: itq.ok ? `ml_status=${mlStatus} sub=${JSON.stringify(subStatus)}` : `get_item_${itq.status}` });
           return { ok: true };
@@ -151,7 +164,7 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
         const ra = await mlReq(`/items/${mlItemId}`, 'PUT', token, { status: 'active', available_quantity: stock });
         if (!ra.ok) { await logSync({ ...baseLog, action: 'reactivate', new_ml_status: 'paused', stock, result: 'error', error: `reactivate: ${ra.status}: ${JSON.stringify(ra.data).slice(0, 150)}` }); return { ok: false, error: `reactivate: ${ra.status}`, retryable: isRetryable(ra.status) }; }
         await supabase.from('ml_item_mapping').update({ status: 'active', auto_paused_stock: false, last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
-        await logSync({ ...baseLog, action: 'reactivated', new_ml_status: 'active', stock, result: 'ok' });
+        await logSync({ ...baseLog, action: 'reactivated', new_ml_status: 'active', stock, result: 'ok', error: pausedByStock ? null : `stock_locked: sub=${JSON.stringify(subStatus)}` });
         return { ok: true };
       }
 
