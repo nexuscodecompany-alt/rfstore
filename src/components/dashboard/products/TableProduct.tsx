@@ -31,6 +31,19 @@ import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
 import { MlPublishAttributesModal } from './MlPublishAttributesModal';
 
+// Un producto puede tener VARIAS filas en ml_item_mapping: cada republicación deja la
+// anterior como closed / closed_archived. El embed de PostgREST viene sin ORDER BY y
+// devuelve primero la más vieja, así que tomar [0] apuntaba el link "Ver en ML" (y el
+// botón activar/pausar) a una publicación muerta. Nos quedamos con la publicación VIVA:
+// active > paused > under_review > resto, y a igual estado la más nueva (id más alto).
+type MlMappingRow = { id?: number; ml_item_id: string; permalink: string | null; status: string; variant_id: string | null };
+const ML_STATUS_RANK: Record<string, number> = { active: 0, paused: 1, under_review: 2 };
+export const liveMlMapping = (rows?: MlMappingRow[] | null): MlMappingRow | undefined =>
+  (rows ?? []).slice().sort((a, b) => {
+    const rank = (ML_STATUS_RANK[a.status] ?? 9) - (ML_STATUS_RANK[b.status] ?? 9);
+    return rank !== 0 ? rank : (b.id ?? 0) - (a.id ?? 0);
+  })[0];
+
 // `sort` marca las columnas clickeables para ordenar. Las que no lo tienen no son
 // ordenables a nivel base: "Precio Web" y "Precio ML" se calculan aplicando márgenes
 // por tramo/categoría sobre el costo, así que ordenar por costo NO daría el mismo
@@ -497,7 +510,7 @@ export const TableProduct = () => {
           <tbody>
             {displayedProducts.map((product, index) => {
               const selectedVariant = product.variants[0] || {};
-              const mlMapping = (product as any).ml_item_mapping?.[0];
+              const mlMapping = liveMlMapping((product as any).ml_item_mapping);
               const mlItemId: string | null = mlMapping?.ml_item_id ?? null;
               const mlUrl: string | null =
                 mlMapping?.permalink ??

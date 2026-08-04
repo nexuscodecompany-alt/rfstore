@@ -1,14 +1,13 @@
 // deno-lint-ignore-file no-explicit-any
-// Webhook ML: registra ventas pagadas (mapea items, descuenta stock) y captura
-// automáticamente los gastos REALES de ML para la ganancia neta:
-//   - Comisión: marketplace_fee del pago (ya incluye el %, el "costo fijo" de
-//     productos baratos y el IVA). Fallback: sale_fee por unidad.
-//   - Envío que paga el vendedor VÍA ML: se lee del shipment.
-//       · Flex (logistic.type='self_service'): el vendedor envía por su cuenta
-//         (cadetería) → 0 acá; ese costo se carga a mano en la orden.
-//       · Mercado Envíos a su cargo (xd_drop_off, drop_off, etc.): list_cost - cost.
-// Modos: notificación normal; { reprocess:true }; { backfill_fees:true, max? };
-// { inspect_order:'<id>' } (solo lectura).
+// Webhook ML: registra ventas pagadas y captura los gastos REALES de ML para la
+// ganancia neta: comisión (marketplace_fee: %, costo fijo e IVA) y envío que paga el
+// vendedor vía ML (0 en Flex/self_service — ese va manual; list_cost-cost en Mercado
+// Envíos a su cargo). Modos: normal; { reprocess }; { backfill_fees, max }; { inspect_order }.
+//
+// v12 (2026-08-04): si ML vendió MÁS unidades de las que RF Store tenía en stock, el
+// descuento se clavaba en 0 en silencio. Ahora se avisa al admin: es la señal de que la
+// publicación y el producto están desalineados (típico: stock cargado a mano en ML sobre
+// un producto que en RF está en 0, o dos fichas distintas para el mismo artículo).
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -40,7 +39,7 @@ async function mlGet(path: string, token: string, extra: Record<string, string> 
   try { return { ok: r.ok, status: r.status, data: JSON.parse(t) }; } catch { return { ok: r.ok, status: r.status, data: { raw: t } }; }
 }
 
-// Comisión total que ML descuenta (incluye %, "costo fijo" e IVA).
+// Comisión total que ML descuenta (incluye %, costo fijo e IVA).
 function mlCommission(order: any): number {
   let c = 0;
   for (const p of order?.payments ?? []) c += Number(p?.marketplace_fee) || 0;
@@ -48,7 +47,7 @@ function mlCommission(order: any): number {
   return c;
 }
 
-// Envío que paga el vendedor vía ML (0 en Flex/self_service: lo maneja por su cuenta).
+// Envío que paga el vendedor vía ML. 0 en Flex/self_service (lo maneja por su cuenta).
 async function mlShipping(order: any, token: string): Promise<number> {
   const shipId = order?.shipping?.id;
   if (!shipId) return 0;
@@ -56,7 +55,7 @@ async function mlShipping(order: any, token: string): Promise<number> {
   if (!sr.ok) return 0;
   const s = sr.data ?? {};
   const type = s?.logistic?.type ?? s?.logistic_type ?? '';
-  if (type === 'self_service') return 0; // Flex: envío por cuenta del vendedor (manual)
+  if (type === 'self_service') return 0;
   const lt = s?.lead_time ?? {};
   const listCost = Number(lt.list_cost ?? s?.shipping_option?.list_cost) || 0;
   const buyerCost = Number(lt.cost ?? s?.shipping_option?.cost) || 0;
@@ -115,36 +114,63 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
   if (insErr || !inserted) { console.warn('orders insert ml_order:', insErr?.message); return { ok: false, error: `insert_order: ${insErr?.message ?? 'no_id'}` }; }
   const orderId = inserted.id;
 
+  // Si RF Store tenía MENOS stock del que se vendió en ML, el descuento se clavaba en 0 en
+  // silencio y nadie se enteraba de que las dos puntas estaban desalineadas (caso real
+  // 2026-08-04: MLU694332351 con stock cargado a mano en ML sobre un producto en 0 en RF).
+  const shortfalls: { title: string; vendido: number; habia_en_rf: number }[] = [];
   for (const it of resolved) {
     await supabase.from('order_items').insert({ order_id: orderId, variant_id: it.variant_id, quantity: it.qty, price: it.unitPrice, cost_usd: it.cost });
     const { data: variant } = await supabase.from('variants').select('stock').eq('id', it.variant_id).single();
-    if (variant) { const newStock = Math.max(0, Number(variant.stock) - it.qty); await supabase.from('variants').update({ stock: newStock }).eq('id', it.variant_id); }
+    if (variant) {
+      const before = Number(variant.stock);
+      if (before < it.qty) shortfalls.push({ title: it.title, vendido: it.qty, habia_en_rf: before });
+      await supabase.from('variants').update({ stock: Math.max(0, before - it.qty) }).eq('id', it.variant_id);
+    }
   }
 
-  await notifyAdminOnce('ml_sale', mlOrderId, { total, items: resolved.map(r => ({ title: r.title, qty: r.qty })), unmapped, needs_manual_stock: unmapped.length > 0, message: unmapped.length > 0 ? `Venta en Mercado Libre registrada, pero ${unmapped.length} item(s) no están vinculados a un producto de RF Store: revisá el stock a mano.` : 'Venta en Mercado Libre: stock descontado automáticamente.' });
+  const message = unmapped.length > 0
+    ? `Venta en Mercado Libre registrada, pero ${unmapped.length} item(s) no están vinculados a un producto de RF Store: revisá el stock a mano.`
+    : shortfalls.length > 0
+      ? `Venta en Mercado Libre: ML vendió más unidades de las que RF Store tenía (${shortfalls.map(s => `${s.title}: vendió ${s.vendido}, había ${s.habia_en_rf}`).join('; ')}). La publicación y el producto están desalineados: revisá el stock.`
+      : 'Venta en Mercado Libre: stock descontado automáticamente.';
+
+  await notifyAdminOnce('ml_sale', mlOrderId, { total, items: resolved.map(r => ({ title: r.title, qty: r.qty })), unmapped, shortfalls, needs_manual_stock: unmapped.length > 0 || shortfalls.length > 0, message });
   return { ok: true };
 }
 
-// Recalcula comisión/envío de órdenes ML ya registradas usando el fx ORIGINAL de cada
-// orden (para que coincida con los pesos que cobró ML). Solo escribe esos dos costos.
-async function backfillFees(max: number, token: string): Promise<{ updated: number; errors: number }> {
-  const { data: rows } = await supabase.from('orders').select('id, ml_order_id, ml_currency, fx_rate').eq('channel', 'ml').not('ml_order_id', 'is', null).order('id', { ascending: false }).limit(max);
-  let updated = 0, errors = 0;
+// Backfill de comisión/envío: SOLO completa órdenes ML que están en 0 (las que entraron
+// antes de que ML calculara el marketplace_fee). NUNCA pisa un valor ya cargado (manual
+// o automático) ni lo vuelve a 0. Respeta packs: si algún hermano del pack ya tiene
+// comisión, no toca el resto (para no duplicar el total consolidado a mano).
+async function backfillFees(max: number, token: string): Promise<{ updated: number; errors: number; skipped: number }> {
+  const { data: rows } = await supabase.from('orders')
+    .select('id, ml_order_id, ml_currency, fx_rate, ml_pack_id')
+    .eq('channel', 'ml').not('ml_order_id', 'is', null)
+    .or('ml_commission_usd.is.null,ml_commission_usd.eq.0')
+    .order('id', { ascending: false }).limit(max);
+  let updated = 0, errors = 0, skipped = 0;
   for (const row of rows ?? []) {
     try {
+      if ((row as any).ml_pack_id) {
+        const { data: pack } = await supabase.from('orders').select('ml_commission_usd').eq('ml_pack_id', (row as any).ml_pack_id);
+        if ((pack ?? []).some((p: any) => Number(p.ml_commission_usd) > 0)) { skipped++; continue; }
+      }
       const r = await mlGet(`/orders/${(row as any).ml_order_id}`, token);
       if (!r.ok) { errors++; continue; }
       const order = r.data;
       const fx = Number((row as any).fx_rate) || 1;
       const isUyu = ((row as any).ml_currency ?? order.currency_id) === 'UYU';
       const toUsd = (amount: number) => isUyu && fx > 0 ? Math.round((amount / fx) * 100) / 100 : amount;
-      const commission = mlCommission(order);
-      const shipping = await mlShipping(order, token);
-      await supabase.from('orders').update({ ml_commission_usd: toUsd(commission), ml_shipping_cost_usd: toUsd(shipping) }).eq('id', (row as any).id);
-      updated++;
+      const newComm = toUsd(mlCommission(order));
+      const newShip = toUsd(await mlShipping(order, token));
+      const upd: any = {};
+      if (newComm > 0) upd.ml_commission_usd = newComm;
+      if (newShip > 0) upd.ml_shipping_cost_usd = newShip;
+      if (Object.keys(upd).length > 0) { await supabase.from('orders').update(upd).eq('id', (row as any).id); updated++; }
+      else skipped++;
     } catch { errors++; }
   }
-  return { updated, errors };
+  return { updated, errors, skipped };
 }
 
 async function processItemNotification(resource: string, token: string): Promise<{ ok: boolean; error?: string }> {

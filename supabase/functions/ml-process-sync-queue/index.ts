@@ -25,6 +25,12 @@
 //    en vez de app_settings.ml_stock_threshold: se venden hasta la ultima unidad, porque el
 //    stock esta fisicamente y no depende de que CDR lo tenga.
 //
+// v11 (2026-08-04):
+//  - update_stock con mapping en 'paused': si ML responde que la publicacion esta ACTIVA,
+//    el mapping esta desactualizado (el vendedor la reactivo a mano en ML). Se corrige el
+//    mapping y se empuja la cantidad, en vez de abandonar con 'skipped_not_stock_pause'
+//    (que dejaba la publicacion sin sincronizar stock NUNCA MAS -> riesgo de sobreventa).
+//
 // v10 (2026-08-03):
 //  - REACTIVACION en productos con stock_locked: se reactiva tambien la publicacion que ML
 //    reporta como 'paused_by_seller' (antes solo la de 'out_of_stock'). Motivo: cuando el
@@ -141,14 +147,35 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
       }
 
       if (mapping.status === 'paused') {
+        // El estado real lo dicta ML, no nuestro mapping: leemos ANTES de decidir. Esto va
+        // arriba del candado de auto-reactivacion a proposito — si la publicacion ya esta
+        // activa en ML no hay nada que reactivar, solo hay que sincronizarle el stock.
+        const itq = await mlReq(`/items/${mlItemId}?attributes=status,sub_status`, 'GET', token);
+        const mlStatus = itq.data?.status;
+        const subStatus: string[] = Array.isArray(itq.data?.sub_status) ? itq.data.sub_status.map((s: any) => String(s)) : [];
+        // v11 (2026-08-04): si ML dice que la publicacion esta ACTIVA y nuestro mapping quedo
+        // en 'paused' (tipico cuando el vendedor la reactiva y le carga stock a mano desde ML),
+        // no hay nada que reactivar: corregimos el mapping con la verdad de ML y empujamos la
+        // cantidad como en el caso normal. ANTES esto caia en 'skipped_not_stock_pause' y la
+        // publicacion quedaba CONGELADA para siempre — RF no volvia a empujarle stock nunca mas
+        // (caso real: MLU694332351, activa en ML con 6 unidades que RF no conocia).
+        if (itq.ok && mlStatus === 'active') {
+          const up = await mlReq(`/items/${mlItemId}`, 'PUT', token, { available_quantity: stock });
+          if (!up.ok) {
+            await logSync({ ...baseLog, action: 'qty_update', new_ml_status: 'active', stock, result: 'error', error: `resync_qty: ${up.status}: ${JSON.stringify(up.data).slice(0, 200)}` });
+            return { ok: false, error: `update_qty: ${up.status}`, retryable: isRetryable(up.status) };
+          }
+          await supabase.from('ml_item_mapping').update({ status: 'active', auto_paused_stock: false, last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
+          await logSync({ ...baseLog, action: 'qty_updated_resynced', new_ml_status: 'active', stock, result: 'ok', error: 'el mapping decia paused; ML la tenia ACTIVA -> se corrigio y se empujo el stock' });
+          return { ok: true };
+        }
+
         if (!reactivateEnabled) {
           await supabase.from('ml_item_mapping').update({ last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
           await logSync({ ...baseLog, action: 'skipped_reactivate_disabled', new_ml_status: 'paused', stock, result: 'ok' });
           return { ok: true };
         }
-        const itq = await mlReq(`/items/${mlItemId}?attributes=status,sub_status`, 'GET', token);
-        const mlStatus = itq.data?.status;
-        const subStatus: string[] = Array.isArray(itq.data?.sub_status) ? itq.data.sub_status.map((s: any) => String(s)) : [];
+
         const pausedByStock = itq.ok && mlStatus === 'paused' && subStatus.includes('out_of_stock') && !isModerated(mlStatus, subStatus);
         // v10 (2026-08-03): en productos con STOCK MANUAL (stock_locked) cargar stock es una
         // decision explicita del admin sobre mercaderia que tiene fisicamente, asi que tambien

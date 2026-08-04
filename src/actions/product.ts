@@ -238,7 +238,7 @@ export const getAdminProducts = async (
     let query = supabase
         .from('products')
         .select(
-            '*, variants(*), brand:brands(*), category:categories(*), ml_item_mapping(ml_item_id, permalink, status, variant_id)',
+            '*, variants(*), brand:brands(*), category:categories(*), ml_item_mapping(id, ml_item_id, permalink, status, variant_id)',
             {
                 count: 'exact',
             }
