@@ -25,18 +25,20 @@
 //    en vez de app_settings.ml_stock_threshold: se venden hasta la ultima unidad, porque el
 //    stock esta fisicamente y no depende de que CDR lo tenga.
 //
-// v11 (2026-08-04):
-//  - update_stock con mapping en 'paused': si ML responde que la publicacion esta ACTIVA,
-//    el mapping esta desactualizado (el vendedor la reactivo a mano en ML). Se corrige el
-//    mapping y se empuja la cantidad, en vez de abandonar con 'skipped_not_stock_pause'
-//    (que dejaba la publicacion sin sincronizar stock NUNCA MAS -> riesgo de sobreventa).
-//
 // v10 (2026-08-03):
 //  - REACTIVACION en productos con stock_locked: se reactiva tambien la publicacion que ML
 //    reporta como 'paused_by_seller' (antes solo la de 'out_of_stock'). Motivo: cuando el
 //    admin carga stock manual esta declarando mercaderia propia, y ML marca como "pausada por
 //    el vendedor" tanto las pausas manuales como las que hicimos nosotros por stock 0 -> la
 //    publicacion quedaba muerta con stock cargado. Las MODERADAS por ML se siguen respetando.
+//
+// v11 (2026-08-04):
+//  - update_stock con mapping en 'paused': si ML responde que la publicacion esta ACTIVA,
+//    el mapping esta desactualizado (el vendedor la reactivo a mano en ML). Se corrige el
+//    mapping y se empuja la cantidad, en vez de abandonar con 'skipped_not_stock_pause'
+//    (que dejaba la publicacion sin sincronizar stock NUNCA MAS -> riesgo de sobreventa).
+//    El chequeo va ARRIBA del candado ml_auto_reactivate_enabled: si ya esta activa no hay
+//    nada que reactivar, solo sincronizarle el stock.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -148,7 +150,7 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
 
       if (mapping.status === 'paused') {
         // El estado real lo dicta ML, no nuestro mapping: leemos ANTES de decidir. Esto va
-        // arriba del candado de auto-reactivacion a proposito — si la publicacion ya esta
+        // arriba del candado de auto-reactivacion a proposito - si la publicacion ya esta
         // activa en ML no hay nada que reactivar, solo hay que sincronizarle el stock.
         const itq = await mlReq(`/items/${mlItemId}?attributes=status,sub_status`, 'GET', token);
         const mlStatus = itq.data?.status;
@@ -157,7 +159,7 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
         // en 'paused' (tipico cuando el vendedor la reactiva y le carga stock a mano desde ML),
         // no hay nada que reactivar: corregimos el mapping con la verdad de ML y empujamos la
         // cantidad como en el caso normal. ANTES esto caia en 'skipped_not_stock_pause' y la
-        // publicacion quedaba CONGELADA para siempre — RF no volvia a empujarle stock nunca mas
+        // publicacion quedaba CONGELADA para siempre - RF no volvia a empujarle stock nunca mas
         // (caso real: MLU694332351, activa en ML con 6 unidades que RF no conocia).
         if (itq.ok && mlStatus === 'active') {
           const up = await mlReq(`/items/${mlItemId}`, 'PUT', token, { available_quantity: stock });

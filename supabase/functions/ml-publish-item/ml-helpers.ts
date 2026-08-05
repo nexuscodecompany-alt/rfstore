@@ -69,10 +69,21 @@ export function extractFromFeatures(features: string[] | null | undefined): { gt
   }
   return result;
 }
+// ¿El nombre ya trae la marca, en CUALQUIER posicion? Normalizado (sin acentos, sin
+// signos, minusculas) porque hay marcas que rompen regex/limites de palabra: "be quiet!".
+function nameHasBrand(name: string, brand: string): boolean {
+  const norm = (s: string) => ` ${s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const b = norm(brand).trim();
+  return b.length > 0 && norm(name).includes(` ${b} `);
+}
+// La marca se antepone SOLO si el nombre no la trae ya. Antes se miraba solo el ARRANQUE
+// (`^brand`) y CDR pone la marca en el MEDIO ("Fan be quiet! Pure Wings 3") -> se duplicaba
+// en el titulo publicado. Verificado 2026-08-04: ML guarda el titulo tal cual se lo damos.
 export function buildTitle(productName: string, brand?: string | null, maxLen = 60): string {
   let t = productName.trim();
   t = t.replace(/\$\s*\d[\d.,]*/g, '').replace(/\b\d{8,}\b/g, '');
-  if (brand && !new RegExp(`^${brand}`, 'i').test(t)) t = `${brand} ${t}`;
+  t = t.replace(/\s+/g, ' ').trim();
+  if (brand && !nameHasBrand(t, brand)) t = `${brand} ${t}`;
   t = t.replace(/\s+/g, ' ').trim();
   if (t.length <= maxLen) return t;
   return t.slice(0, maxLen).trim();

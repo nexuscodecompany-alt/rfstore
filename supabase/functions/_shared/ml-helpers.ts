@@ -181,12 +181,28 @@ export function extractFromFeatures(features: string[] | null | undefined): { gt
 }
 
 // ---------- Title cleanup: max 60 chars, sin precio ni emojis ni teléfonos ----------
+// ¿El nombre ya trae la marca, en CUALQUIER posición? Comparamos normalizado (sin
+// acentos, sin signos, en minúsculas) porque hay marcas con caracteres que rompen
+// tanto un regex sin escapar como los límites de palabra: "be quiet!", "3DMakerPro".
+function nameHasBrand(name: string, brand: string): boolean {
+	const norm = (s: string) =>
+		` ${s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
+	const b = norm(brand).trim();
+	return b.length > 0 && norm(name).includes(` ${b} `);
+}
+
 export function buildTitle(productName: string, brand?: string | null, maxLen = 60): string {
 	let t = productName.trim();
 	// Sacar referencias a precio/llamadas/contacto
 	t = t.replace(/\$\s*\d[\d.,]*/g, '').replace(/\b\d{8,}\b/g, '');
-	// Si tiene brand al principio y duplicada, no problem
-	if (brand && !new RegExp(`^${brand}`, 'i').test(t)) {
+	t = t.replace(/\s+/g, ' ').trim();
+	// La marca se antepone SOLO si el nombre no la trae ya. Antes se miraba únicamente el
+	// ARRANQUE (`^brand`), y CDR nombra con el tipo de producto primero y la marca en el
+	// medio ("Fan be quiet! Pure Wings 3", "Filamento Bambu Lab PLA Lite marrón"), así que
+	// se la anteponía de nuevo: 1088 de 1165 publicaciones quedaron con la marca duplicada
+	// ("Be Quiet! Fan Be Quiet! Pure Wings 3"). Verificado 2026-08-04 contra la API de ML:
+	// el título es exactamente lo que mandamos nosotros, ML no antepone nada.
+	if (brand && !nameHasBrand(t, brand)) {
 		t = `${brand} ${t}`;
 	}
 	t = t.replace(/\s+/g, ' ').trim();

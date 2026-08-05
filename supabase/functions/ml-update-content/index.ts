@@ -1,5 +1,10 @@
 // deno-lint-ignore-file no-explicit-any
-// Edge Function: ml-update-content (v1)
+// Edge Function: ml-update-content (v2, 2026-08-04)
+// v2: (a) buildTitle ya no duplica la marca; (b) si el titulo que ML tiene ya es el correcto
+//     NO se manda el PUT (cada edicion re-dispara la validacion de ML: no se gasta ese riesgo
+//     al pedo); (c) opcion title_only para tocar SOLO el titulo; (d) se loguea title_before,
+//     que es el rastro para poder revertir. Estrategia acordada: la correccion del titulo
+//     duplicado viaja "de arriba" cuando ya vas a tocar la publicacion, sin edicion masiva.
 // Actualiza TITULO y DESCRIPCION de una publicacion ML ya existente, tomando el
 // contenido ACTUAL del producto en RF Store (que se sincroniza de CDR).
 // Disparo MANUAL (boton "Actualizar en ML" en el panel): NO se auto-encola, para no
@@ -35,14 +40,14 @@ async function logEvent(topic: string, payload: any, errorMsg?: string) {
   try { await supabase.from('ml_webhook_events').insert({ topic, resource: 'update-content', payload, processing_status: errorMsg ? 'error' : 'done', error: errorMsg ?? null }); } catch (_) {}
 }
 
-interface Body { product_id: string; variant_id?: string; dry_run?: boolean; }
+interface Body { product_id: string; variant_id?: string; dry_run?: boolean; title_only?: boolean; }
 
 Deno.serve(async (req: Request) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
   if (req.method !== 'POST') return json({ ok: false, error: 'method_not_allowed' }, 405);
   let body: Body;
   try { body = await req.json(); } catch { return json({ ok: false, error: 'invalid_json' }, 400); }
-  const { product_id, variant_id, dry_run } = body;
+  const { product_id, variant_id, dry_run, title_only } = body;
   if (!product_id) return json({ ok: false, error: 'missing_product_id' }, 400);
 
   try {
@@ -70,7 +75,8 @@ Deno.serve(async (req: Request) => {
 
     // Guard de moderacion: si ML tiene el item bajo revision/forbidden/etc, editar rebota o
     // lo empeora -> no lo tocamos y dejamos ml_content_dirty en true para reintentar mas tarde.
-    const cq = await mlFetch(`/items/${mlItemId}?attributes=status,sub_status`, { token });
+    const cq = await mlFetch(`/items/${mlItemId}?attributes=status,sub_status,title`, { token });
+    const titleBefore: string | null = cq.ok ? (cq.data?.title ?? null) : null;
     const st = cq.data?.status;
     const sub: string[] = Array.isArray(cq.data?.sub_status) ? cq.data.sub_status.map((s: any) => String(s)) : [];
     if (cq.ok && (MODERATION_SUBSTATUS.some(f => sub.includes(f)) || st === 'under_review')) {
@@ -105,41 +111,69 @@ Deno.serve(async (req: Request) => {
     });
     const finalDescription = toPureplainText(builtDesc);
 
+    // Si el titulo que ML ya tiene es el mismo (ML lo guarda con Mayusculas Iniciales, por eso
+    // se compara sin distinguir mayusculas), NO se manda el PUT. Cada edicion re-dispara la
+    // validacion de ML y puede mandar el item a waiting_for_patch: no gastamos ese riesgo en
+    // un cambio que no cambia nada.
+    const titleNeedsPut = titleBefore === null || titleBefore.trim().toLowerCase() !== title.trim().toLowerCase();
+
     if (dry_run) {
-      return json({ ok: true, dry_run: true, ml_item_id: mlItemId, title, descriptionPreview: finalDescription, descriptionLength: finalDescription.length });
+      return json({
+        ok: true, dry_run: true, ml_item_id: mlItemId,
+        title_before: titleBefore, title, title_would_change: titleNeedsPut,
+        title_only: title_only === true,
+        descriptionPreview: finalDescription, descriptionLength: finalDescription.length,
+      });
     }
 
     // Titulo: PUT /items/{id}. ML puede rechazarlo si el item ya tuvo ventas (limita cambios de titulo).
-    const put = await mlFetch(`/items/${mlItemId}`, { method: 'PUT', token, body: { title } });
-    const titleOk = put.ok;
+    let titleOk = true;
+    let titleErr: any = null;
+    if (titleNeedsPut) {
+      const put = await mlFetch(`/items/${mlItemId}`, { method: 'PUT', token, body: { title } });
+      titleOk = put.ok;
+      titleErr = put.ok ? null : put.data;
+    }
 
     // Descripcion: PUT para modificar; si no existe / rechaza, POST para crear.
-    let descOk = false;
+    // Con title_only se saltea: cuanto menos le damos a revalidar a ML, menos superficie de riesgo.
+    let descOk = true;
     let descErr: any = null;
-    const dput = await mlFetch(`/items/${mlItemId}/description`, { method: 'PUT', token, body: { plain_text: finalDescription } });
-    if (dput.ok) descOk = true;
-    else {
-      const dpost = await mlFetch(`/items/${mlItemId}/description`, { method: 'POST', token, body: { plain_text: finalDescription } });
-      descOk = dpost.ok;
-      if (!descOk) descErr = dpost.data;
+    if (!title_only) {
+      descOk = false;
+      const dput = await mlFetch(`/items/${mlItemId}/description`, { method: 'PUT', token, body: { plain_text: finalDescription } });
+      if (dput.ok) descOk = true;
+      else {
+        const dpost = await mlFetch(`/items/${mlItemId}/description`, { method: 'POST', token, body: { plain_text: finalDescription } });
+        descOk = dpost.ok;
+        if (!descOk) descErr = dpost.data;
+      }
     }
 
     const bothOk = titleOk && descOk;
-    // Solo apagamos el flag si TODO salio bien; si algo fallo lo dejamos prendido para reintentar.
-    if (bothOk) {
+    // El flag de contenido sucio solo se apaga si se actualizo TODO (titulo + descripcion).
+    // En title_only la descripcion sigue vieja, asi que queda prendido para hacerla despues.
+    if (bothOk && !title_only) {
       await supabase.from('products').update({ ml_content_dirty: false }).eq('id', product_id);
     }
     await supabase.from('ml_item_mapping').update({ last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
 
-    await logEvent('ml_update_content', { product_id, ml_item_id: mlItemId, title, titleOk, descOk, title_error: titleOk ? null : put.data, desc_error: descErr, descriptionLength: finalDescription.length }, bothOk ? undefined : `title=${titleOk} desc=${descOk}`);
+    // title_before queda logueado: es el rastro para poder revertir un titulo si hiciera falta.
+    await logEvent('ml_update_content', {
+      product_id, ml_item_id: mlItemId, title_before: titleBefore, title,
+      title_changed: titleNeedsPut, titleOk, descOk, title_only: title_only === true,
+      title_error: titleErr, desc_error: descErr, descriptionLength: finalDescription.length,
+    }, bothOk ? undefined : `title=${titleOk} desc=${descOk}`);
 
     return json({
       ok: bothOk,
       ml_item_id: mlItemId,
+      title_before: titleBefore,
       title,
-      title_updated: titleOk,
-      description_updated: descOk,
-      detail: titleOk ? undefined : put.data,
+      title_updated: titleNeedsPut && titleOk,
+      title_unchanged: !titleNeedsPut,
+      description_updated: title_only ? false : descOk,
+      detail: titleOk ? undefined : titleErr,
       desc_error: descErr,
     });
   } catch (e: any) {
