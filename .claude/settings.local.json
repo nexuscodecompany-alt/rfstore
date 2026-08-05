@@ -163,7 +163,8 @@
       "PowerShell(npx tsc --noEmit -p tsconfig.app.json)",
       "PowerShell($r = Invoke-WebRequest -Uri \"https://bwjptocnkqedakdibosu.supabase.co/storage/v1/object/public/cdr-images/REL296/0.bin\" -Method Head -UseBasicParsing; $r.StatusCode; $r.Headers[\"Content-Type\"]; $r.Headers[\"Content-Length\"])",
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"https://www.rfstore.uy\" -Method Head -UseBasicParsing -TimeoutSec 15; \"www.rfstore.uy -> $\\($r.StatusCode\\)\" } catch { \"www.rfstore.uy -> $\\($_.Exception.Message\\)\" })",
-      "mcp__claude_ai_Vercel__get_deployment"
+      "mcp__claude_ai_Vercel__get_deployment",
+      "Bash(git rev-list *)"
     ]
   }
 }
