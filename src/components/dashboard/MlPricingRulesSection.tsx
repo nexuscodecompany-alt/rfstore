@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { getMlPricingConfig, updateMlPricingConfig } from '../../actions/ml-pricing';
-import { repriceActiveMl } from '../../actions/ml';
+import { repriceActiveMl, syncMlCatalogListings, type CatalogSyncResult } from '../../actions/ml';
 import { useTaxonomiesAdmin } from '../../hooks';
 import { DEFAULT_ML_PRICING, formatPriceCurrency, mlPriceFromConfig, type MlPricingConfig } from '../../helpers';
 import { NumInput } from './NumInput';
@@ -32,8 +32,9 @@ export const MlPricingRulesSection = () => {
 		onError: (e: Error) => toast.error(e.message),
 	});
 
-	// Guarda las reglas y repreciar TODAS las publicaciones activas (encola a la cola
-	// que empuja a ML ~20/min). Es el unico modo de aplicar reglas a lo ya publicado.
+	// Guarda las reglas y repreciar TODAS las publicaciones vivas (activas + pausadas;
+	// encola a la cola que empuja a ML ~20/min). Es el unico modo de aplicar reglas a lo
+	// ya publicado. Las pausadas van para que no vuelvan a la venta con el margen viejo.
 	const { mutate: saveAndReprice, isPending: repricing } = useMutation({
 		mutationFn: async () => {
 			await updateMlPricingConfig(cfg);
@@ -41,8 +42,23 @@ export const MlPricingRulesSection = () => {
 		},
 		onSuccess: (r) => {
 			queryClient.invalidateQueries({ queryKey: ['ml_pricing_config'] });
-			if (r.ok) toast.success(`Reglas guardadas. Encolados ${r.enqueued ?? 0} de ${r.active ?? 0} activos para repreciar en ML.`);
+			if (r.ok) toast.success(`Reglas guardadas. Encolados ${r.enqueued ?? 0} para repreciar (${r.active ?? 0} activas + ${r.paused ?? 0} pausadas).`);
 			else toast.error(`Repreciado fallo: ${r.error ?? 'desconocido'}`);
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
+
+	// Publicaciones de catalogo: ML las genera colgadas de una publicacion nuestra y les
+	// espeja el precio sola, pero si el padre queda moderado/pausado el hijo se congela con
+	// el precio viejo. Esto las revisa contra las reglas y corrige las desalineadas.
+	const [catalogReport, setCatalogReport] = useState<CatalogSyncResult | null>(null);
+	const { mutate: syncCatalog, isPending: syncingCatalog } = useMutation({
+		mutationFn: () => syncMlCatalogListings(false),
+		onSuccess: (r) => {
+			setCatalogReport(r);
+			if (!r.ok) return toast.error(`Catalogo fallo: ${r.error ?? 'desconocido'}`);
+			if ((r.updated ?? 0) === 0) toast.success(`Catalogo OK: ${r.inSync ?? 0} al dia, ninguna desalineada.`);
+			else toast.success(`Catalogo: ${r.updated} corregida(s), ${r.inSync ?? 0} ya estaban al dia.`);
 		},
 		onError: (e: Error) => toast.error(e.message),
 	});
@@ -273,19 +289,48 @@ export const MlPricingRulesSection = () => {
 				</button>
 				<button
 					onClick={() => {
-						if (confirm('Esto guarda las reglas y RECALCULA el precio de TODAS las publicaciones activas en ML. Los nuevos precios se empujan a ML de a poco (~20/min). Confirmas?')) {
+						if (confirm('Esto guarda las reglas y RECALCULA el precio de TODAS las publicaciones vivas en ML (activas y pausadas). Los nuevos precios se empujan a ML de a poco (~20/min). Confirmas?')) {
 							saveAndReprice();
 						}
 					}}
-					disabled={isPending || repricing}
+					disabled={isPending || repricing || syncingCatalog}
 					className='px-4 py-2 border border-stone-800 text-stone-800 rounded-md text-sm disabled:opacity-50'
 				>
-					{repricing ? 'Encolando...' : 'Guardar y repreciar publicaciones activas'}
+					{repricing ? 'Encolando...' : 'Guardar y repreciar publicaciones'}
+				</button>
+				<button
+					onClick={() => syncCatalog()}
+					disabled={isPending || repricing || syncingCatalog}
+					className='px-4 py-2 border border-gray-300 text-gray-700 rounded-md text-sm disabled:opacity-50'
+					title='Revisa las publicaciones de catalogo que genera ML y corrige las que quedaron con precio viejo'
+				>
+					{syncingCatalog ? 'Revisando catalogo...' : 'Revisar publicaciones de catalogo'}
 				</button>
 			</div>
 			<p className='text-xs text-gray-400'>
-				El repreciado aplica las reglas a lo YA publicado. Las publicaciones nuevas usan las reglas vigentes al publicar.
+				El repreciado aplica las reglas a lo YA publicado (activas y pausadas, para que no vuelvan a la venta con el
+				margen viejo). Las publicaciones nuevas usan las reglas vigentes al publicar.
 			</p>
+
+			{catalogReport?.ok && (
+				<div className='rounded-md border border-gray-200 bg-gray-50 p-3 text-xs text-gray-700 space-y-1'>
+					<p className='font-medium text-gray-900'>
+						Catalogo: {catalogReport.catalog ?? 0} publicacion(es) sobre {catalogReport.scanned ?? 0} revisadas &mdash;{' '}
+						{catalogReport.updated ?? 0} corregidas, {catalogReport.inSync ?? 0} al dia, {catalogReport.skipped ?? 0} salteadas
+						{(catalogReport.failed ?? 0) > 0 ? `, ${catalogReport.failed} con error` : ''}.
+					</p>
+					{(catalogReport.report ?? [])
+						.filter(r => r.action !== 'ok')
+						.map(r => (
+							<p key={r.id} className='font-mono'>
+								{r.id} &middot; {r.action}
+								{r.from ? ` ${r.from} -> ${r.to}` : ''}
+								{r.detail ? ` (${r.detail})` : ''}
+								{r.error ? ` (${r.error})` : ''}
+							</p>
+						))}
+				</div>
+			)}
 		</section>
 	);
 };

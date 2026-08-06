@@ -400,6 +400,45 @@ export const formatDateTime = (date: string): string => {
 	});
 };
 
+/* Teléfonos uruguayos: el cliente los escribe como se le canta (099 541 776,
+   099541776, +598 99 541 776...). Normalizamos a formato internacional sin el +
+   para armar el link de WhatsApp / la llamada. Devuelve null si no parece un
+   número usable. */
+export const normalizePhoneUy = (raw: string | null | undefined): string | null => {
+	if (!raw) return null;
+	let d = raw.replace(/\D/g, '');
+	if (!d) return null;
+	// 00598... (prefijo internacional viejo)
+	if (d.startsWith('00')) d = d.slice(2);
+	// Ya viene con código de país
+	if (d.startsWith('598')) d = d.slice(3);
+	// Nacional con 0 adelante: 099... / 02...
+	if (d.startsWith('0')) d = d.slice(1);
+	// Celular (8 dígitos: 9XXXXXXX) o fijo de Montevideo (7 dígitos)
+	if (d.length < 7 || d.length > 11) return null;
+	return `598${d}`;
+};
+
+// Teléfono lindo para mostrar: 099 541 776 / 2 500 12 34
+export const formatPhoneUy = (raw: string | null | undefined): string => {
+	const n = normalizePhoneUy(raw);
+	if (!n) return raw ?? '';
+	const local = n.slice(3);
+	if (local.length === 8 && local.startsWith('9'))
+		return `0${local.slice(0, 2)} ${local.slice(2, 5)} ${local.slice(5)}`;
+	return `0${local}`;
+};
+
+// Link directo al chat de WhatsApp (con mensaje opcional ya escrito).
+export const whatsappLink = (
+	raw: string | null | undefined,
+	message?: string
+): string | null => {
+	const n = normalizePhoneUy(raw);
+	if (!n) return null;
+	return `https://wa.me/${n}${message ? `?text=${encodeURIComponent(message)}` : ''}`;
+};
+
 // Función para generar el slug de un producto
 export const generateSlug = (name: string): string => {
 	return name

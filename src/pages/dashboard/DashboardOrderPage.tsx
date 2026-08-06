@@ -8,7 +8,11 @@ import {
 	HiOutlineTruck,
 	HiOutlineCreditCard,
 	HiOutlineArrowTopRightOnSquare,
+	HiOutlinePhone,
+	HiOutlineEnvelope,
+	HiOutlineClipboardDocument,
 } from 'react-icons/hi2';
+import { FaWhatsapp } from 'react-icons/fa';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useOrderAdmin } from '../../hooks';
 import {
@@ -19,7 +23,14 @@ import {
 	confirmManualPayment,
 } from '../../actions';
 import { Loader } from '../../components/shared/Loader';
-import { formatPriceCurrency, formatDateTime, orderStatusBadge } from '../../helpers';
+import {
+	formatPriceCurrency,
+	formatDateTime,
+	orderStatusBadge,
+	formatPhoneUy,
+	normalizePhoneUy,
+	whatsappLink,
+} from '../../helpers';
 
 /* Método de pago en criollo, para no tener que adivinar mirando la orden. */
 const PAYMENT_METHOD_LABEL: Record<string, string> = {
@@ -181,6 +192,13 @@ export const DashboardOrderPage = () => {
 		order.paymentMethod === 'transfer' || order.paymentMethod === 'deposit';
 	// Total que se muestra: para ML/UYU el monto exacto en pesos que pagó el comprador.
 	const displayTotal = isUyu && order.totalOriginal != null ? order.totalOriginal : order.totalAmount * fx;
+	// Chat de WhatsApp con el saludo y el número de pedido ya escritos (null si el
+	// teléfono no sirve o no está).
+	const firstName = order.customer.full_name?.trim().split(/\s+/)[0] ?? '';
+	const waLink = whatsappLink(
+		order.customer.phone,
+		`Hola${firstName ? ` ${firstName}` : ''}! Te escribo de RF STORE por tu pedido #${order.id}.`
+	);
 
 	return (
 		<div className='space-y-6'>
@@ -537,6 +555,9 @@ export const DashboardOrderPage = () => {
 						</div>
 					)}
 
+					{/* Cliente: nombre + vías de contacto. El teléfono se pide en el
+					    checkout pero no se veía en ningún lado, así que había que ir a
+					    buscarlo a la base para poder escribirle. */}
 					<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft'>
 						<h2 className='mb-3 flex items-center gap-2 font-bold text-ink-900'>
 							<HiOutlineUser className='text-brand-600' size={18} />
@@ -548,13 +569,53 @@ export const DashboardOrderPage = () => {
 									? 'Comprador de Mercado Libre'
 									: 'Sin nombre')}
 						</p>
-						{order.customer.email && (
+
+						<div className='mt-3 space-y-2'>
+							{order.customer.phone ? (
+								<ContactRow
+									icon={<HiOutlinePhone size={15} />}
+									// tel: sólo si el número es válido; si no, se muestra tal cual.
+									href={
+										normalizePhoneUy(order.customer.phone)
+											? `tel:+${normalizePhoneUy(order.customer.phone)}`
+											: undefined
+									}
+									text={formatPhoneUy(order.customer.phone)}
+									copyValue={order.customer.phone}
+								/>
+							) : (
+								order.channel !== 'ml' && (
+									<p className='text-xs text-ink-400'>Sin teléfono registrado</p>
+								)
+							)}
+
+							{order.customer.email && (
+								<ContactRow
+									icon={<HiOutlineEnvelope size={15} />}
+									href={`mailto:${order.customer.email}`}
+									text={order.customer.email}
+									copyValue={order.customer.email}
+								/>
+							)}
+						</div>
+
+						{/* Botón directo al chat, con el saludo y el número de pedido ya escritos. */}
+						{waLink && (
 							<a
-								href={`mailto:${order.customer.email}`}
-								className='text-sm text-brand-600 hover:underline'
+								href={waLink}
+								target='_blank'
+								rel='noopener noreferrer'
+								className='mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-[#25D366] px-3 py-2.5 text-sm font-bold text-white transition hover:bg-[#1fb855]'
 							>
-								{order.customer.email}
+								<FaWhatsapp size={18} />
+								Escribir por WhatsApp
 							</a>
+						)}
+						{order.channel === 'ml' && (
+							<p className='mt-3 text-[11px] text-ink-400'>
+								En Mercado Libre los datos del comprador no se comparten: la
+								comunicación va por la mensajería de ML.
+							</p>
 						)}
 					</div>
 
@@ -625,6 +686,47 @@ export const DashboardOrderPage = () => {
 		</div>
 	);
 };
+
+/* Fila de contacto (teléfono / mail): el dato clickeable + copiar al portapapeles,
+   para pegarlo en la agenda o en el remito sin tipearlo. */
+const ContactRow = ({
+	icon,
+	href,
+	text,
+	copyValue,
+}: {
+	icon: React.ReactNode;
+	href?: string;
+	text: string;
+	copyValue: string;
+}) => (
+	<div className='flex items-center gap-2 text-sm'>
+		<span className='shrink-0 text-ink-400'>{icon}</span>
+		{href ? (
+			<a href={href} className='truncate text-brand-600 hover:underline' title={text}>
+				{text}
+			</a>
+		) : (
+			<span className='truncate text-ink-700' title={text}>
+				{text}
+			</span>
+		)}
+		<button
+			type='button'
+			onClick={() => {
+				navigator.clipboard
+					.writeText(copyValue)
+					.then(() => toast.success('Copiado'))
+					.catch(() => toast.error('No se pudo copiar'));
+			}}
+			className='ml-auto shrink-0 rounded p-1 text-ink-400 transition hover:bg-ink-100 hover:text-ink-700'
+			title='Copiar'
+			aria-label={`Copiar ${text}`}
+		>
+			<HiOutlineClipboardDocument size={15} />
+		</button>
+	</div>
+);
 
 const CostInput = ({
 	label,

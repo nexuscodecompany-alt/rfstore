@@ -1,8 +1,14 @@
 // deno-lint-ignore-file no-explicit-any
-// ml-reprice-active: recalcula el precio de TODAS las publicaciones activas segun
+// ml-reprice-active: recalcula el precio de TODAS las publicaciones segun
 // ml_pricing_config (tramos + override categoria/subcategoria) y encola un update_price
 // por cada una en ml_sync_queue. El cron ml-process-sync-queue las empuja a ML (20/min).
 // Disparo manual desde el panel ('Repreciar publicaciones activas').
+//
+// v2 (2026-08-06): tambien se reprecian las publicaciones PAUSADAS. Antes solo se
+// tomaban los mappings 'active', asi que las 456 pausadas se quedaban con el precio
+// viejo y volvian a la venta con el margen anterior cuando entraba stock (la
+// reactivacion empuja cantidad, nunca precio). ML deja editar el precio de un item
+// pausado, y el procesador de la cola ya acepta mappings 'paused'.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
@@ -59,11 +65,12 @@ Deno.serve(async (req: Request) => {
 
     const fx = await getFxRate();
 
-    // Publicaciones activas + costo/categoria del producto.
+    // Publicaciones vivas (activas + pausadas) con costo/categoria del producto. Las
+    // pausadas entran para que no vuelvan a la venta con el margen viejo.
     const { data: maps, error: mErr } = await supabase
       .from('ml_item_mapping')
-      .select('id, variant_id, product_id, last_known_price_uyu, products(price_usd, category_id, subcategory_id)')
-      .eq('status', 'active');
+      .select('id, variant_id, product_id, status, last_known_price_uyu, products(price_usd, category_id, subcategory_id)')
+      .in('status', ['active', 'paused']);
     if (mErr) throw new Error(`load_mappings: ${mErr.message}`);
 
     // No duplicar: variantes que ya tienen un update_price pendiente.
@@ -71,7 +78,7 @@ Deno.serve(async (req: Request) => {
     const pendingSet = new Set((pend ?? []).map((p: any) => p.variant_id));
 
     const toInsert: any[] = [];
-    let skippedSamePrice = 0, skippedPending = 0, skippedNoCost = 0;
+    let skippedSamePrice = 0, skippedPending = 0, skippedNoCost = 0, enqueuedPaused = 0;
     const sample: any[] = [];
     for (const m of maps ?? []) {
       const prod: any = (m as any).products;
@@ -87,11 +94,15 @@ Deno.serve(async (req: Request) => {
       // Si queda igual al ultimo precio conocido (en UYU), no encolar.
       if (calc.currency_id === 'UYU' && Number((m as any).last_known_price_uyu) === calc.price) { skippedSamePrice++; continue; }
       if (sample.length < 10) sample.push({ variant_id: (m as any).variant_id, cost, margin, price: calc.price, currency: calc.currency_id });
+      if ((m as any).status === 'paused') enqueuedPaused++;
       toInsert.push({ operation: 'update_price', product_id: (m as any).product_id, variant_id: (m as any).variant_id, status: 'pending', scheduled_for: new Date().toISOString(), payload: { new_price: calc.price, currency_id: calc.currency_id, source: 'reprice' } });
     }
 
+    const activeCount = (maps ?? []).filter((m: any) => m.status === 'active').length;
+    const pausedCount = (maps ?? []).length - activeCount;
+
     if (dryRun) {
-      return json({ ok: true, dry_run: true, active: (maps ?? []).length, would_enqueue: toInsert.length, skippedSamePrice, skippedPending, skippedNoCost, sample });
+      return json({ ok: true, dry_run: true, active: activeCount, paused: pausedCount, would_enqueue: toInsert.length, enqueuedPaused, skippedSamePrice, skippedPending, skippedNoCost, sample });
     }
 
     // Insert en lotes de 500.
@@ -103,7 +114,7 @@ Deno.serve(async (req: Request) => {
       enqueued += chunk.length;
     }
 
-    return json({ ok: true, active: (maps ?? []).length, enqueued, skippedSamePrice, skippedPending, skippedNoCost, note: 'La cola se procesa ~20/min y empuja los precios a ML. Mira el progreso en ml_sync_log.' });
+    return json({ ok: true, active: activeCount, paused: pausedCount, enqueued, enqueuedPaused, skippedSamePrice, skippedPending, skippedNoCost, note: 'La cola se procesa ~20/min y empuja los precios a ML. Mira el progreso en ml_sync_log.' });
   } catch (e: any) {
     return json({ ok: false, error: e?.message ?? 'unknown' }, 500);
   }

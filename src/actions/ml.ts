@@ -284,17 +284,51 @@ export const recalcMlReadinessIds = (product_ids: string[]) =>
 export interface RepriceResult {
 	ok: boolean;
 	active?: number;
+	paused?: number;
 	enqueued?: number;
+	enqueuedPaused?: number;
 	would_enqueue?: number;
 	skippedSamePrice?: number;
 	dry_run?: boolean;
 	error?: string;
 }
 
-// Recalcula el precio de TODAS las publicaciones activas según ml_pricing_config
-// y las encola para empujar a ML (la cola procesa ~20/min). dry_run no encola.
+// Recalcula el precio de TODAS las publicaciones vivas (activas + pausadas) según
+// ml_pricing_config y las encola para empujar a ML (la cola procesa ~20/min).
+// Las pausadas entran para que no vuelvan a la venta con el margen viejo. dry_run no encola.
 export const repriceActiveMl = (dry_run = false) =>
 	invokeMlFn<RepriceResult>('ml-reprice-active', { dry_run });
+
+// --------- Publicaciones de catálogo ---------
+// ML genera publicaciones de catálogo colgadas de una publicación nuestra y les espeja
+// precio y stock solo. No están en ml_item_mapping, así que el repreciado normal no las
+// toca: cuando el padre queda moderado/pausado, el hijo se queda con el precio viejo.
+// Esta función las revisa y le empuja el precio directo a las que quedaron desalineadas.
+export interface CatalogSyncRow {
+	id: string;
+	title?: string;
+	action: 'ok' | 'corregida' | 'corregiria' | 'moderada' | 'sin_padre' | 'padre_sin_costo' | 'error';
+	from?: string;
+	to?: string;
+	parent?: string;
+	detail?: string;
+	error?: string;
+}
+export interface CatalogSyncResult {
+	ok: boolean;
+	dry_run?: boolean;
+	scanned?: number;
+	catalog?: number;
+	updated?: number;
+	inSync?: number;
+	skipped?: number;
+	failed?: number;
+	report?: CatalogSyncRow[];
+	error?: string;
+}
+
+export const syncMlCatalogListings = (dry_run = false) =>
+	invokeMlFn<CatalogSyncResult>('ml-catalog-sync', { dry_run });
 
 export interface PublishableProduct {
 	id: string;

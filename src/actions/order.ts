@@ -190,7 +190,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 				shipping_zone, shipping_barrio, shipping_department, shipping_cost_usd,
 				addresses:addresses(*),
 				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images, slug, external_code))),
-				customers:customers(full_name, email)
+				customers:customers(full_name, email, phone)
 			`
 		)
 		.eq('id', id)
@@ -303,6 +303,9 @@ export const getOrderByIdAdmin = async (id: number) => {
 		customer: {
 			full_name: order.customers?.full_name || '',
 			email: order.customers?.email || '',
+			// El teléfono se pide sí o sí en el checkout: es la vía real de contacto
+			// (WhatsApp) cuando hay que coordinar el envío o avisar algo del pedido.
+			phone: (order.customers?.phone as string | null) || '',
 		},
 	};
 };

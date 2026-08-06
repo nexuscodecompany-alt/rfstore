@@ -164,7 +164,13 @@
       "PowerShell($r = Invoke-WebRequest -Uri \"https://bwjptocnkqedakdibosu.supabase.co/storage/v1/object/public/cdr-images/REL296/0.bin\" -Method Head -UseBasicParsing; $r.StatusCode; $r.Headers[\"Content-Type\"]; $r.Headers[\"Content-Length\"])",
       "PowerShell(try { $r = Invoke-WebRequest -Uri \"https://www.rfstore.uy\" -Method Head -UseBasicParsing -TimeoutSec 15; \"www.rfstore.uy -> $\\($r.StatusCode\\)\" } catch { \"www.rfstore.uy -> $\\($_.Exception.Message\\)\" })",
       "mcp__claude_ai_Vercel__get_deployment",
-      "Bash(git rev-list *)"
+      "Bash(git rev-list *)",
+      "PowerShell($r = Invoke-RestMethod \"https://api.mercadolibre.com/sites/MLU/search?seller_id=3442407718&limit=50\"; \"total=\" + $r.paging.total; $r.results | Group-Object catalog_listing | Select-Object Name,Count | Format-Table)",
+      "WebFetch(domain:developers.mercadolibre.com.uy)",
+      "PowerShell($env:ML_TOKEN='APP_USR-6693327643893490-080606-1a08101639415c8bb747f5b948d419ac-3442407718'; & \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Admin-Desktop-NexusCode-Proyectos-rfstore\\\\344eee8d-6d22-417e-85ac-e2fd50cb2e8f\\\\scratchpad\\\\ml-scan.ps1\")",
+      "PowerShell($j = Get-Content \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Admin-Desktop-NexusCode-Proyectos-rfstore\\\\344eee8d-6d22-417e-85ac-e2fd50cb2e8f\\\\scratchpad\\\\ml-items.json\" -Raw | ConvertFrom-Json; $j | Where-Object { $_.catalog_listing -eq $true } | Select-Object id,status,price,currency_id,catalog_product_id,seller_custom_field,last_updated,@{n='t';e={$_.title.Substring\\(0,[Math]::Min\\(45,$_.title.Length\\)\\)}} | Format-List)",
+      "PowerShell($j = Get-Content \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-Admin-Desktop-NexusCode-Proyectos-rfstore\\\\344eee8d-6d22-417e-85ac-e2fd50cb2e8f\\\\scratchpad\\\\ml-items.json\" -Raw | ConvertFrom-Json; $j | Group-Object status | Select Name,Count | Format-Table; \"--- activos actualizados 2026-08-06:\"; \\($j | Where-Object { $_.status -eq 'active' -and $_.last_updated -ge '2026-08-05T20:00' }\\).Count; \"--- activos NO tocados:\"; \\($j | Where-Object { $_.status -eq 'active' -and $_.last_updated -lt '2026-08-05T20:00' }\\).Count)",
+      "WebFetch(domain:developers.mercadolibre.com.mx)"
     ]
   }
 }
