@@ -87,10 +87,20 @@ export interface DashboardData {
 	timeseries: SalesPoint[];
 }
 
+// El panel manda las fechas como "YYYY-MM-DD". Si se las pasáramos así a la
+// base, Postgres las toma como la MEDIANOCHE en UTC: el último día del rango
+// quedaba afuera (filtrar 01/07 al 31/07 perdía todo lo vendido el 31) y,
+// además, las 3 horas de diferencia con Uruguay corrían los días.
+// Acá se convierten a los bordes reales del día en hora de Montevideo.
+const desdeElInicioDelDia = (fecha: string) => `${fecha}T00:00:00-03:00`;
+const hastaElFinalDelDia = (fecha: string) => `${fecha}T23:59:59.999-03:00`;
+
 export const getDashboardData = async (
-	from: string,
-	to: string
+	fromDate: string,
+	toDate: string
 ): Promise<DashboardData> => {
+	const from = desdeElInicioDelDia(fromDate);
+	const to = hastaElFinalDelDia(toDate);
 	const [overviewRes, topRes, bottomRes, brandsRes, seriesRes] =
 		await Promise.all([
 			rpc('dashboard_overview', { p_from: from, p_to: to }),

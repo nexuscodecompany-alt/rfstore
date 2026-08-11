@@ -160,11 +160,12 @@ export const DashboardPurchasesPage = () => {
 		<div className='space-y-6'>
 			<div>
 				<h1 className='text-2xl font-bold text-ink-900'>Compras de stock</h1>
-				<p className='text-sm text-ink-500'>
-					Mercadería propia: al recibir una compra sube el stock, se recalcula el
-					costo promedio de cada producto y queda registrado el movimiento. Sólo
-					aparecen los productos marcados como <b>propio</b> o <b>ambos</b> en su
-					ficha (los dropship los maneja CDR).
+				<p className='max-w-3xl text-sm text-ink-500'>
+					El producto se carga primero (viene del sync de CDR o lo cargás a mano) y
+					acá le sumás las unidades que compraste. Esas unidades quedan como{' '}
+					<b>stock propio</b>, aparte del stock de CDR: el sync sigue actualizando
+					el de ellos y el tuyo no lo toca nadie. Al recibir la compra se recalcula
+					el costo promedio y queda registrado el movimiento.
 				</p>
 			</div>
 

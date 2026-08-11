@@ -376,9 +376,13 @@ export const DashboardHomePage = () => {
 
 	const o = data?.overview;
 
+	// Conversión = de las órdenes que se generaron en el período, cuántas se
+	// cobraron. Antes usaba `concretado_count`, que cuenta el estado
+	// "Concretado" — un estado que las ventas de Mercado Libre nunca usan, así
+	// que con 65 ventas de ML en el mes el número daba 10% y no significaba nada.
 	const conversion = useMemo(() => {
 		if (!o || !o.orders_in_period) return 0;
-		return (o.concretado_count / o.orders_in_period) * 100;
+		return (o.paid_orders_in_period / o.orders_in_period) * 100;
 	}, [o]);
 
 	const applyPreset = (days: number) => {
@@ -547,7 +551,7 @@ export const DashboardHomePage = () => {
 							icon={<HiOutlineArrowTrendingUp size={20} />}
 							label='Conversión'
 							value={`${conversion.toFixed(1)}%`}
-							sub={`${num(o.concretado_count)} concretadas`}
+							sub={`${num(o.paid_orders_in_period)} de ${num(o.orders_in_period)} se cobraron`}
 							tone='emerald'
 						/>
 					</div>
