@@ -1,4 +1,4 @@
-import { extractFilePath } from '../helpers';
+import { extractFilePath, normalizeSearch, searchWords } from '../helpers';
 import { ProductInput } from '../interfaces';
 import { supabase } from '../supabase/client';
 
@@ -119,21 +119,14 @@ export const getSimilarProductsByCategory = async (
     return hideOutOfStockCdrProducts(products);
 };
 
-// Normaliza a minúsculas y sin acentos (igual que la columna search_text en la DB).
-// Así "Micrófono" y "microfono" matchean igual.
-const normalizeSearch = (s: string) =>
-    s
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[̀-ͯ]/g, '')
-        .trim();
-
 export const searchProducts = async (searchTerm: string) => {
     // Búsqueda inteligente: separa en palabras y exige que TODAS aparezcan
     // (en cualquier orden), sin importar acentos, sobre el nombre + código del
     // producto (columna generada `search_text`). Ej: "sony auricular" encuentra
     // "Auriculares Sony WH-1000XM5"; "microfono genius" encuentra "Micrófono Genius".
-    const words = normalizeSearch(searchTerm).split(/\s+/).filter(Boolean);
+    // MISMA regla que la tienda (getFilteredProducts): el desplegable del header
+    // y la página de resultados tienen que coincidir.
+    const words = searchWords(searchTerm);
     if (words.length === 0) return [];
     const fullTerm = normalizeSearch(searchTerm);
 
@@ -145,12 +138,14 @@ export const searchProducts = async (searchTerm: string) => {
         textQuery = textQuery.ilike('search_text', `%${word}%`);
     }
 
-    // 2) Coincidencia por NOMBRE de categoría/subcategoría. Así "celulares"
-    //    devuelve los productos de la categoría Celulares aunque el nombre del
-    //    producto no diga "celular".
-    const [catsRes, subsRes] = await Promise.all([
+    // 2) Coincidencia por NOMBRE de marca / categoría / subcategoría. Así
+    //    "celulares" devuelve los productos de la categoría Celulares aunque el
+    //    nombre del producto no diga "celular", y "deerma" trae los de esa marca
+    //    aunque el título no la repita.
+    const [catsRes, subsRes, brandsRes] = await Promise.all([
         supabase.from('categories').select('id, name'),
         supabase.from('subcategories').select('id, name'),
+        supabase.from('brands').select('id, name'),
     ]);
     const nameMatches = (name: string) => {
         const n = normalizeSearch(name);
@@ -162,13 +157,17 @@ export const searchProducts = async (searchTerm: string) => {
     const matchSubIds = (subsRes.data ?? [])
         .filter(s => nameMatches(s.name ?? ''))
         .map(s => s.id);
+    const matchBrandIds = (brandsRes.data ?? [])
+        .filter(b => nameMatches(b.name ?? ''))
+        .map(b => b.id);
 
     const queries = [textQuery.limit(40)];
-    if (matchCatIds.length || matchSubIds.length) {
+    if (matchCatIds.length || matchSubIds.length || matchBrandIds.length) {
         let taxQuery = supabase.from('products').select(SELECT).eq('active', true);
         const ors: string[] = [];
         if (matchCatIds.length) ors.push(`category_id.in.(${matchCatIds.join(',')})`);
         if (matchSubIds.length) ors.push(`subcategory_id.in.(${matchSubIds.join(',')})`);
+        if (matchBrandIds.length) ors.push(`brand_id.in.(${matchBrandIds.join(',')})`);
         taxQuery = taxQuery.or(ors.join(','));
         queries.push(taxQuery.limit(40));
     }
@@ -253,9 +252,14 @@ export const getAdminProducts = async (
     if (mlFilter === 'in') query = query.eq('is_in_ml', true);
     else if (mlFilter === 'out') query = query.eq('is_in_ml', false);
 
+    // Misma regla de búsqueda que la tienda: todas las palabras, en cualquier
+    // orden, sin acentos, sobre search_text (nombre + código). Antes buscaba la
+    // frase entera y pegada contra name/slug, así que en el panel tampoco se
+    // podía buscar "asus vivobook".
     if (searchTerm.trim()) {
-        const ilike = `%${searchTerm.trim()}%`;
-        query = query.or(`name.ilike.${ilike},slug.ilike.${ilike}`);
+        for (const word of searchWords(searchTerm)) {
+            query = query.ilike('search_text', `%${word}%`);
+        }
     }
 
     if (brandId) query = query.eq('brand_id', brandId);
@@ -386,6 +390,7 @@ export const createProduct = async (productInput: ProductInput) => {
             subcategory_id: productInput.subcategoryId || null,
             // Sin esto el producto queda "por consulta" (comportamiento histórico).
             online_payment: productInput.onlinePayment === true,
+            fulfillment: productInput.fulfillment ?? 'propio',
         })
         .select()
         .single();
@@ -521,6 +526,7 @@ export const updateProduct = async (
             category_id: productInput.categoryId,
             subcategory_id: productInput.subcategoryId || null,
             online_payment: productInput.onlinePayment === true,
+            fulfillment: productInput.fulfillment ?? 'propio',
         })
         .eq('id', productId)
         .select()

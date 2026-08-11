@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FaEllipsis } from 'react-icons/fa6';
 import { HiOutlineExternalLink } from 'react-icons/hi';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   useAdminProducts,
@@ -27,6 +27,7 @@ import { formatDate, formatPrice, salePrice, mlMarginFor, DEFAULT_ML_PRICING, ty
 import { getMlPricingConfig } from '../../../actions/ml-pricing';
 import type { MlAttrInput, MlMissingAttr } from '../../../actions/ml';
 import type { AdminSortField } from '../../../actions/product';
+import { useFilterParams, type ParamValue } from '../../../hooks/useFilterParams';
 import { Pagination } from '../../shared/Pagination';
 import { CellTableProduct } from './CellTableProduct';
 import { MlPublishAttributesModal } from './MlPublishAttributesModal';
@@ -70,52 +71,46 @@ export const TableProduct = () => {
   const [mlAttrModal, setMlAttrModal] = useState<
     { productId: string; variantId: string; productName: string; missing: MlMissingAttr[] } | null
   >(null);
-  const [page, setPage] = useState(1);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [inputValue, setInputValue] = useState('');
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [brandFilter, setBrandFilter] = useState('');
-  const [categoryFilter, setCategoryFilter] = useState('');
-  const [sourceFilter, setSourceFilter] = useState<'' | 'local' | 'cdr'>(
-    (searchParams.get('source') as '' | 'local' | 'cdr') || ''
-  );
-  const [activeFilter, setActiveFilter] = useState<'' | 'active' | 'inactive'>(
-    (searchParams.get('estado') as '' | 'active' | 'inactive') || ''
-  );
-  const [newOnly, setNewOnly] = useState<boolean>(searchParams.get('nuevos') === '1');
-  const [contentDirtyOnly, setContentDirtyOnly] = useState<boolean>(searchParams.get('mlcambios') === '1');
-  const [mlFilter, setMlFilter] = useState<'' | 'in' | 'out'>(
-    (searchParams.get('ml') as '' | 'in' | 'out') || ''
-  );
-  const [minReadiness, setMinReadiness] = useState<number>(
-    Number(searchParams.get('listo')) || 0
-  );
+  // TODOS los filtros del listado viven en la URL. Antes la mitad estaba acá en
+  // useState (marca, categoría, búsqueda, página y orden) y la otra mitad en el
+  // query string: al editar un producto y volver con "atrás" se perdía justo lo
+  // que el admin estaba usando para trabajar.
+  const { searchParams, get, getNumber, getBool, patch } = useFilterParams();
+
+  const page = getNumber('pag') ?? 1;
+  const searchTerm = get('q');
+  const brandFilter = get('marca');
+  const categoryFilter = get('cat');
+  const sourceFilter = (get('source') as '' | 'local' | 'cdr') || '';
+  const activeFilter = (get('estado') as '' | 'active' | 'inactive') || '';
+  const newOnly = getBool('nuevos');
+  const contentDirtyOnly = getBool('mlcambios');
+  const mlFilter = (get('ml') as '' | 'in' | 'out') || '';
+  const minReadiness = getNumber('listo') ?? 0;
   // Ordenamiento SERVER-SIDE: se clickea el encabezado de la columna y ordena todo el
   // catálogo (no sólo la página visible). Primer click = descendente (mayor a menor),
   // segundo click = ascendente.
-  const [sortBy, setSortBy] = useState<AdminSortField>('created_at');
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+  const sortBy = (get('orden') as AdminSortField) || 'created_at';
+  const sortDir = get('dir') === 'asc' ? 'asc' : 'desc';
+
+  // El buscador se escribe letra por letra: local + volcado a la URL con respiro.
+  const [inputValue, setInputValue] = useState(searchTerm);
+
+  // Cambiar un filtro siempre vuelve a la página 1.
+  const setFilter = (values: Record<string, ParamValue>) =>
+    patch({ pag: undefined, ...values });
+
+  const setPage: React.Dispatch<React.SetStateAction<number>> = value => {
+    const next = typeof value === 'function' ? value(page) : value;
+    patch({ pag: next > 1 ? next : undefined });
+  };
 
   // Click en encabezado: si es la columna activa invierte el sentido, si no la activa
   // arrancando de mayor a menor. Siempre vuelve a la página 1 (el orden cambió entero).
   const toggleSort = (field: AdminSortField) => {
-    if (sortBy === field) {
-      setSortDir(d => (d === 'desc' ? 'asc' : 'desc'));
-    } else {
-      setSortBy(field);
-      setSortDir('desc');
-    }
-    setPage(1);
+    const nextDir = sortBy === field && sortDir === 'desc' ? 'asc' : 'desc';
+    setFilter({ orden: field === 'created_at' ? undefined : field, dir: nextDir === 'asc' ? 'asc' : undefined });
   };
-
-  // Si vienen filtros por query string (ej desde /dashboard/cdr), persistirlos en estado
-  useEffect(() => {
-    const s = searchParams.get('source') as '' | 'local' | 'cdr' | null;
-    const a = searchParams.get('estado') as '' | 'active' | 'inactive' | null;
-    if (s !== null && s !== sourceFilter) setSourceFilter(s);
-    if (a !== null && a !== activeFilter) setActiveFilter(a);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
 
   const { brands, categories } = useTaxonomiesAdmin();
   const { data: mlPricingCfg } = useQuery({
@@ -127,16 +122,19 @@ export const TableProduct = () => {
   const dirtyCount = useContentDirtyCount();
   const { mutate: markSeen, isPending: markingSeen } = useMarkProductsSeen();
 
+  // Si la búsqueda cambia desde afuera (link con ?q=, o "atrás"), sincronizamos.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearchTerm(inputValue);
-      setPage(1);
-    }, 500);
+    setInputValue(searchTerm);
+  }, [searchTerm]);
 
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [inputValue]);
+  useEffect(() => {
+    if (inputValue === searchTerm) return;
+    const timer = setTimeout(() => {
+      setFilter({ q: inputValue.trim() || undefined });
+    }, 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputValue, searchTerm]);
 
   const { products, isLoading, totalProducts } = useAdminProducts(
     page,
@@ -266,10 +264,7 @@ export const TableProduct = () => {
 
           <select
             value={brandFilter}
-            onChange={(e) => {
-              setBrandFilter(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setFilter({ marca: e.target.value || undefined })}
             className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
           >
             <option value="">Todas las marcas</option>
@@ -282,10 +277,7 @@ export const TableProduct = () => {
 
           <select
             value={categoryFilter}
-            onChange={(e) => {
-              setCategoryFilter(e.target.value);
-              setPage(1);
-            }}
+            onChange={(e) => setFilter({ cat: e.target.value || undefined })}
             className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
           >
             <option value="">Todas las categorías</option>
@@ -299,10 +291,7 @@ export const TableProduct = () => {
 
           <select
             value={sourceFilter}
-            onChange={(e) => {
-              setSourceFilter(e.target.value as '' | 'local' | 'cdr');
-              setPage(1);
-            }}
+            onChange={(e) => setFilter({ source: e.target.value || undefined })}
             className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
           >
             <option value="">Todos los orígenes</option>
@@ -312,10 +301,7 @@ export const TableProduct = () => {
 
           <select
             value={activeFilter}
-            onChange={(e) => {
-              setActiveFilter(e.target.value as '' | 'active' | 'inactive');
-              setPage(1);
-            }}
+            onChange={(e) => setFilter({ estado: e.target.value || undefined })}
             className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
           >
             <option value="">Cualquier estado</option>
@@ -325,10 +311,7 @@ export const TableProduct = () => {
 
           <select
             value={mlFilter}
-            onChange={(e) => {
-              setMlFilter(e.target.value as '' | 'in' | 'out');
-              setPage(1);
-            }}
+            onChange={(e) => setFilter({ ml: e.target.value || undefined })}
             className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
           >
             <option value="">ML: todos</option>
@@ -338,10 +321,7 @@ export const TableProduct = () => {
 
           <select
             value={minReadiness}
-            onChange={(e) => {
-              setMinReadiness(Number(e.target.value));
-              setPage(1);
-            }}
+            onChange={(e) => setFilter({ listo: Number(e.target.value) || undefined })}
             className="px-3 py-2 border border-ink-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-300"
             title="Filtrar por qué tan listo está el producto para publicar en Mercado Libre"
           >
@@ -357,20 +337,20 @@ export const TableProduct = () => {
           {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || sortBy !== 'created_at' || sortDir !== 'desc') && (
             <button
               type="button"
-              onClick={() => {
-                setBrandFilter('');
-                setCategoryFilter('');
-                setSourceFilter('');
-                setActiveFilter('');
-                setNewOnly(false);
-                setMlFilter('');
-                setMinReadiness(0);
-                setContentDirtyOnly(false);
-                setSortBy('created_at');
-                setSortDir('desc');
-                setSearchParams({}, { replace: true });
-                setPage(1);
-              }}
+              onClick={() =>
+                setFilter({
+                  marca: undefined,
+                  cat: undefined,
+                  source: undefined,
+                  estado: undefined,
+                  nuevos: undefined,
+                  ml: undefined,
+                  listo: undefined,
+                  mlcambios: undefined,
+                  orden: undefined,
+                  dir: undefined,
+                })
+              }
               className="whitespace-nowrap text-xs font-semibold text-brand-700 hover:text-brand-900"
             >
               Limpiar filtros
@@ -381,10 +361,7 @@ export const TableProduct = () => {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => {
-              setNewOnly(v => !v);
-              setPage(1);
-            }}
+            onClick={() => setFilter({ nuevos: newOnly ? undefined : '1' })}
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
               newOnly
                 ? 'border-amber-300 bg-amber-50 text-amber-800'
@@ -402,10 +379,7 @@ export const TableProduct = () => {
 
           <button
             type="button"
-            onClick={() => {
-              setContentDirtyOnly((v) => !v);
-              setPage(1);
-            }}
+            onClick={() => setFilter({ mlcambios: contentDirtyOnly ? undefined : '1' })}
             title="Productos publicados en Mercado Libre cuyo nombre/descripción cambió en CDR y todavía no se actualizó la publicación"
             className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
               contentDirtyOnly
@@ -471,8 +445,11 @@ export const TableProduct = () => {
         </div>
       ) : (
         <>
-          <div className="relative w-full h-full">
-            <table className="text-sm w-full caption-bottom overflow-auto">
+          {/* overflow-x-auto va en el CONTENEDOR: en la <table> no hace nada.
+              Sin esto la tabla ancha empujaba el ancho de toda la página en
+              mobile y había que arrastrar de costado la web entera. */}
+          <div className="relative w-full h-full overflow-x-auto">
+            <table className="text-sm w-full caption-bottom">
           <thead className="border-b border-gray-200 pb-3">
             <tr className="text-sm font-bold">
               {tableHeaders.map((header, index) => (
@@ -669,6 +646,9 @@ export const TableProduct = () => {
                       >
                         <Link
                           to={`/dashboard/productos/editar/${product.slug}`}
+                          // Nos llevamos el listado tal cual está (filtros, página
+                          // y orden) para volver exactamente acá al guardar.
+                          state={{ from: `/dashboard/productos?${searchParams.toString()}` }}
                           className="flex items-center gap-1 w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
                         >
                           Editar
@@ -981,7 +961,7 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
   // Mismo cálculo que la web pública: usa la config de márgenes guardada (no el default).
   const web = salePrice(cost, pricing);
   // Precio ML en USD (mismo criterio que la web), aunque el listing real pueda ir
-  // en pesos al BCU: costo × (1 + margen) × (1 + IVA).
+  // en pesos al BROU: costo × (1 + margen) × (1 + IVA).
   const mlMarginPct = mlMarginFor(cost, product.category_id ?? null, product.subcategory_id ?? null, mlCfg);
   const mlUsd = cost > 0 ? cost * (1 + mlMarginPct / 100) * (1 + mlCfg.iva_percent / 100) : 0;
   return (

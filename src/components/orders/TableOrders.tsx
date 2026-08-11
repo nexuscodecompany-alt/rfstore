@@ -16,8 +16,8 @@ export const TableOrders = ({ orders }: Props) => {
 	const navigate = useNavigate();
 
 	return (
-		<div className='relative w-full h-full'>
-			<table className='text-sm w-full caption-bottom overflow-auto'>
+		<div className='relative w-full h-full overflow-x-auto'>
+			<table className='text-sm w-full caption-bottom'>
 				<thead className='border-b border-gray-200 pb-3'>
 					<tr className='text-sm font-bold'>
 						{tableHeaders.map((header, index) => (

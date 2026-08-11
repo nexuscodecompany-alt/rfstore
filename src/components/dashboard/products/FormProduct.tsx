@@ -46,6 +46,7 @@ const initialState: ProductFormValues = {
   // Por defecto los productos manuales van "por consulta" (WhatsApp), igual
   // que antes de existir esta opción. El admin lo prende por producto.
   onlinePayment: false,
+  fulfillment: 'propio' as 'dropship' | 'propio' | 'ambos',
 };
 
 interface ProductFormState {
@@ -162,6 +163,7 @@ export const FormProduct = ({ titleForm }: Props) => {
         })(),
 
         onlinePayment: product.online_payment === true,
+        fulfillment: (product as { fulfillment?: 'dropship' | 'propio' | 'ambos' }).fulfillment ?? 'propio',
       };
 
       // Actualizamos el form y el store
@@ -183,6 +185,7 @@ export const FormProduct = ({ titleForm }: Props) => {
       categoryId: data.categoryId,
       subcategoryId: data.subcategoryId || null,
       onlinePayment: data.onlinePayment === true,
+      fulfillment: data.fulfillment ?? 'propio',
     };
 
     if (slug) {
@@ -377,6 +380,27 @@ export const FormProduct = ({ titleForm }: Props) => {
                 </span>
               </label>
             )}
+
+            {/* De dónde sale la unidad. Marcarlo como PROPIO deja al producto
+                fuera del sync de precio/stock de CDR (le pone los candados). */}
+            <label className="mt-4 block">
+              <span className="text-sm font-semibold text-slate-800">
+                Origen del stock
+              </span>
+              <select
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                {...register("fulfillment")}
+              >
+                <option value="dropship">Dropship — lo despacha CDR</option>
+                <option value="propio">Propio — sale de nuestro depósito</option>
+                <option value="ambos">Ambos — tenemos stock y además pedimos a CDR</option>
+              </select>
+              <span className="mt-1 block text-xs text-slate-500">
+                {watch("fulfillment") === "dropship"
+                  ? "El sync de CDR le maneja el precio y el stock."
+                  : "Queda fuera del sync de CDR (precio y stock los manejás vos). El stock se carga con las compras."}
+              </span>
+            </label>
           </div>
         </SectionFormProduct>
 

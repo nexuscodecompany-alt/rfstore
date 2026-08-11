@@ -1,7 +1,13 @@
 import { LuMinus, LuPlus } from "react-icons/lu";
 import { Separator } from "../components/shared/Separator";
-import { canBuyOnline, formatPrice, prepareProducts, salePrice } from "../helpers";
-import { usePaymentsEnabled, usePricingConfig } from "../hooks";
+import {
+  canBuyOnline,
+  compareAtFor,
+  formatPrice,
+  prepareProducts,
+  salePrice,
+} from "../helpers";
+import { useCompareAtConfig, usePaymentsEnabled, usePricingConfig } from "../hooks";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { BsChatLeftText } from "react-icons/bs";
 import { FaWhatsapp } from "react-icons/fa";
@@ -34,6 +40,7 @@ export const CellPhonePage = () => {
 
   const addItem = useCartStore((state) => state.addItem);
   const pricing = usePricingConfig();
+  const compareAtCfg = useCompareAtConfig();
   const { enabled: paymentsEnabled } = usePaymentsEnabled();
 
   const navigate = useNavigate();
@@ -42,6 +49,10 @@ export const CellPhonePage = () => {
   const variant = product?.variants?.[0];
   const stock = variant?.stock ?? 0;
   const isOutOfStock = stock === 0;
+
+  // Precio final y su "antes" tachado (sólo vidriera: no cambia lo que se cobra).
+  const currentPrice = salePrice(variant?.price ?? 0, pricing);
+  const compareAtPrice = compareAtFor(product?.id ?? "", currentPrice, compareAtCfg);
 
   useEffect(() => {
     resetCounter();
@@ -141,13 +152,24 @@ export const CellPhonePage = () => {
         <div className="flex-1 space-y-5">
           <h1 className="text-3xl font-bold tracking-tight">{product.name}</h1>
 
-          <div className="flex items-center gap-5">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <span className="text-lg font-semibold tracking-wide">
-              {formatPrice(salePrice(variant?.price ?? 0, pricing))}{" "}
+              {compareAtPrice && (
+                <span className="mr-2 text-sm font-normal text-ink-400 line-through">
+                  {formatPrice(compareAtPrice.before)}
+                </span>
+              )}
+              {formatPrice(currentPrice)}{" "}
               <span className="text-xs font-medium text-ink-500">
                 IVA incluido
               </span>
             </span>
+
+            {compareAtPrice && (
+              <span className="rounded bg-rose-600 px-2 py-0.5 text-xs font-bold text-white">
+                -{compareAtPrice.percent}% OFF
+              </span>
+            )}
 
             <div className="relative">
               {isOutOfStock && <Tag contentTag="agotado" />}

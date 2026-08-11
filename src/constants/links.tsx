@@ -10,6 +10,8 @@ import {
     FaChartLine,
     FaTags,
     FaPercent,
+    FaUsers,
+    FaTruckFast,
     FaTicket,
     FaScaleBalanced,
     FaTruck,
@@ -79,6 +81,18 @@ export const dashboardLinks = [
         title: 'Ordenes',
         href: '/dashboard/ordenes',
         icon: <FaCartShopping size={22} />,
+    },
+    {
+        id: 14,
+        title: 'Clientes',
+        href: '/dashboard/clientes',
+        icon: <FaUsers size={22} />,
+    },
+    {
+        id: 15,
+        title: 'Compras',
+        href: '/dashboard/compras',
+        icon: <FaTruckFast size={22} />,
     },
     {
         id: 3,

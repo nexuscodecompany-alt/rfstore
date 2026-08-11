@@ -7,6 +7,9 @@ import {
 	getCategories,
 	getUnclassifiedCdrProducts,
 	triggerCdrSync,
+	triggerCdrFillImages,
+	getCdrFillReport,
+	getProductsMissingImagesCount,
 	updateAppSetting,
 	type SyncReport,
 } from '../../actions';
@@ -73,6 +76,32 @@ export const DashboardCdrSyncPage = () => {
 			queryClient.invalidateQueries({ queryKey: ['products'] });
 		},
 		onError: (e: Error) => toast.error(`Falló sync: ${e.message}`),
+	});
+
+	// --- Fotos faltantes -------------------------------------------------
+	// El sync baja la galería UNA sola vez, en el alta. Si CDR publica el
+	// producto antes de subirle las fotos, quedaba sin fotos para siempre.
+	// Hay un cron diario que lo cura solo; esto es el botón para forzarlo.
+	const { data: missingImages = 0 } = useQuery({
+		queryKey: ['cdr_missing_images'],
+		queryFn: getProductsMissingImagesCount,
+		refetchInterval: 60_000,
+	});
+	const { data: fillReport } = useQuery({
+		queryKey: ['cdr_fill_report'],
+		queryFn: getCdrFillReport,
+		refetchInterval: 30_000,
+	});
+	const { mutate: doFillImages, isPending: fillingImages } = useMutation({
+		mutationFn: triggerCdrFillImages,
+		onSuccess: () => {
+			toast.success('Buscando fotos en CDR… en un minuto se actualiza el reporte');
+			setTimeout(() => {
+				queryClient.invalidateQueries({ queryKey: ['cdr_fill_report'] });
+				queryClient.invalidateQueries({ queryKey: ['cdr_missing_images'] });
+			}, 45_000);
+		},
+		onError: (e: Error) => toast.error(`Falló el relleno de fotos: ${e.message}`),
 	});
 
 	const { mutate: saveMarkup, isPending: savingMarkup } = useMutation({
@@ -256,6 +285,75 @@ export const DashboardCdrSyncPage = () => {
 					<pre className='text-xs bg-gray-50 p-3 rounded overflow-auto'>
 						{JSON.stringify(lastReport, null, 2)}
 					</pre>
+				)}
+			</section>
+
+			{/* Fotos faltantes */}
+			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
+				<div className='flex flex-wrap items-center justify-between gap-3'>
+					<div>
+						<h2 className='font-semibold'>Fotos faltantes</h2>
+						<p className='text-sm text-gray-600'>
+							CDR a veces publica un producto antes de subirle las fotos. Como la
+							galería se baja una sola vez (en el alta), esos productos quedaban
+							sin fotos para siempre. Esto los busca de nuevo — corre solo todos
+							los días a las 5:20 AM.
+						</p>
+					</div>
+					<span
+						className={`shrink-0 rounded-full px-3 py-1 text-sm font-semibold ${
+							missingImages === 0
+								? 'bg-emerald-50 text-emerald-700'
+								: 'bg-amber-50 text-amber-700'
+						}`}
+					>
+						{missingImages === 0
+							? 'Todos con foto'
+							: `${missingImages} sin foto`}
+					</span>
+				</div>
+
+				<button
+					className='px-4 py-2 bg-stone-800 text-white rounded-md disabled:opacity-50'
+					disabled={fillingImages || missingImages === 0}
+					onClick={() => doFillImages()}
+				>
+					{fillingImages ? 'Buscando fotos…' : 'Buscar fotos faltantes ahora'}
+				</button>
+
+				{fillReport && (
+					<div className='rounded-md bg-gray-50 p-3 text-sm text-gray-700 space-y-1'>
+						<p>
+							Última corrida:{' '}
+							{fillReport.finished_at
+								? new Date(fillReport.finished_at).toLocaleString('es-UY', {
+										timeZone: 'America/Montevideo',
+								  })
+								: '—'}{' '}
+							· <b>{fillReport.products_filled}</b> productos rellenados (
+							{fillReport.images_downloaded} fotos)
+						</p>
+						{fillReport.not_in_feed > 0 && (
+							<p className='text-gray-500'>
+								{fillReport.not_in_feed} no vinieron en el feed de CDR de ese
+								momento: se reintentan en la próxima corrida.
+							</p>
+						)}
+						{fillReport.products_skipped_no_gallery > 0 && (
+							<p className='text-amber-700'>
+								{fillReport.products_skipped_no_gallery} siguen <b>sin fotos en
+								CDR</b> (hay que reclamárselas):{' '}
+								<span className='font-mono text-xs'>
+									{(fillReport.still_without_gallery ?? []).slice(0, 20).join(', ')}
+								</span>
+							</p>
+						)}
+						{fillReport.images_failed > 0 && (
+							<p className='text-rose-700'>
+								{fillReport.images_failed} fotos fallaron al descargar.
+							</p>
+						)}
+					</div>
 				)}
 			</section>
 

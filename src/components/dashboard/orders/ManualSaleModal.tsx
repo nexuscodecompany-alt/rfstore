@@ -482,7 +482,7 @@ const ManualSaleForm = ({
 							min={0}
 							onChange={e => setFxRate(e.target.value)}
 							placeholder={
-								fx?.rate ? `${fx.rate.toFixed(2)} (BCU hoy)` : 'rate'
+								fx?.rate ? `${fx.rate.toFixed(2)} (BROU hoy)` : 'rate'
 							}
 						/>
 					</Field>

@@ -13,6 +13,8 @@ interface Props {
 	priceMax?: number;
 	setPriceMin: (v?: number) => void;
 	setPriceMax: (v?: number) => void;
+	/** Limpia todos los filtros de una (una sola escritura de URL). */
+	onClearAll: () => void;
 }
 
 const VISIBLE = 6;
@@ -93,6 +95,7 @@ export const ContainerFilter = ({
 	priceMax,
 	setPriceMin,
 	setPriceMax,
+	onClearAll,
 }: Props) => {
 	const { brands, categories, subcategories } = useTaxonomies();
 	const { data: availableBrandIds } = useBrandsByCategories(
@@ -130,14 +133,38 @@ export const ContainerFilter = ({
 			? subcategories.filter(s => selectedCategories.includes(s.category_id))
 			: subcategories;
 
-	const applyMin = (v: string) => {
-		setLocalMin(v);
-		setPriceMin(v === '' ? undefined : Number(v));
-	};
-	const applyMax = (v: string) => {
-		setLocalMax(v);
-		setPriceMax(v === '' ? undefined : Number(v));
-	};
+	// El precio se escribe dígito por dígito. Se manda al filtro (que ahora
+	// escribe la URL y dispara la consulta) recién cuando el usuario frena, si
+	// no se consultaba una vez por tecla: 1, 15, 150…
+	useEffect(() => {
+		const t = setTimeout(() => {
+			const next = localMin === '' ? undefined : Number(localMin);
+			if (next !== priceMin) setPriceMin(next);
+		}, 400);
+		return () => clearTimeout(t);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [localMin]);
+
+	useEffect(() => {
+		const t = setTimeout(() => {
+			const next = localMax === '' ? undefined : Number(localMax);
+			if (next !== priceMax) setPriceMax(next);
+		}, 400);
+		return () => clearTimeout(t);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [localMax]);
+
+	// Si el filtro cambia desde afuera (limpiar, "atrás" del navegador, link con
+	// ?min=/?max=), sincronizamos los inputs.
+	useEffect(() => {
+		setLocalMin(priceMin?.toString() ?? '');
+	}, [priceMin]);
+	useEffect(() => {
+		setLocalMax(priceMax?.toString() ?? '');
+	}, [priceMax]);
+
+	const applyMin = (v: string) => setLocalMin(v);
+	const applyMax = (v: string) => setLocalMax(v);
 
 	const totalActive =
 		selectedBrands.length +
@@ -147,13 +174,11 @@ export const ContainerFilter = ({
 		(priceMax !== undefined ? 1 : 0);
 
 	const clearAll = () => {
-		setSelectedBrands([]);
-		setSelectedCategories([]);
-		setSelectedSubcategories([]);
 		setLocalMin('');
 		setLocalMax('');
-		setPriceMin(undefined);
-		setPriceMax(undefined);
+		// Una sola escritura: los setters de la tienda van a la URL, así que
+		// limpiamos todo junto en vez de encadenar cinco cambios.
+		onClearAll();
 	};
 
 	return (

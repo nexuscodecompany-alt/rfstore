@@ -6,6 +6,7 @@ import {
 	getAppSettings,
 	checkCdrStock,
 	sendPaymentInstructionsEmail,
+	trackCheckoutLead,
 	type CartItemForMP,
 } from '../../actions';
 import { useUser, useUsdUyuRate } from '../../hooks';
@@ -17,15 +18,17 @@ import {
 } from './ShippingZoneSelector';
 import { URUGUAY_DEPARTMENTS_INTERIOR } from '../../constants/shipping';
 import toast from 'react-hot-toast';
-import { formatPrice } from '../../helpers';
+import {
+	formatPrice,
+	shippingSummary,
+	qualifiesForFreeShipping,
+	shippingIsChargedOnline,
+	FREE_SHIPPING_MIN_USD,
+} from '../../helpers';
 import { ItemsCheckout } from './ItemsCheckout';
 import { useNavigate } from 'react-router-dom';
 import { ImSpinner2 } from 'react-icons/im';
 import { supabase } from '../../supabase/client';
-
-// Mismo umbral que en FormCheckout (cotización): envío gratis en Montevideo
-// y zona metropolitana con compras desde USD 150.
-const FREE_SHIPPING_MIN_USD = 150;
 
 type Method = 'mercadopago' | 'transfer' | 'deposit';
 
@@ -71,12 +74,15 @@ export const CdrCheckoutForm = () => {
 		emptyShippingSelection
 	);
 
-	// Regla: en Montevideo y en la zona metropolitana (agencia), envío gratis a
-	// partir de USD 100. El interior (DAC) no aplica: lo paga el cliente al retirar.
-	const chargesShipping =
-		shipping.zone === 'montevideo' || shipping.zone === 'metropolitana';
-	const qualifiesForFree = chargesShipping && totalAmount >= FREE_SHIPPING_MIN_USD;
-	const shippingCostUsd = qualifiesForFree ? 0 : shipping.cost_usd;
+	// Regla única (helpers/shippingSummary): envío gratis SÓLO en Montevideo desde
+	// USD 150. La zona metropolitana (agencia) se cobra siempre, y el interior va
+	// por DAC: lo paga el cliente al retirar, así que nunca entra en este total.
+	const qualifiesForFree = qualifiesForFreeShipping(shipping.zone, totalAmount);
+	// El interior no se cobra online (va por DAC): su costo nunca entra al total.
+	const shippingCostUsd =
+		qualifiesForFree || !shippingIsChargedOnline(shipping.zone)
+			? 0
+			: shipping.cost_usd;
 
 	// --- Cupón ---
 	const [couponInput, setCouponInput] = useState('');
@@ -133,25 +139,21 @@ export const CdrCheckoutForm = () => {
 			grandTotalUsd,
 		});
 	}, [setSummary, effectiveShippingUsd, discountUsd, coupon, grandTotalUsd]);
+	// Resumen de envío: MISMO texto en el checkout, en el resumen lateral, en la
+	// página de gracias y en los mails.
+	const shippingInfo = shippingSummary({
+		zone: shipping.zone,
+		barrio: shipping.barrio,
+		department: shipping.department,
+		costUsd: effectiveShippingUsd,
+		freeByThreshold: qualifiesForFree,
+		freeByCoupon: couponFreeShipping === true,
+	});
+
 	useEffect(() => {
-		let label = 'A coordinar';
-		if (chargesShipping) {
-			if (qualifiesForFree) label = 'Gratis';
-			else if (shipping.barrio) label = formatPrice(shipping.cost_usd);
-		} else if (shipping.zone === 'interior') {
-			label = 'Pago en agencia';
-		}
-		setShippingLabel(label);
+		setShippingLabel(shippingInfo.label);
 		return () => resetShippingLabel();
-	}, [
-		shipping.zone,
-		shipping.barrio,
-		shipping.cost_usd,
-		chargesShipping,
-		qualifiesForFree,
-		setShippingLabel,
-		resetShippingLabel,
-	]);
+	}, [shippingInfo.label, setShippingLabel, resetShippingLabel]);
 
 	// Sincroniza state/city con la selección de zona:
 	// - Montevideo: city y state fijos en "Montevideo" (el barrio va en shipping_barrio).
@@ -180,6 +182,41 @@ export const CdrCheckoutForm = () => {
 		}
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [shipping.zone, shipping.barrio, shipping.department]);
+
+	// Registro del "llegó al checkout": guardamos contacto + foto del carrito
+	// apenas el cliente tiene datos cargados. Sirve para el panel de clientes
+	// (los "casi compran"). Se marca como convertido solo si termina comprando.
+	// Best-effort y con respiro: si falla, la compra sigue igual.
+	useEffect(() => {
+		if (!session?.user?.id) return;
+		if (cartItems.length === 0) return;
+		if (!form.email && !form.phone) return;
+		const t = setTimeout(() => {
+			trackCheckoutLead({
+				email: form.email,
+				phone: form.phone,
+				fullName: form.fullName,
+				cart: cartItems.map(i => ({
+					name: i.name,
+					quantity: i.quantity,
+					price: i.price,
+				})),
+				total: totalAmount,
+				shippingZone: shipping.zone,
+				shippingDepartment: shipping.department,
+			});
+		}, 1500);
+		return () => clearTimeout(t);
+	}, [
+		session?.user?.id,
+		cartItems,
+		form.email,
+		form.phone,
+		form.fullName,
+		totalAmount,
+		shipping.zone,
+		shipping.department,
+	]);
 
 	// Prefill datos del cliente desde la tabla customers (persistente entre
 	// compras): nombre, teléfono y email se cargan al loguearse.
@@ -677,24 +714,19 @@ export const CdrCheckoutForm = () => {
 							? '(agencia)'
 							: ''}
 					</span>
-					<span>
-						{shipping.zone === 'interior'
-							? 'Pago en agencia'
-							: qualifiesForFree
-							? 'Gratis'
-							: shippingCostUsd > 0
-							? formatPrice(shippingCostUsd)
-							: shipping.barrio
-							? 'Gratis'
-							: '—'}
-					</span>
+					<span>{shippingInfo.label}</span>
 				</div>
-				{chargesShipping && !qualifiesForFree && totalAmount < FREE_SHIPPING_MIN_USD && (
-					<p className='text-[11px] text-amber-700'>
-						Sumá USD {(FREE_SHIPPING_MIN_USD - totalAmount).toFixed(0)} más para
-						obtener envío gratis.
-					</p>
+				{shippingInfo.note && (
+					<p className='text-[11px] text-ink-500'>{shippingInfo.note}</p>
 				)}
+				{shipping.zone === 'montevideo' &&
+					!qualifiesForFree &&
+					totalAmount < FREE_SHIPPING_MIN_USD && (
+						<p className='text-[11px] text-amber-700'>
+							Sumá USD {(FREE_SHIPPING_MIN_USD - totalAmount).toFixed(0)} más para
+							obtener envío gratis en Montevideo.
+						</p>
+					)}
 {discountUsd > 0 && (
 						<div className='flex items-center justify-between text-sm text-emerald-700'>
 							<span>Descuento ({coupon?.code})</span>

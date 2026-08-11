@@ -5,25 +5,31 @@ import { useCheckoutShippingStore } from "../../store/checkoutShipping.store";
 import { ImSpinner2 } from "react-icons/im";
 import toast from "react-hot-toast";
 import { ItemsCheckout } from "./ItemsCheckout";
-import { formatPrice } from "../../helpers";
+import {
+  formatPrice,
+  shippingSummary,
+  qualifiesForFreeShipping,
+  FREE_SHIPPING_MIN_USD,
+} from "../../helpers";
 import { supabase } from "../../supabase/client";
 import { URUGUAY_DEPARTMENTS_INTERIOR } from "../../constants/shipping";
 
 const FORMSPREE_ID = "mvgqddop";
 
-// Regla: envío gratis SOLO en Montevideo con compras desde USD 150.
-// Cualquier otro caso queda "a coordinar" — el agente confirma por WhatsApp.
-const FREE_SHIPPING_MIN_USD = 150;
-
-const computeShippingLabel = (
-  department: string,
-  total: number
-): string => {
-  if (!department) return "A coordinar";
-  if (department === "Montevideo") {
-    return total >= FREE_SHIPPING_MIN_USD ? "Gratis" : "A coordinar";
+// Misma regla que el checkout de pago online (helpers/shippingSummary):
+// gratis SÓLO en Montevideo desde USD 150; el interior va por DAC y lo abona
+// el cliente al retirar. Antes esto vivía duplicado acá con su propio umbral.
+const computeShipping = (department: string, total: number) => {
+  if (!department) {
+    return shippingSummary({ zone: null, costUsd: 0 });
   }
-  return "A coordinar";
+  const isMontevideo = department === "Montevideo";
+  return shippingSummary({
+    zone: isMontevideo ? "montevideo" : "interior",
+    department: isMontevideo ? null : department,
+    costUsd: 0,
+    freeByThreshold: isMontevideo && qualifiesForFreeShipping("montevideo", total),
+  });
 };
 
 const ALL_DEPARTMENTS = ["Montevideo", ...URUGUAY_DEPARTMENTS_INTERIOR];
@@ -45,10 +51,11 @@ export const FormCheckout = () => {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const shippingLabel = useMemo(
-    () => computeShippingLabel(department, totalAmount),
+  const shippingInfo = useMemo(
+    () => computeShipping(department, totalAmount),
     [department, totalAmount]
   );
+  const shippingLabel = shippingInfo.label;
 
   // Sincronizamos la etiqueta con el resumen lateral (ItemsCheckout).
   useEffect(() => {
@@ -257,7 +264,8 @@ export const FormCheckout = () => {
             )}
             {department && department !== "Montevideo" && (
               <p className="text-xs text-ink-500">
-                Para envíos al interior coordinamos el costo por WhatsApp.
+                Envío al interior por DAC: el costo lo abonás al retirar en la
+                agencia. Lo coordinamos por WhatsApp.
               </p>
             )}
           </div>

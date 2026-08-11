@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import { searchWords } from '../helpers';
 import type { Product, VariantProduct } from '../interfaces';
 
 const PAGE_SIZE = 25;
@@ -84,9 +85,15 @@ if (subcategories?.length) baseQuery = baseQuery.in('subcategory_id', subcategor
 if (typeof priceMin === 'number') baseQuery = baseQuery.gte('price', priceMin);
 if (typeof priceMax === 'number') baseQuery = baseQuery.lte('price', priceMax);
 
+// Búsqueda: MISMA regla que el buscador del header (searchProducts). Se parte
+// el término en palabras y se exige que TODAS aparezcan, en cualquier orden,
+// sobre `search_blob` (nombre + código + marca + categoría + subcategoría, sin
+// acentos). Antes era un solo ilike con la frase entera y pegada contra
+// name/slug: "asus vivobook" no encontraba "Notebook Asus 15,6 Vivobook Go".
 if (searchTerm?.trim()) {
-  const ilike = `%${searchTerm.trim()}%`;
-  baseQuery = baseQuery.or(`name.ilike.${ilike},slug.ilike.${ilike}`);
+  for (const word of searchWords(searchTerm)) {
+    baseQuery = baseQuery.ilike('search_blob', `%${word}%`);
+  }
 }
   const { data: baseRows, error: baseErr, count } = await baseQuery;
   if (baseErr) throw baseErr;

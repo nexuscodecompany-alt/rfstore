@@ -48,6 +48,8 @@ export interface Product {
 	 * prendió esta bandera, si no van por "Consultar por WhatsApp".
 	 */
 	online_payment?: boolean;
+	/** De dónde sale la unidad: dropship (CDR) | propio (depósito RF) | ambos. */
+	fulfillment?: 'dropship' | 'propio' | 'ambos';
 	price_usd?: number | null;
 	markup_percent?: number | null;
 }
@@ -85,6 +87,7 @@ export interface ProductInput {
 	subcategoryId?: string | null;
 	/** Compra online habilitada (productos manuales). */
 	onlinePayment?: boolean;
+	fulfillment?: 'dropship' | 'propio' | 'ambos';
 }
 
 export interface VariantInput {

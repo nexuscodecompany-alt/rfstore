@@ -46,6 +46,53 @@ export interface SyncReport {
 export const triggerCdrSync = (full = false) =>
 	invokeFn<SyncReport>('cdr-sync-products', { full });
 
+/** Reporte del relleno de fotos faltantes (app_settings.cdr_last_fill_report). */
+export interface FillImagesReport {
+	ok: boolean;
+	/** Productos CDR que hoy están sin fotos. */
+	products_needing_images: number;
+	/** De esos, los que ni aparecen en el feed de CDR de hoy (no se pueden bajar). */
+	not_in_feed: number;
+	to_process: number;
+	backlog: number;
+	products_filled: number;
+	/** CDR todavía no les subió fotos: es la lista para reclamarle al proveedor. */
+	products_skipped_no_gallery: number;
+	still_without_gallery?: string[];
+	images_downloaded: number;
+	images_failed: number;
+	errors: string[];
+	finished_at?: string;
+}
+
+// Dispara el relleno de fotos de productos CDR que quedaron sin imágenes.
+// Corre en segundo plano: devuelve enseguida y el reporte se lee después.
+export const triggerCdrFillImages = () =>
+	invokeFn<{ ok: boolean; started: boolean }>('cdr-fill-images', {
+		background: true,
+	});
+
+export const getCdrFillReport = async (): Promise<FillImagesReport | null> => {
+	const { data, error } = await supabase
+		.from('app_settings')
+		.select('value')
+		.eq('key', 'cdr_last_fill_report')
+		.maybeSingle();
+	if (error) throw new Error(error.message);
+	return (data?.value as unknown as FillImagesReport) ?? null;
+};
+
+// Cuántos productos CDR están sin fotos ahora mismo (para el panel).
+export const getProductsMissingImagesCount = async (): Promise<number> => {
+	const { count, error } = await supabase
+		.from('products')
+		.select('id', { count: 'exact', head: true })
+		.eq('source', 'cdr')
+		.or('images.is.null,images.eq.{}');
+	if (error) throw new Error(error.message);
+	return count ?? 0;
+};
+
 export interface CheckStockResult {
 	ok: boolean;
 	stocks: { codigo: string; stock: number }[];

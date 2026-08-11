@@ -113,6 +113,12 @@ export const productSchema = z.object({
 	// (carrito + pasarela). Apagado = "Consultar por WhatsApp", que es como se
 	// comportaban TODOS los productos manuales antes.
 	onlinePayment: z.boolean().optional().default(false),
+	// De dónde sale la unidad: dropship (lo despacha CDR) | propio (nuestro
+	// depósito) | ambos. Marcarlo como propio lo saca del sync de CDR.
+	fulfillment: z
+		.enum(['dropship', 'propio', 'ambos'])
+		.optional()
+		.default('propio'),
 });
 
 export type ProductFormValues = z.infer<typeof productSchema>;

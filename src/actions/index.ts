@@ -13,3 +13,5 @@ export * from './notifications';
 export * from './shipping';
 export * from './ml';
 export * from './manualSales';
+export * from './customers';
+export * from './purchases';

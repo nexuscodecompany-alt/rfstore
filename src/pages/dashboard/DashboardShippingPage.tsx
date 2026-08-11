@@ -57,7 +57,7 @@ export const DashboardShippingPage = () => {
 				<h1 className='text-2xl font-bold text-ink-900'>Envíos</h1>
 				<p className='text-sm text-ink-500'>
 					Configurá las tarifas de envío por zona (en pesos uruguayos). En el
-					checkout se convierten a USD usando la cotización del BCU oficial del día
+					checkout se convierten a USD usando la cotización del dólar BROU del día
 					y se suman al total.
 				</p>
 			</div>

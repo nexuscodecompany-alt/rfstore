@@ -17,13 +17,20 @@ const FALLBACK_SLIDES: HomeSlide[] = [
 	},
 ];
 
+// Alto del hero. MISMA proporción en el contenedor, en el placeholder de carga
+// y en las imágenes: si cambia una, cambian todas (si no, vuelve el salto).
+const ASPECT = 'aspect-[2/1] md:aspect-[1920/700]';
+
 /**
  * Hero: carrusel fino de punta a punta. Todos los slides (incluida la imagen
  * principal) se administran desde el dashboard (Home → Carrusel).
  */
 export const HeroCarousel = () => {
-	const { config } = useHomeConfig();
-	const slides = config.hero_slides.length > 0 ? config.hero_slides : FALLBACK_SLIDES;
+	const { config, isLoading } = useHomeConfig();
+	// Slides configurados por el admin. Mientras la config viaja, esto viene vacío
+	// (useHomeConfig devuelve DEFAULT_HOME_CONFIG como placeholder).
+	const configured = config.hero_slides;
+	const slides = configured.length > 0 ? configured : FALLBACK_SLIDES;
 
 	const total = slides.length;
 	const [index, setIndex] = useState(0);
@@ -37,8 +44,21 @@ export const HeroCarousel = () => {
 
 	const go = (dir: number) => setIndex((safeIndex + dir + total) % total);
 
+	// Mientras la config no llegó, NO mostramos el slide de respaldo: tiene otra
+	// proporción que la caja y se veía deformado el primer segundo, hasta que
+	// llegaban los slides reales. Reservamos el mismo espacio y listo (además
+	// evita el salto de layout que penaliza Google).
+	if (isLoading && configured.length === 0) {
+		return (
+			<div
+				className={`bleed-full relative ${ASPECT} h-auto overflow-hidden bg-ink-950`}
+				aria-hidden='true'
+			/>
+		);
+	}
+
 	return (
-		<div className='bleed-full group relative aspect-[2/1] h-auto overflow-hidden bg-ink-950 md:aspect-[1920/700]'>
+		<div className={`bleed-full group relative ${ASPECT} h-auto overflow-hidden bg-ink-950`}>
 			{slides.map((slide, i) => {
 				const active = safeIndex === i;
 				const img = (
@@ -46,11 +66,17 @@ export const HeroCarousel = () => {
 						{slide.image_mobile && (
 							<source media='(max-width: 767px)' srcSet={slide.image_mobile} />
 						)}
+						{/* object-cover, NUNCA object-fill: fill estira la foto para llenar
+						    la caja en vez de recortarla (era la imagen "estirada"). */}
 						<img
 							src={slide.image}
 							alt={slide.alt || ''}
-							className='h-full w-full object-fill'
+							className='h-full w-full object-cover'
 							loading={i === 0 ? 'eager' : 'lazy'}
+							decoding={i === 0 ? 'sync' : 'async'}
+							// React 18 no tipa fetchPriority; en minúscula pasa igual al DOM.
+							// Le dice al navegador que baje primero la imagen del hero (LCP).
+							{...(i === 0 ? ({ fetchpriority: 'high' } as Record<string, string>) : {})}
 						/>
 					</picture>
 				);

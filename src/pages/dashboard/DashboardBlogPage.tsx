@@ -48,7 +48,7 @@ export const DashboardBlogPage = () => {
                     Crear Nuevo Post
                 </Link>
             </div>
-            <div className="bg-white shadow-md rounded-lg overflow-hidden">
+            <div className="bg-white shadow-md rounded-lg overflow-x-auto">
                 <table className="min-w-full leading-normal">
                     <thead>
                         <tr>

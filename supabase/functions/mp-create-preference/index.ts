@@ -1,4 +1,12 @@
 // deno-lint-ignore-file no-explicit-any
+// mp-create-preference v24 (2026-08-11)
+//  - Envio gratis SOLO en Montevideo (>= USD 150). La zona metropolitana llega
+//    por agencia y se cobra siempre; el interior va por DAC y lo abona el
+//    cliente al retirar (nunca entra en el total).
+//  - order_items ahora guarda cost_usd: TODAS las ventas web por Mercado Pago
+//    figuraban con ganancia CERO en el panel porque el costo quedaba null.
+//  - La cotizacion usada queda CONGELADA en la orden (fx_rate/fx_source/
+//    total_original) para que los mails no la vuelvan a pedir.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -155,9 +163,11 @@ Deno.serve(async req => {
 		const isMvd = body.shipping_zone === 'montevideo';
 		const isMetro = body.shipping_zone === 'metropolitana';
 		// Montevideo y zona metropolitana (agencia) cobran envío; interior = DAC (0).
-		// Envío gratis a partir de FREE_SHIPPING_MIN_USD en las zonas que cobran.
+		// Envío gratis SOLO en Montevideo a partir de FREE_SHIPPING_MIN_USD.
+		// La zona metropolitana llega por agencia y se cobra siempre; el interior
+		// va por DAC y lo abona el cliente al retirar (nunca entra en el total).
 		const chargesShipping = isMvd || isMetro;
-		const qualifiesFree = chargesShipping && subtotal >= FREE_SHIPPING_MIN_USD;
+		const qualifiesFree = isMvd && subtotal >= FREE_SHIPPING_MIN_USD;
 		const shippingBase = !chargesShipping || qualifiesFree ? 0 : Math.max(0, Number(requestedShipping.toFixed(2)));
 
 		// Cupon (server-side, anti-manipulacion). El descuento se calcula contra el subtotal REAL cobrado.
@@ -178,6 +188,7 @@ Deno.serve(async req => {
 		// Sin cache valida, cae a USD para no romper el checkout.
 		const { data: fxRow } = await supabaseAdmin.from('app_settings').select('value').eq('key', 'usd_uyu_rate_cache').maybeSingle();
 		const fxRate = Number((fxRow?.value as any)?.rate) || 0;
+		const fxSource = String((fxRow?.value as any)?.source ?? '') || null;
 		const useUyu = fxRate > 0;
 		const curId = useUyu ? 'UYU' : 'USD';
 		const toCharge = (usd: number) => (useUyu ? Math.round(usd * fxRate) : Number(usd.toFixed(2)));
@@ -186,10 +197,14 @@ Deno.serve(async req => {
 		const { data: addressRow, error: addrErr } = await supabaseAdmin.from('addresses').insert({ address_line1: body.address.line1, address_line2: body.address.line2 ?? null, city: body.address.city, state: body.address.state, postal_code: body.address.postal_code, country: body.address.country, customer_id: customer.id }).select().single();
 		if (addrErr) throw new Error(`addresses: ${addrErr.message}`);
 
-		const { data: orderRow, error: orderErr } = await supabaseAdmin.from('orders').insert({ customer_id: customer.id, address_id: addressRow.id, total_amount: totalAmount, status: 'pago_pendiente', payment_method: 'mercadopago', payment_status: 'pending', shipping_zone: body.shipping_zone ?? null, shipping_barrio: body.shipping_barrio ?? null, shipping_department: body.shipping_department ?? null, shipping_cost_usd: shippingCharge, coupon_id: couponId, coupon_code: couponCodeNorm, discount_usd: couponDiscount }).select().single();
+		const { data: orderRow, error: orderErr } = await supabaseAdmin.from('orders').insert({ customer_id: customer.id, address_id: addressRow.id, total_amount: totalAmount, status: 'pago_pendiente', payment_method: 'mercadopago', payment_status: 'pending', shipping_zone: body.shipping_zone ?? null, shipping_barrio: body.shipping_barrio ?? null, shipping_department: body.shipping_department ?? null, shipping_cost_usd: shippingCharge, coupon_id: couponId, coupon_code: couponCodeNorm, discount_usd: couponDiscount, fx_rate: useUyu ? fxRate : null, fx_source: useUyu ? fxSource : null, total_original: useUyu ? Math.round(totalAmount * fxRate) : null }).select().single();
 		if (orderErr) throw new Error(`orders: ${orderErr.message}`);
 
-		const { error: itemsErr } = await supabaseAdmin.from('order_items').insert(lineTotals.map(l => ({ order_id: orderRow.id, variant_id: l.variant_id, price: l.unit_final_usd, quantity: l.quantity })));
+		// cost_usd: costo congelado al momento de la venta (CDR -> products.price_usd;
+		// propio -> costo cargado en la variante). Sin esto la venta figuraba con
+		// ganancia CERO en el panel: pasaba en TODAS las ventas web por Mercado Pago.
+		// (La base igual lo completa por trigger, esto lo deja explícito acá.)
+		const { error: itemsErr } = await supabaseAdmin.from('order_items').insert(lineTotals.map(l => ({ order_id: orderRow.id, variant_id: l.variant_id, price: l.unit_final_usd, quantity: l.quantity, cost_usd: costByVariant.get(l.variant_id) || null })));
 		if (itemsErr) throw new Error(`order_items: ${itemsErr.message}`);
 
 		for (const l of lineTotals) { const { data: v } = await supabaseAdmin.from('variants').select('stock').eq('id', l.variant_id).single(); if (!v) continue; await supabaseAdmin.from('variants').update({ stock: Math.max(0, Number(v.stock) - l.quantity) }).eq('id', l.variant_id); }

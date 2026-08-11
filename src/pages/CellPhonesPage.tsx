@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
 import { HiOutlineArrowDown, HiOutlineArrowUp, HiOutlineSearch, HiOutlineSparkles } from 'react-icons/hi';
 import { CardProduct } from '../components/products/CardProduct';
 import { ContainerFilter } from '../components/products/ContainerFilter';
@@ -16,6 +15,7 @@ import {
 	useSpecialCategoryBySlug,
 	useTaxonomies,
 } from '../hooks';
+import { useFilterParams, type ParamValue } from '../hooks/useFilterParams';
 import { Pagination } from '../components/shared/Pagination';
 import WhatsAppButton from '../components/shared/WhatsAppButton';
 import { IconType } from 'react-icons';
@@ -58,36 +58,45 @@ export const CellPhonesPage = () => {
 	// /tienda?category=notebooks&brand=asus) para que los links de ads sean legibles.
 	// ?special=<slug> = categoría ESPECIAL / campaña (Día del Niño, Black Friday…):
 	// va por encima de la taxonomía real, los productos los elige el admin a mano.
-	const [searchParams, setSearchParams] = useSearchParams();
-	const qParam = searchParams.get('q') ?? '';
-	const catParam = searchParams.get('category') ?? '';
-	const subParam = searchParams.get('subcategory') ?? '';
-	const brandParam = searchParams.get('brand') ?? '';
-	const specialParam = searchParams.get('special') ?? '';
+	// TODO el estado de filtrado vive en la URL (ver useFilterParams): así el
+	// botón "atrás" del navegador lo restaura tal cual al volver de un producto,
+	// y el link con los filtros puestos se puede compartir o recargar.
+	const { get, getList, getNumber, getBool, patch, toggleInList } =
+		useFilterParams();
+	const qParam = get('q');
+	const catParam = get('category');
+	const specialParam = get('special');
 
-	const [page, setPage] = useState(1);
-	const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
-	const [selectedCategories, setSelectedCategories] = useState<string[]>(
-		catParam ? [catParam] : []
-	);
-	const [selectedSubcategories, setSelectedSubcategories] = useState<string[]>(
-		subParam ? [subParam] : []
-	);
-	const [priceMin, setPriceMin] = useState<number | undefined>(undefined);
-	const [priceMax, setPriceMax] = useState<number | undefined>(undefined);
-	const [searchTerm, setSearchTerm] = useState(qParam);
-	// Orden por defecto: "Destacados" (featured_score: marcas top entreveradas,
-	// más vendidos primero). Menor/mayor precio SOLO si el usuario lo elige.
-	const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | undefined>(undefined);
-	// ¿El usuario eligió un orden manualmente? Si NO, y hay CUALQUIER filtro
-	// activo, ordenamos por menor precio arriba por defecto (ver effectiveSort).
-	const [manualSort, setManualSort] = useState(false);
-	const [newArrivalsOnly, setNewArrivalsOnly] = useState(false);
+	const page = getNumber('page') ?? 1;
+	const priceMin = getNumber('min');
+	const priceMax = getNumber('max');
+	const newArrivalsOnly = getBool('nuevos');
+	// Orden: sin parámetro = automático (ver effectiveSort). Con parámetro, mandó
+	// el usuario: 'destacados' | 'asc' | 'desc'.
+	const sortParam = get('sort');
+	const manualSort = sortParam !== '';
+	const sortOrder: 'asc' | 'desc' | undefined =
+		sortParam === 'asc' ? 'asc' : sortParam === 'desc' ? 'desc' : undefined;
 
-	// Si cambia el ?q= (otra búsqueda desde el header estando ya en la tienda), sincronizar.
+	// El input de búsqueda se escribe letra por letra: lo mantenemos local y lo
+	// volcamos a la URL con un respiro, para no disparar una consulta por tecla.
+	const [searchInput, setSearchInput] = useState(qParam);
+	const searchTerm = qParam;
+
+	// Si cambia el ?q= desde afuera (buscador del header estando ya en la tienda,
+	// o "atrás" del navegador), sincronizamos el input.
 	useEffect(() => {
-		setSearchTerm(qParam);
+		setSearchInput(qParam);
 	}, [qParam]);
+
+	useEffect(() => {
+		if (searchInput === qParam) return;
+		const t = setTimeout(
+			() => patch({ q: searchInput.trim() || undefined, page: undefined }),
+			350
+		);
+		return () => clearTimeout(t);
+	}, [searchInput, qParam, patch]);
 
 	const { categories, subcategories, brands } = useTaxonomies();
 	// Campañas activas (pills destacadas) y la campaña abierta por ?special=.
@@ -104,48 +113,21 @@ export const CellPhonesPage = () => {
 
 	// Acepta id o nombre exacto (case/acentos-insensitive). Si la lista todavía no
 	// cargó o no hay match, devuelve el valor tal cual (compat con los links por id).
+	// Los links de publicidad usan nombres (/tienda?category=notebooks&brand=asus);
+	// los filtros de la tienda escriben ids.
 	const resolveId = (param: string, list: { id: string; name: string }[]) => {
 		if (!param) return '';
 		if (list.some(x => x.id === param)) return param;
 		return list.find(x => norm(x.name) === norm(param))?.id ?? param;
 	};
+	const resolveIds = (params: string[], list: { id: string; name: string }[]) =>
+		params.map(p => resolveId(p, list)).filter(Boolean);
 
-	// Si cambian ?category= / ?subcategory= (navegación desde el header/tiles), sincronizar.
-	// También re-resuelve cuando cargan las taxonomías (para los links por nombre).
-	useEffect(() => {
-		setSelectedCategories(catParam ? [resolveId(catParam, categories)] : []);
-		setSelectedSubcategories(subParam ? [resolveId(subParam, subcategories)] : []);
-		setNewArrivalsOnly(false);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [catParam, subParam, categories, subcategories]);
-
-	// ?brand= (id o nombre) — para links de publicidad tipo /tienda?category=notebooks&brand=asus.
-	// Sólo aplica cuando viene el parámetro: no pisa el filtrado manual del usuario.
-	useEffect(() => {
-		if (!brandParam) return;
-		setSelectedBrands([resolveId(brandParam, brands)]);
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [brandParam, brands]);
-
-	// Landing por link (banner del hero, tiles, menú, ads con ?category=/?brand=/?special=):
-	// al cambiar el link reseteamos el override de orden para volver a la regla
-	// automática (que con filtros = menor precio arriba).
-	useEffect(() => {
-		setSortOrder(undefined);
-		setManualSort(false);
-	}, [catParam, subParam, brandParam, specialParam]);
-
-	// Abrir una campaña arranca de cero: sin categoría/marca/precio previos, para
-	// que se vea la selección completa que armó el admin.
-	useEffect(() => {
-		if (!specialParam) return;
-		setSelectedBrands([]);
-		setSelectedCategories([]);
-		setSelectedSubcategories([]);
-		setPriceMin(undefined);
-		setPriceMax(undefined);
-		setNewArrivalsOnly(false);
-	}, [specialParam]);
+	// Derivado de la URL en cada render: cuando llegan las taxonomías, los links
+	// por nombre se re-resuelven solos (antes hacía falta un efecto para eso).
+	const selectedCategories = catParam ? [resolveId(catParam, categories)] : [];
+	const selectedSubcategories = resolveIds(getList('subcategory'), subcategories);
+	const selectedBrands = resolveIds(getList('brand'), brands);
 
 	// ¿Hay algún filtro activo? Da igual el origen: pills/checkboxes de la tienda,
 	// precio, búsqueda, campaña, o landing por link (?category=/?subcategory=/?brand=/?q=).
@@ -168,62 +150,74 @@ export const CellPhonesPage = () => {
 		? 'asc'
 		: undefined;
 
-	// Cuando cambia un filtro, volvemos al orden automático,
-	// salvo que el usuario vuelva a elegir manualmente. No incluye sortOrder
-	// para no pisar la elección manual del usuario.
-	useEffect(() => {
-		setManualSort(false);
-	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, newArrivalsOnly]);
+	// Cambiar cualquier filtro vuelve a la página 1 y suelta el orden manual (para
+	// que rija de nuevo la regla automática). Todo en una sola escritura de URL.
+	const setFilters = (values: Record<string, ParamValue>) =>
+		patch({ page: undefined, sort: undefined, ...values });
 
-	useEffect(() => {
-		setPage(1);
-	}, [selectedBrands, selectedCategories, selectedSubcategories, priceMin, priceMax, searchTerm, effectiveSort, newArrivalsOnly, specialParam]);
+	// Firma compatible con el componente de paginado (acepta valor o función).
+	const setPage: React.Dispatch<React.SetStateAction<number>> = value => {
+		const next = typeof value === 'function' ? value(page) : value;
+		patch({ page: next > 1 ? next : undefined });
+	};
 
 	// Entrar/salir de una campaña. Va por la URL para que el link sea compartible
 	// (ads, WhatsApp) y el botón "atrás" del navegador funcione.
-	const setSpecial = (slug: string | null) => {
-		const next = new URLSearchParams(searchParams);
-		if (slug) next.set('special', slug);
-		else next.delete('special');
-		setSearchParams(next);
-	};
+	// Abrir una campaña arranca de cero: sin categoría/marca/precio previos, para
+	// que se vea la selección completa que armó el admin.
+	const setSpecial = (slug: string | null) =>
+		setFilters({
+			special: slug ?? undefined,
+			category: undefined,
+			subcategory: undefined,
+			brand: undefined,
+			min: undefined,
+			max: undefined,
+			nuevos: undefined,
+		});
 
 	const selectCategory = (id: string) => {
 		// Selección exclusiva: una categoría a la vez en la barra de arriba.
-		if (specialParam) setSpecial(null); // salir de la campaña
-		setNewArrivalsOnly(false);
-		if (selectedCategories.includes(id) && selectedCategories.length === 1) {
-			// Click sobre la misma categoría = volver a "Todas".
-			setSelectedCategories([]);
-		} else {
-			setSelectedCategories([id]);
-		}
-		setSelectedSubcategories([]);
+		// Click sobre la misma categoría = volver a "Todas".
+		const same = selectedCategories.includes(id) && selectedCategories.length === 1;
+		setFilters({
+			category: same ? undefined : id,
+			subcategory: undefined,
+			special: undefined,
+			nuevos: undefined,
+		});
 	};
 
-	const selectAll = () => {
-		if (specialParam) setSpecial(null);
-		setNewArrivalsOnly(false);
-		setSelectedCategories([]);
-		setSelectedSubcategories([]);
-	};
+	const selectAll = () =>
+		setFilters({
+			category: undefined,
+			subcategory: undefined,
+			special: undefined,
+			nuevos: undefined,
+		});
 
-	const selectNewArrivals = () => {
-		if (specialParam) setSpecial(null);
-		setNewArrivalsOnly(true);
-		setSelectedCategories([]);
-		setSelectedSubcategories([]);
-	};
+	const selectNewArrivals = () =>
+		setFilters({
+			nuevos: '1',
+			category: undefined,
+			subcategory: undefined,
+			special: undefined,
+		});
 
 	// Pill de campaña: si ya está abierta, volver a "Todas".
 	const selectSpecial = (slug: string) =>
 		setSpecial(specialParam === slug ? null : slug);
 
-	const toggleSubcategory = (id: string) => {
-		setSelectedSubcategories(prev =>
-			prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-		);
-	};
+	const toggleSubcategory = (id: string) =>
+		toggleInList('subcategory', id, { page: undefined, sort: undefined });
+
+	// Setters que usa el panel de filtros lateral (ContainerFilter).
+	const setSelectedBrands = (ids: string[]) => setFilters({ brand: ids });
+	const setSelectedCategories = (ids: string[]) =>
+		setFilters({ category: ids[0], subcategory: undefined });
+	const setSelectedSubcategories = (ids: string[]) => setFilters({ subcategory: ids });
+	const setPriceMin = (v?: number) => setFilters({ min: v });
+	const setPriceMax = (v?: number) => setFilters({ max: v });
 
 	// Sólo mostramos subcategorías cuando hay una categoría seleccionada.
 	const visibleSubcategories =
@@ -345,8 +339,8 @@ export const CellPhonesPage = () => {
 					<input
 						type='text'
 						placeholder='Buscar productos por nombre, marca o categoría...'
-						value={searchTerm}
-						onChange={e => setSearchTerm(e.target.value)}
+						value={searchInput}
+						onChange={e => setSearchInput(e.target.value)}
 						className='w-full pl-12 pr-4 py-3.5 text-sm bg-white border border-ink-200 rounded-full shadow-soft placeholder:text-ink-400 focus:outline-none focus:ring-4 focus:ring-brand-600/15 focus:border-brand-600 transition-all'
 					/>
 				</div>
@@ -363,10 +357,7 @@ export const CellPhonesPage = () => {
 
 				<div className='inline-flex items-center gap-1 p-1 bg-ink-100 rounded-lg border border-ink-200/70'>
 					<button
-						onClick={() => {
-							setManualSort(true);
-							setSortOrder(undefined);
-						}}
+						onClick={() => patch({ sort: 'destacados', page: undefined })}
 						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
 							effectiveSort === undefined
 								? 'bg-white text-ink-900 shadow-soft'
@@ -377,10 +368,7 @@ export const CellPhonesPage = () => {
 						Destacados
 					</button>
 					<button
-						onClick={() => {
-							setManualSort(true);
-							setSortOrder('desc');
-						}}
+						onClick={() => patch({ sort: 'desc', page: undefined })}
 						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
 							effectiveSort === 'desc'
 								? 'bg-white text-ink-900 shadow-soft'
@@ -391,10 +379,7 @@ export const CellPhonesPage = () => {
 						Mayor precio
 					</button>
 					<button
-						onClick={() => {
-							setManualSort(true);
-							setSortOrder('asc');
-						}}
+						onClick={() => patch({ sort: 'asc', page: undefined })}
 						className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
 							effectiveSort === 'asc'
 								? 'bg-white text-ink-900 shadow-soft'
@@ -419,6 +404,15 @@ export const CellPhonesPage = () => {
 					priceMax={priceMax}
 					setPriceMin={setPriceMin}
 					setPriceMax={setPriceMax}
+					onClearAll={() =>
+						setFilters({
+							brand: undefined,
+							category: undefined,
+							subcategory: undefined,
+							min: undefined,
+							max: undefined,
+						})
+					}
 				/>
 
 				{isLoading || isLoadingSpecial ? (

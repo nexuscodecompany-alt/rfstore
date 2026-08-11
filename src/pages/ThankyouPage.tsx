@@ -2,7 +2,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useOrder, useUser, useUsdUyuRate } from '../hooks';
 import { Loader } from '../components/shared/Loader';
 import { CiCircleCheck } from 'react-icons/ci';
-import { formatPrice } from '../helpers';
+import { formatPrice, shippingSummary, type ShippingZoneName } from '../helpers';
 import { useEffect, useState } from 'react';
 import { supabase } from '../supabase/client';
 import {
@@ -58,7 +58,7 @@ export const ThankyouPage = () => {
 		if (!data) return;
 		trackPurchase(
 			data.id,
-			data.orderItems.map(item => ({
+			data.orderItems.map((item: any) => ({
 				// content_id = id del producto (igual que en el feed del catálogo).
 				id: (item as any).productId || item.productName,
 				quantity: item.quantity,
@@ -85,8 +85,27 @@ export const ThankyouPage = () => {
 	if (isLoading || !data || isLoadingSession) return <Loader />;
 
 	const userName = data.customer.full_name || '';
-	const totalUyu = fx ? Math.round(data.totalAmount * fx.rate) : null;
+	// Cotización CONGELADA en la orden: es la que vio el cliente al comprar y la
+	// misma que sale en el mail. Sólo si la orden no la tiene (órdenes viejas)
+	// caemos a la del día.
+	const totalUyu =
+		data.totalUyuFrozen != null
+			? Math.round(Number(data.totalUyuFrozen))
+			: data.fxRate
+			? Math.round(data.totalAmount * Number(data.fxRate))
+			: fx
+			? Math.round(data.totalAmount * fx.rate)
+			: null;
 	const formatUyu = (n: number) => `UYU ${n.toLocaleString('es-UY')}`;
+	// Envío: mismo texto que el checkout y los mails.
+	const shippingInfo = shippingSummary({
+		zone: data.shipping.zone as ShippingZoneName | null,
+		barrio: data.shipping.barrio,
+		department: data.shipping.department,
+		costUsd: data.shipping.costUsd,
+		freeByThreshold:
+			data.shipping.zone === 'montevideo' && data.shipping.costUsd === 0,
+	});
 
 	return (
 		<div className='flex flex-col h-screen'>
@@ -141,7 +160,7 @@ export const ThankyouPage = () => {
 
 					<div className='flex flex-col gap-5'>
 						<ul className='space-y-3'>
-							{data.orderItems.map((item, index) => (
+							{data.orderItems.map((item: any, index: number) => (
 								<li
 									key={index}
 									className='flex items-center justify-between gap-3'
@@ -168,6 +187,21 @@ export const ThankyouPage = () => {
 							))}
 						</ul>
 
+						{/* Desglose: sin la línea de envío, una compra al interior mostraba
+						    un total igual al subtotal y se leía como "envío incluido". */}
+						{shippingInfo.zoneLabel && (
+							<div className='flex justify-between items-start text-sm text-gray-600'>
+								<span>Envío ({shippingInfo.zoneLabel})</span>
+								<span>{shippingInfo.label}</span>
+							</div>
+						)}
+						{data.discountUsd > 0 && (
+							<div className='flex justify-between items-start text-sm text-emerald-700'>
+								<span>Descuento{data.couponCode ? ` (${data.couponCode})` : ''}</span>
+								<span>- {formatPrice(data.discountUsd)}</span>
+							</div>
+						)}
+
 						<div className='flex justify-between items-start'>
 							<span className='font-semibold'>Total:</span>
 							<div className='text-right'>
@@ -176,11 +210,17 @@ export const ThankyouPage = () => {
 								</p>
 								{totalUyu !== null && (
 									<p className='text-xs text-gray-500'>
-										≈ {formatUyu(totalUyu)} (al BCU de hoy)
+										≈ {formatUyu(totalUyu)} (al BROU)
 									</p>
 								)}
 							</div>
 						</div>
+
+						{shippingInfo.note && (
+							<p className='rounded-md bg-amber-50 p-2 text-xs text-amber-800'>
+								{shippingInfo.note}
+							</p>
+						)}
 					</div>
 				</div>
 
@@ -258,7 +298,7 @@ const TransferDetails = ({ info, orderId, totalAmount, totalUyu, formatUyu }: Tr
 					<p className='font-bold text-ink-900'>{formatPrice(totalAmount)}</p>
 					{totalUyu !== null && (
 						<p className='text-xs text-emerald-800'>
-							≈ {formatUyu(totalUyu)} (al BCU de hoy)
+							≈ {formatUyu(totalUyu)} (al BROU)
 						</p>
 					)}
 				</div>

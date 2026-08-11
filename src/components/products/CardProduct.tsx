@@ -2,10 +2,10 @@ import { FiPlus } from 'react-icons/fi';
 import { FaWhatsapp } from 'react-icons/fa';
 import { Link } from 'react-router-dom';
 import { VariantProduct } from '../../interfaces';
-import { canBuyOnline, formatPrice, salePrice } from '../../helpers';
+import { canBuyOnline, compareAtFor, formatPrice, salePrice } from '../../helpers';
 import { Tag } from '../shared/Tag';
 import { useCartStore } from '../../store/cart.store';
-import { usePaymentsEnabled, usePricingConfig } from '../../hooks';
+import { useCompareAtConfig, usePaymentsEnabled, usePricingConfig } from '../../hooks';
 import toast from 'react-hot-toast';
 import { trackAddToCart } from '../../lib/pixel';
 
@@ -47,12 +47,16 @@ export const CardProduct = ({
 	const addItem = useCartStore(state => state.addItem);
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
 	const pricing = usePricingConfig();
+	const compareAtCfg = useCompareAtConfig();
 
 	const selectedVariant = variants[0];
 
 	const displayPrice = variants.length
 		? Math.min(...variants.map(v => salePrice(v.price, pricing)))
 		: salePrice(price, pricing);
+
+	// Precio "antes" tachado (sólo vidriera; no cambia lo que se cobra).
+	const compareAt = compareAtFor(id, displayPrice, compareAtCfg);
 
 	const stock = selectedVariant?.stock || 0;
 	const isOutOfStock = stock === 0;
@@ -138,10 +142,20 @@ export const CardProduct = ({
 					</h3>
 				</Link>
 
-				<div className='flex items-baseline gap-1.5 pt-1'>
+				<div className='flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 pt-1'>
+					{compareAt && (
+						<span className='whitespace-nowrap text-xs text-ink-400 line-through'>
+							{formatPrice(compareAt.before)}
+						</span>
+					)}
 					<p className='whitespace-nowrap text-base font-bold text-ink-900'>
 						{formatPrice(displayPrice)}
 					</p>
+					{compareAt && (
+						<span className='rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold text-white'>
+							-{compareAt.percent}%
+						</span>
+					)}
 					<span className='text-[10px] text-ink-500 font-medium'>
 						IVA incluido
 					</span>

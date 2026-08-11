@@ -73,6 +73,204 @@ export const formatMoneyCur = (price: number, currency: 'UYU' | 'USD') => {
 };
 
 /* ====================================================================== */
+/*  PRECIO "ANTES / AHORA" (sólo vidriera de RF Store)                    */
+/* ====================================================================== */
+// Precio tachado de referencia para la tarjeta y la ficha del producto. NO
+// cambia lo que se cobra: el precio real sigue saliendo de salePrice() (costo →
+// margen por tramo → IVA). Esto es un agregado de vidriera.
+//
+// El porcentaje se sortea entre los configurados (por defecto 5% y 10%) pero de
+// forma ESTABLE por producto: sale de un hash de su id, así el mismo producto
+// muestra siempre el mismo "antes" (si fuera al azar en cada render, el precio
+// tachado bailaría en cada recarga y quedaría poco creíble).
+//
+// No aplica a Mercado Libre: allá el precio lo manejan las reglas de margen de
+// ML (ml_pricing_config).
+export interface CompareAtConfig {
+	enabled: boolean;
+	/** Porcentajes posibles; se elige uno por producto. */
+	percents: number[];
+}
+
+export const DEFAULT_COMPARE_AT: CompareAtConfig = {
+	enabled: false,
+	percents: [5, 10],
+};
+
+// Hash estable (FNV-1a) del id del producto.
+const hashId = (s: string): number => {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < s.length; i++) {
+		h ^= s.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h >>> 0;
+};
+
+export interface CompareAtResult {
+	/** Precio "antes" (tachado). */
+	before: number;
+	/** Descuento a mostrar, calculado sobre los dos números reales. */
+	percent: number;
+}
+
+export const compareAtFor = (
+	productId: string,
+	price: number,
+	cfg: CompareAtConfig = DEFAULT_COMPARE_AT
+): CompareAtResult | null => {
+	if (!cfg?.enabled) return null;
+	const percents = (cfg.percents ?? []).filter(p => p > 0 && p < 90);
+	if (!percents.length) return null;
+	if (!price || price <= 0 || !isFinite(price)) return null;
+
+	const pct = percents[hashId(productId || String(price)) % percents.length];
+	const before = Math.round(price / (1 - pct / 100));
+	if (before <= price) return null;
+	// El % que se muestra sale de los números finales, no del configurado: así
+	// el cartelito nunca miente por el redondeo.
+	const percent = Math.round((1 - price / before) * 100);
+	if (percent <= 0) return null;
+	return { before, percent };
+};
+
+/* ====================================================================== */
+/*  ENVÍO: una sola forma de describirlo en TODA la web                   */
+/* ====================================================================== */
+// Antes cada pantalla decidía por su cuenta si decía "Gratis", "A coordinar" o
+// "Pago en agencia", y los mails directamente no mencionaban el envío: una
+// compra al interior (orden #210, Artigas) recibía un mail con un total igual
+// al subtotal, que se lee como "envío incluido". Todo pasa por acá.
+//
+// REGLA DEL NEGOCIO:
+//  - Montevideo: se cobra por zona; GRATIS a partir de USD 150.
+//  - Zona metropolitana (Canelones, llega agencia): se cobra siempre.
+//  - Interior: va por DAC y lo paga el cliente al retirar. NUNCA es gratis y
+//    NUNCA está incluido en el total.
+export const FREE_SHIPPING_MIN_USD = 150;
+
+export type ShippingZoneName = 'montevideo' | 'metropolitana' | 'interior';
+
+// Sólo Montevideo tiene envío gratis por monto.
+export const qualifiesForFreeShipping = (
+	zone: ShippingZoneName | null,
+	subtotalUsd: number,
+	minUsd: number = FREE_SHIPPING_MIN_USD
+): boolean => zone === 'montevideo' && subtotalUsd >= minUsd;
+
+// ¿Este envío se le cobra al cliente en el checkout? El interior no: lo abona
+// en la agencia DAC al retirar.
+export const shippingIsChargedOnline = (zone: ShippingZoneName | null): boolean =>
+	zone === 'montevideo' || zone === 'metropolitana';
+
+export interface ShippingSummary {
+	/** Renglón corto del resumen: "Gratis", "USD 4", "Lo abona en DAC"… */
+	label: string;
+	/** Zona en texto, para mails y panel: "Interior — Artigas". */
+	zoneLabel: string;
+	/** Aclaración de una línea. Vacía cuando no hace falta. */
+	note: string;
+	/** ¿El costo está sumado al total que se cobra ahora? */
+	includedInTotal: boolean;
+}
+
+export const shippingZoneLabel = (
+	zone: ShippingZoneName | null,
+	barrio?: string | null,
+	department?: string | null
+): string => {
+	if (zone === 'montevideo') return `Montevideo${barrio ? ` — ${barrio}` : ''}`;
+	if (zone === 'metropolitana')
+		return `Zona metropolitana (agencia)${barrio ? ` — ${barrio}` : ''}`;
+	if (zone === 'interior') return `Interior${department ? ` — ${department}` : ''}`;
+	return 'A coordinar';
+};
+
+export const shippingSummary = (opts: {
+	zone: ShippingZoneName | null;
+	barrio?: string | null;
+	department?: string | null;
+	/** Costo que efectivamente se cobra (ya con gratis/cupón aplicados). */
+	costUsd: number;
+	/** El envío quedó en 0 por el mínimo de compra. */
+	freeByThreshold?: boolean;
+	/** El envío quedó en 0 por un cupón. */
+	freeByCoupon?: boolean;
+}): ShippingSummary => {
+	const { zone, barrio, department, costUsd, freeByThreshold, freeByCoupon } = opts;
+	const zoneLabel = shippingZoneLabel(zone ?? null, barrio, department);
+
+	if (zone === 'interior') {
+		return {
+			label: 'Lo abona en la agencia',
+			zoneLabel,
+			note: 'Envío al interior por DAC: el costo lo abona el cliente al retirar en la agencia. No está incluido en este total.',
+			includedInTotal: false,
+		};
+	}
+
+	if (freeByCoupon) {
+		return { label: 'Gratis (cupón)', zoneLabel, note: '', includedInTotal: true };
+	}
+
+	if (zone === 'montevideo' && freeByThreshold) {
+		return {
+			label: 'Gratis',
+			zoneLabel,
+			note: `Envío gratis en Montevideo por superar los USD ${FREE_SHIPPING_MIN_USD}.`,
+			includedInTotal: true,
+		};
+	}
+
+	if (zone === 'metropolitana') {
+		return {
+			label: costUsd > 0 ? formatPrice(costUsd) : 'A coordinar',
+			zoneLabel,
+			note: 'Llega por agencia a domicilio, misma tarifa que Montevideo.',
+			includedInTotal: costUsd > 0,
+		};
+	}
+
+	if (zone === 'montevideo') {
+		return {
+			label: costUsd > 0 ? formatPrice(costUsd) : 'Elegí tu barrio',
+			zoneLabel,
+			note: '',
+			includedInTotal: costUsd > 0,
+		};
+	}
+
+	return { label: 'A coordinar', zoneLabel, note: '', includedInTotal: false };
+};
+
+/* ====================================================================== */
+/*  BÚSQUEDA: normalización única para TODOS los buscadores               */
+/* ====================================================================== */
+// Minúsculas y sin acentos: tiene que coincidir con lo que guarda Postgres en
+// products.search_text y en products_with_price.search_blob (immutable_unaccent
+// + lower). Si esto y la base se desincronizan, buscar "microfono" deja de
+// encontrar "Micrófono".
+export const normalizeSearch = (s: string) =>
+	s
+		.toLowerCase()
+		.normalize('NFD')
+		.replace(/[̀-ͯ]/g, '')
+		.trim();
+
+// Escapa los comodines de LIKE para que un término con % o _ no traiga medio
+// catálogo (ej: alguien busca "50%").
+export const escapeLike = (s: string) => s.replace(/[\\%_]/g, m => `\\${m}`);
+
+// Término del usuario -> palabras normalizadas y escapadas. La regla es la
+// misma en toda la web: TODAS las palabras tienen que aparecer, en cualquier
+// orden. Ej: "asus vivobook" encuentra "Notebook Asus 15,6 Vivobook Go".
+export const searchWords = (term: string): string[] =>
+	normalizeSearch(term)
+		.split(/\s+/)
+		.filter(Boolean)
+		.map(escapeLike);
+
+/* ====================================================================== */
 /*  ¿SE COMPRA ONLINE O ES POR CONSULTA?                                  */
 /* ====================================================================== */
 // Regla única de toda la tienda (tarjeta, ficha, carrito y checkout):
@@ -141,7 +339,7 @@ export const salePrice = (
 	return Math.ceil(final);
 };
 
-// Precio ML: 30% margen + IVA. Si costo > umbral USD => USD; sino UYU al BCU.
+// Precio ML: 30% margen + IVA. Si costo > umbral USD => USD; sino UYU al BROU.
 export interface MlPriceResult {
 	price: number;
 	currency: 'USD' | 'UYU';
@@ -169,7 +367,7 @@ export const mlPrice = (
 /* ====================================================================== */
 export interface MlPricingConfig {
 	iva_percent: number;
-	usd_threshold: number; // si el costo USD supera esto, el precio ML va en USD; sino UYU al BCU
+	usd_threshold: number; // si el costo USD supera esto, el precio ML va en USD; sino UYU al BROU
 	tiers: PricingTier[]; // margen por tramo de costo (fallback)
 	category_overrides: Record<string, number>; // category_id -> margen %
 	subcategory_overrides: Record<string, number>; // subcategory_id -> margen %

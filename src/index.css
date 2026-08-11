@@ -12,6 +12,15 @@
 		@apply text-ink-900 antialiased;
 		font-feature-settings: 'ss01', 'cv11';
 	}
+	/* Nada de scroll horizontal en la página. `clip` y NO `hidden` a propósito:
+	   `hidden` convierte al body en contenedor de scroll y rompe el navbar
+	   sticky. Con esto, si algún bloque se pasa de ancho (el hero y los banners
+	   usan ancho de ventana, que incluye la barra de scroll), se recorta en vez
+	   de habilitar el arrastre lateral. */
+	html,
+	body {
+		overflow-x: clip;
+	}
 	::selection {
 		@apply bg-brand-600/20 text-brand-900;
 	}
@@ -92,14 +101,36 @@
 		-webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
 	}
 
-	/* Romper container padre y ocupar ancho de viewport */
+	/* Romper container padre y ocupar ancho de viewport.
+	   Antes usaba left/right 50% + width:100vw + márgenes negativos: como 100vw
+	   incluye la barra de scroll, el bloque quedaba unos píxeles más ancho que la
+	   página y aparecía scroll horizontal. Con margin-inline el ancho lo sigue
+	   resolviendo el flujo normal. */
 	.bleed-full {
 		position: relative;
-		left: 50%;
-		right: 50%;
-		width: 100vw;
-		margin-left: -50vw;
-		margin-right: -50vw;
+		width: auto;
+		margin-inline: calc(50% - 50vw);
+	}
+}
+
+/* ====================================================================== */
+/*  MOBILE: 16px mínimo en los campos de texto                            */
+/* ====================================================================== */
+/* Safari de iPhone hace ZOOM automático al enfocar un campo con letra menor
+   a 16px, y NO vuelve solo: la página queda más ancha que la pantalla y hay
+   que arrastrar de costado. Todos nuestros inputs son text-sm (14px), así que
+   pasaba siempre (buscador, checkout, login, filtros del panel).
+   Va con !important y fuera de @layer porque tiene que ganarle a las clases
+   text-sm / text-xs de Tailwind, que son más específicas que un selector de
+   elemento. Sólo aplica en pantallas chicas: en desktop no hay zoom y el
+   tamaño visual del diseño queda igual.
+   OJO: no se toca el meta viewport (poner maximum-scale=1 mata el zoom manual
+   y es un problema de accesibilidad). */
+@media (max-width: 767px) {
+	input:not([type='checkbox']):not([type='radio']):not([type='range']),
+	select,
+	textarea {
+		font-size: 16px !important;
 	}
 }
 

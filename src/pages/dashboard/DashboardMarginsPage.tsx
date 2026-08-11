@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { DashboardPricingPage } from './DashboardPricingPage';
 import { MlPricingRulesSection } from '../../components/dashboard/MlPricingRulesSection';
+import { CompareAtSection } from '../../components/dashboard/CompareAtSection';
 import { getPricingConfig } from '../../actions/pricing';
 import { getMlPricingConfig } from '../../actions/ml-pricing';
 import {
@@ -62,7 +63,7 @@ export const DashboardMarginsPage = () => {
 					</div>
 				</div>
 				<p className='text-[11px] text-ink-400 mt-2'>
-					Mismo costo, márgenes distintos en cada canal. Ambos en USD para comparar (en ML el listing puede ir en pesos al BCU). El de ML usa el tramo base (sin override de categoría).
+					Mismo costo, márgenes distintos en cada canal. Ambos en USD para comparar (en ML el listing puede ir en pesos al BROU). El de ML usa el tramo base (sin override de categoría).
 				</p>
 			</div>
 
@@ -72,8 +73,16 @@ export const DashboardMarginsPage = () => {
 				<button onClick={() => setTab('ml')} className={tabCls(tab === 'ml')}>Mercado Libre</button>
 			</div>
 
-			<div>
-				{tab === 'rf' ? <DashboardPricingPage embedded /> : <MlPricingRulesSection />}
+			<div className='space-y-6'>
+				{tab === 'rf' ? (
+					<>
+						<DashboardPricingPage embedded />
+						{/* Sólo aplica a la web: ML tiene sus propias reglas. */}
+						<CompareAtSection />
+					</>
+				) : (
+					<MlPricingRulesSection />
+				)}
 			</div>
 		</div>
 	);

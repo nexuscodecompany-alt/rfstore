@@ -84,6 +84,45 @@ const clamp = (s: string, n: number) =>
 
 const money = (v: number | string) => `${Number(v).toFixed(2)} ${CURRENCY}`;
 
+/* ------------------------- precio "antes / ahora" -------------------------- */
+// Espejo de helpers/compareAtFor del front (mismo hash => mismo porcentaje por
+// producto). Cuando está activo, al feed de Meta va `price` = precio ANTES y
+// `sale_price` = precio real: así el anuncio muestra el tachado. Si está
+// apagado, el feed sale exactamente como antes.
+interface CompareAtConfig { enabled: boolean; percents: number[] }
+
+const hashId = (str: string): number => {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < str.length; i++) {
+		h ^= str.charCodeAt(i);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h >>> 0;
+};
+
+const compareAtFor = (id: string, price: number, cfg: CompareAtConfig | null) => {
+	if (!cfg?.enabled) return null;
+	const percents = (cfg.percents ?? []).filter(p => p > 0 && p < 90);
+	if (!percents.length || !price || price <= 0) return null;
+	const pct = percents[hashId(id) % percents.length];
+	const before = Math.round(price / (1 - pct / 100));
+	return before > price ? before : null;
+};
+
+const fetchCompareAt = async (): Promise<CompareAtConfig | null> => {
+	try {
+		const res = await fetch(
+			`${SUPABASE_URL}/rest/v1/app_settings?select=value&key=eq.compare_at_config`,
+			{ headers: { apikey: ANON_KEY, Authorization: `Bearer ${ANON_KEY}` } }
+		);
+		if (!res.ok) return null;
+		const rows = (await res.json()) as { value: CompareAtConfig }[];
+		return rows?.[0]?.value ?? null;
+	} catch {
+		return null;
+	}
+};
+
 const escapeXml = (s: string) =>
 	s
 		.replace(/&/g, '&amp;')
@@ -93,18 +132,23 @@ const escapeXml = (s: string) =>
 		.replace(/'/g, '&apos;');
 
 /** Campos del feed, ya normalizados y con los nombres que espera Meta. */
-const toItem = (r: FeedRow, origin: string) => {
+const toItem = (r: FeedRow, origin: string, compareAt: CompareAtConfig | null) => {
 	const extra = (r.additional_images ?? [])
 		.filter(Boolean)
 		.slice(0, 10)
 		.join(',');
+	// Con "antes/ahora" activo, Meta espera price = precio de lista y
+	// sale_price = precio actual (es lo que dibuja el tachado en el anuncio).
+	const current = Number(r.price) || 0;
+	const before = compareAtFor(clean(r.id), current, compareAt);
 	return {
 		id: clean(r.id),
 		title: clamp(clean(r.title), 200),
 		description: clamp(clean(r.description) || clean(r.title), 5000),
 		availability: Number(r.stock) > 0 ? 'in stock' : 'out of stock',
 		condition: 'new',
-		price: money(r.price),
+		price: before ? money(before) : money(current),
+		sale_price: before ? money(current) : '',
 		link: `${origin}/producto/${encodeURIComponent(r.slug)}`,
 		image_link: clean(r.image_link),
 		brand: clamp(clean(r.brand) || 'RF Store', 100),
@@ -124,6 +168,7 @@ const COLUMNS: (keyof Item)[] = [
 	'availability',
 	'condition',
 	'price',
+	'sale_price',
 	'link',
 	'image_link',
 	'brand',
@@ -185,7 +230,10 @@ export default async function handler(request: Request): Promise<Response> {
 		});
 	}
 
-	let items = rows.map(r => toItem(r, origin));
+	// Config del precio "antes/ahora" (si está apagada, el feed sale igual que siempre).
+	const compareAt = await fetchCompareAt();
+
+	let items = rows.map(r => toItem(r, origin, compareAt));
 	if (onlyInStock) items = items.filter(it => it.availability === 'in stock');
 
 	const headers: Record<string, string> = {

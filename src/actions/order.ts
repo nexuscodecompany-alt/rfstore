@@ -94,11 +94,16 @@ export const getOrderById = async (orderId: number) => {
 
 	const customerId = customer.id;
 
-	const { data: order, error } = await supabase
+	// `as any`: src/supabase/types.ts está desactualizado (no tiene fx_rate /
+	// fx_source / total_original). Mismo criterio que el resto del archivo.
+	const { data: order, error } = await (supabase as any)
 		.from('orders')
 		.select(
 			`
 				id, total_amount, status, created_at, payment_method, payment_status,
+				fx_rate, fx_source, total_original,
+				shipping_zone, shipping_barrio, shipping_department, shipping_cost_usd,
+				discount_usd, coupon_code,
 				addresses:addresses(*),
 				order_items:order_items(quantity, price, variants(color_name, storage, products(id, name, images)))
 			`
@@ -114,7 +119,7 @@ export const getOrderById = async (orderId: number) => {
 
 	return {
 		id: order.id,
-		orderItems: order.order_items.map(item => ({
+		orderItems: order.order_items.map((item: any) => ({
 			// productId = content_id del catálogo de Meta (ver src/lib/pixel.ts).
 			productId: item.variants?.products?.id || '',
 			productImage: item.variants?.products?.images?.[0] || '',
@@ -129,6 +134,20 @@ export const getOrderById = async (orderId: number) => {
 		paymentMethod: order.payment_method as string | null,
 		paymentStatus: order.payment_status as string,
 		created_at: order.created_at,
+		// Cotización CONGELADA al comprar: la página de gracias y los mails
+		// muestran el mismo número que vio el cliente en el checkout, aunque el
+		// dólar se haya movido después.
+		fxRate: (order as { fx_rate?: number | null }).fx_rate ?? null,
+		fxSource: (order as { fx_source?: string | null }).fx_source ?? null,
+		totalUyuFrozen: (order as { total_original?: number | null }).total_original ?? null,
+		shipping: {
+			zone: (order as { shipping_zone?: string | null }).shipping_zone ?? null,
+			barrio: (order as { shipping_barrio?: string | null }).shipping_barrio ?? null,
+			department: (order as { shipping_department?: string | null }).shipping_department ?? null,
+			costUsd: Number((order as { shipping_cost_usd?: number | null }).shipping_cost_usd ?? 0) || 0,
+		},
+		discountUsd: Number((order as { discount_usd?: number | null }).discount_usd ?? 0) || 0,
+		couponCode: (order as { coupon_code?: string | null }).coupon_code ?? null,
 		address: {
 			addressLine1: order.addresses?.address_line1 ?? '',
 			addressLine2: order.addresses?.address_line2 ?? null,

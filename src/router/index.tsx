@@ -27,6 +27,8 @@ import {
     DashboardHomePage,
     DashboardMarginsPage,
     DashboardCouponsPage,
+    DashboardCustomersPage,
+    DashboardPurchasesPage,
     DashboardHomeConfigPage,
     DashboardLegalPage,
     DashboardShippingPage,
@@ -179,6 +181,14 @@ export const router = createBrowserRouter([
             {
                 path: 'cupones',
                 element: <DashboardCouponsPage />,
+            },
+            {
+                path: 'clientes',
+                element: <DashboardCustomersPage />,
+            },
+            {
+                path: 'compras',
+                element: <DashboardPurchasesPage />,
             },
             {
                 path: 'vitrina',

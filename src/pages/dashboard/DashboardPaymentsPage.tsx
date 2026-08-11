@@ -211,6 +211,7 @@ export const DashboardPaymentsPage = () => {
 				{orders.length === 0 ? (
 					<p className='text-sm text-gray-500'>No hay pagos pendientes.</p>
 				) : (
+					<div className='overflow-x-auto'>
 					<table className='min-w-full text-sm'>
 						<thead className='bg-gray-50 text-left'>
 							<tr>
@@ -269,6 +270,7 @@ export const DashboardPaymentsPage = () => {
 							))}
 						</tbody>
 					</table>
+					</div>
 				)}
 			</section>
 		</div>

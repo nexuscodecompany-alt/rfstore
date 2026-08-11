@@ -60,6 +60,8 @@ export * from './settings/useFeatureFlag';
 export * from './settings/usePricingConfig';
 export * from './settings/useUsdUyuRate';
 export * from './settings/useShippingRates';
+export * from './settings/useCompareAt';
+export * from './useFilterParams';
 
 /* ********************************** */
 /*             DASHBOARD              */

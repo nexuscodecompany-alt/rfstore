@@ -31,6 +31,8 @@ export * from './dashboard/DashboardPaymentsPage';
 export * from './dashboard/DashboardPricingPage';
 export * from './dashboard/DashboardMarginsPage';
 export * from './dashboard/DashboardCouponsPage';
+export * from './dashboard/DashboardCustomersPage';
+export * from './dashboard/DashboardPurchasesPage';
 export * from './dashboard/DashboardHomeSectionsPage';
 export * from './dashboard/DashboardHomeConfigPage';
 export * from './dashboard/DashboardLegalPage';

@@ -35,8 +35,8 @@ export const OrderUserPage = () => {
 				<div></div>
 			</div>
 
-			<div className='flex flex-col mt-10 mb-5 gap-10'>
-				<table className='text-sm w-full caption-bottom overflow-auto'>
+			<div className='flex flex-col mt-10 mb-5 gap-10 overflow-x-auto'>
+				<table className='text-sm w-full caption-bottom'>
 					<thead>
 						<tr>
 							{tableHeaders.map((header, index) => (
@@ -51,7 +51,7 @@ export const OrderUserPage = () => {
 					</thead>
 
 					<tbody>
-						{order.orderItems.map((product, index) => (
+						{order.orderItems.map((product: any, index: number) => (
 							<tr key={index} className='border-b border-gray-200'>
 								<td className='p-4 font-medium tracking-tighter flex gap-3 items-center'>
 									<img

@@ -170,7 +170,8 @@ const NetProfitCard = ({
 	);
 };
 
-// Suma pesos + dólares en UN total (en pesos), convirtiendo los USD al dólar BCU.
+// Suma pesos + dólares en UN total (en pesos), convirtiendo los USD al dólar BROU
+// (fuente única de toda la web: edge function get-fx-rate).
 const CombinedTotalCard = ({
 	o,
 	rate,
@@ -207,8 +208,8 @@ const CombinedTotalCard = ({
 			{hasUsd && (
 				<p className='mt-2 border-t border-white/20 pt-2 text-xs text-emerald-50'>
 					{canConvert
-						? `Incluye ${formatMoneyCur(usdNet, 'USD')} de ganancia en dólares, convertidos al dólar BCU de hoy ($U ${rate.toFixed(2)} por US$).`
-						: 'No se pudo traer el dólar BCU — mostrando solo pesos por ahora.'}
+						? `Incluye ${formatMoneyCur(usdNet, 'USD')} de ganancia en dólares, convertidos al dólar BROU de hoy ($U ${rate.toFixed(2)} por US$).`
+						: 'No se pudo traer el dólar BROU — mostrando solo pesos por ahora.'}
 				</p>
 			)}
 		</div>
@@ -369,7 +370,7 @@ export const DashboardHomePage = () => {
 	const { data, isLoading, isError, refetch, isFetching } =
 		useDashboardMetrics(fromISO, toISO);
 
-	// Dólar BCU para combinar pesos + dólares en un solo total (en pesos).
+	// Dólar BROU para combinar pesos + dólares en un solo total (en pesos).
 	const { data: fx } = useUsdUyuRate();
 	const usdRate = fx?.rate ?? 0;
 
@@ -480,7 +481,7 @@ export const DashboardHomePage = () => {
 							</p>
 						</div>
 
-						{/* Total combinado (pesos + dólares al dólar BCU) */}
+						{/* Total combinado (pesos + dólares al dólar BROU) */}
 						<CombinedTotalCard o={o} rate={usdRate} />
 
 						{/* Detalle por moneda real de venta */}
