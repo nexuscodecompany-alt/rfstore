@@ -364,11 +364,10 @@ export const DashboardHomePage = () => {
 	const [range, setRange] = useState(() => presetRange(30));
 	const [activePreset, setActivePreset] = useState<number | null>(30);
 
-	const fromISO = `${range.from}T00:00:00`;
-	const toISO = `${range.to}T23:59:59`;
-
+	// Las fechas van como "YYYY-MM-DD": los bordes del día (y la zona horaria de
+	// Uruguay) los resuelve getDashboardData, así queda en un solo lugar.
 	const { data, isLoading, isError, refetch, isFetching } =
-		useDashboardMetrics(fromISO, toISO);
+		useDashboardMetrics(range.from, range.to);
 
 	// Dólar BROU para combinar pesos + dólares en un solo total (en pesos).
 	const { data: fx } = useUsdUyuRate();

@@ -92,8 +92,10 @@ export interface DashboardData {
 // quedaba afuera (filtrar 01/07 al 31/07 perdía todo lo vendido el 31) y,
 // además, las 3 horas de diferencia con Uruguay corrían los días.
 // Acá se convierten a los bordes reales del día en hora de Montevideo.
-const desdeElInicioDelDia = (fecha: string) => `${fecha}T00:00:00-03:00`;
-const hastaElFinalDelDia = (fecha: string) => `${fecha}T23:59:59.999-03:00`;
+// Se queda sólo con "YYYY-MM-DD" por si el que llama ya mandó una hora pegada.
+const soloFecha = (v: string) => String(v).slice(0, 10);
+const desdeElInicioDelDia = (fecha: string) => `${soloFecha(fecha)}T00:00:00-03:00`;
+const hastaElFinalDelDia = (fecha: string) => `${soloFecha(fecha)}T23:59:59.999-03:00`;
 
 export const getDashboardData = async (
 	fromDate: string,
