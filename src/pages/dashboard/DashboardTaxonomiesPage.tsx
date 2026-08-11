@@ -26,6 +26,10 @@ import {
 	updateSubcategory,
 	deleteSubcategory,
 	reorderSubcategories,
+	getSuppliers,
+	createSupplier,
+	updateSupplier,
+	deleteSupplier,
 	type Subcategory,
 } from '../../actions';
 import { SpecialCategoriesSection } from '../../components/dashboard/SpecialCategoriesSection';
@@ -221,6 +225,10 @@ export const DashboardTaxonomiesPage = () => {
 		queryKey: ['subcategories'],
 		queryFn: getSubcategories,
 	});
+	const { data: suppliers = [] } = useQuery({
+		queryKey: ['suppliers'],
+		queryFn: getSuppliers,
+	});
 
 	const inv = (key: string) => qc.invalidateQueries({ queryKey: [key] });
 	const onErr = (e: Error) => {
@@ -247,6 +255,11 @@ export const DashboardTaxonomiesPage = () => {
 	// Categorías especiales (campañas). Viven en sus propias tablas: no tocan
 	// products.category_id, por eso crearlas/borrarlas no afecta el catálogo.
 	const { create: mAddSpecial } = useSpecialCategoryMutations();
+
+	// Proveedores (para las compras de stock propio)
+	const mAddSupplier = useMutation({ mutationFn: createSupplier, onSuccess: () => inv('suppliers'), onError: onErr });
+	const mEditSupplier = useMutation({ mutationFn: updateSupplier, onSuccess: () => inv('suppliers'), onError: onErr });
+	const mDelSupplier = useMutation({ mutationFn: deleteSupplier, onSuccess: () => inv('suppliers'), onError: onErr });
 
 	// Subcategorías
 	const mAddSub = useMutation({ mutationFn: createSubcategory, onSuccess: () => inv('subcategories'), onError: onErr });
@@ -275,9 +288,12 @@ export const DashboardTaxonomiesPage = () => {
 	return (
 		<div className='space-y-6'>
 			<div>
-				<h1 className='text-2xl font-bold text-ink-900'>Categorías y Marcas</h1>
+				<h1 className='text-2xl font-bold text-ink-900'>
+					Categorías, marcas y proveedores
+				</h1>
 				<p className='text-sm text-ink-500'>
-					Creá y organizá las categorías, subcategorías y marcas de tu catálogo.
+					Creá y organizá las categorías, subcategorías y marcas del catálogo, y
+					los proveedores a los que les comprás stock.
 				</p>
 			</div>
 
@@ -419,6 +435,44 @@ export const DashboardTaxonomiesPage = () => {
 							</div>
 						))}
 					</div>
+				</div>
+			</div>
+
+			{/* Proveedores */}
+			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft'>
+				<h2 className='font-bold text-ink-900'>Proveedores</h2>
+				<p className='mb-4 mt-1 text-sm text-ink-500'>
+					A quién le comprás la mercadería propia. Aparecen como lista para
+					elegir en <strong>Compras</strong>, así el nombre no se escribe
+					distinto cada vez.
+				</p>
+				<div className='max-w-xl'>
+					<AddInput
+						placeholder='Nuevo proveedor (ej: CDR, Newsan, importación propia)'
+						onAdd={name => mAddSupplier.mutate(name)}
+					/>
+				</div>
+				<div className='mt-4 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3'>
+					{suppliers.map(sup => (
+						<div
+							key={sup.id}
+							className='rounded-lg border border-ink-100 px-3 py-2'
+						>
+							<EditableItem
+								name={sup.name}
+								onRename={name => mEditSupplier.mutate({ id: sup.id, name })}
+								onDelete={() => {
+									if (confirmDel(`¿Eliminar el proveedor "${sup.name}"?`))
+										mDelSupplier.mutate(sup.id);
+								}}
+							/>
+						</div>
+					))}
+					{suppliers.length === 0 && (
+						<p className='py-2 text-sm text-ink-400'>
+							Todavía no hay proveedores cargados.
+						</p>
+					)}
 				</div>
 			</div>
 

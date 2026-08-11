@@ -68,36 +68,37 @@ export const getCustomerTimeline = async (
 };
 
 /* --- Gente que llegó al checkout ------------------------------------- */
+// Junta DOS fuentes: las órdenes web (el que apretó pagar ya llegó al checkout,
+// haya pagado o no) y los checkout_leads (los que abrieron el checkout y ni
+// llegaron a generar orden, que se empezó a registrar ahora).
 
-export interface CheckoutLead {
-	id: string;
-	created_at: string;
-	updated_at: string;
+export interface CheckoutActivityRow {
+	source: 'orden' | 'lead';
+	ref_id: string;
+	happened_at: string;
+	customer_id: string | null;
+	full_name: string | null;
 	email: string | null;
 	phone: string | null;
-	full_name: string | null;
+	items: string;
 	items_count: number;
 	total_usd: number;
 	shipping_zone: string | null;
 	shipping_department: string | null;
-	status: string;
+	converted: boolean;
 	order_id: number | null;
-	cart: { name?: string; quantity?: number; price?: number }[];
+	payment_method: string | null;
+	order_status: string | null;
 }
 
-export const getCheckoutLeads = async (): Promise<CheckoutLead[]> => {
-	const { data, error } = await (supabase as any)
-		.from('checkout_leads')
-		.select('*')
-		.order('updated_at', { ascending: false })
-		.limit(300);
+export const getCheckoutActivity = async (): Promise<CheckoutActivityRow[]> => {
+	const { data, error } = await (supabase as any).rpc('admin_checkout_activity');
 	if (error) throw new Error(error.message);
 	return (data ?? []).map((r: any) => ({
 		...r,
 		total_usd: Number(r.total_usd) || 0,
 		items_count: Number(r.items_count) || 0,
-		cart: Array.isArray(r.cart) ? r.cart : [],
-	})) as CheckoutLead[];
+	})) as CheckoutActivityRow[];
 };
 
 /**

@@ -907,8 +907,35 @@ const StockCell = ({ product, total }: { product: any; total: number }) => {
   // Si el stock cambia por fuera (venta, sync), reflejarlo mientras no se edite.
   useEffect(() => setValue(String(total)), [total]);
 
+  // Desglose: lo que hay en el depósito propio y lo que tiene CDR. Son dos
+  // números distintos: el de CDR baja solo (le compra más gente) y el propio
+  // sólo se mueve con nuestras compras y ventas.
+  const owned = variants.reduce(
+    (acc: number, v: any) => acc + (Number(v.owned_stock) || 0),
+    0
+  );
+  const cdr = variants.reduce(
+    (acc: number, v: any) =>
+      v.cdr_stock === null || v.cdr_stock === undefined
+        ? acc
+        : acc + (Number(v.cdr_stock) || 0),
+    0
+  );
+  const hasSplit = owned > 0;
+  const breakdown = hasSplit ? (
+    <p className='mt-0.5 whitespace-nowrap text-[10px] text-ink-400'>
+      <span className='font-semibold text-violet-700'>{owned} propio</span>
+      {product.source === 'cdr' ? ` · ${cdr} CDR` : ''}
+    </p>
+  ) : null;
+
   if (!editable) {
-    return <CellTableProduct content={total.toString()} />;
+    return (
+      <td className='p-4 align-middle'>
+        <span className='text-sm'>{total}</span>
+        {breakdown}
+      </td>
+    );
   }
 
   const saving = isSettingStock && stockVars?.variantId === variantId;
@@ -947,6 +974,7 @@ const StockCell = ({ product, total }: { product: any; total: number }) => {
           </button>
         )}
       </div>
+      {breakdown}
     </td>
   );
 };

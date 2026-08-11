@@ -181,3 +181,47 @@ export const reorderSubcategories = async (orderedIds: string[]) => {
 		)
 	);
 };
+
+/* ---------------------------- PROVEEDORES --------------------------- */
+// Proveedores de mercadería propia. Se administran acá (junto a marcas y
+// categorías) y en la pantalla de Compras se eligen de una lista, para que el
+// nombre no se escriba distinto cada vez.
+export interface Supplier {
+	id: string;
+	name: string;
+	contact: string | null;
+	notes: string | null;
+	active: boolean;
+}
+
+export const getSuppliers = async (): Promise<Supplier[]> => {
+	const { data, error } = await (supabase as any)
+		.from('suppliers')
+		.select('*')
+		.order('name', { ascending: true });
+	if (error) throw new Error(error.message);
+	return (data ?? []) as Supplier[];
+};
+
+export const createSupplier = async (name: string): Promise<Supplier> => {
+	const { data, error } = await (supabase as any)
+		.from('suppliers')
+		.insert({ name })
+		.select()
+		.single();
+	if (error) throw new Error(error.message);
+	return data as Supplier;
+};
+
+export const updateSupplier = async ({ id, name }: { id: string; name: string }) => {
+	const { error } = await (supabase as any)
+		.from('suppliers')
+		.update({ name })
+		.eq('id', id);
+	if (error) throw new Error(error.message);
+};
+
+export const deleteSupplier = async (id: string) => {
+	const { error } = await (supabase as any).from('suppliers').delete().eq('id', id);
+	if (error) throw new Error(error.message);
+};

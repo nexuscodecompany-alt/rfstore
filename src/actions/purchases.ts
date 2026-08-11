@@ -8,12 +8,15 @@ import { supabase } from '../supabase/client';
 // lado de la base (RPC receive_purchase).
 
 export interface PurchaseItemInput {
-	variant_id: string;
+	/** null = renglón sin producto (embalaje, un servicio): no mueve stock. */
+	variant_id: string | null;
 	quantity: number;
 	unit_cost: number;
+	description?: string;
 }
 
 export interface ReceivePurchaseInput {
+	supplierId: string | null;
 	supplier: string;
 	items: PurchaseItemInput[];
 	purchasedAt?: string;
@@ -29,6 +32,7 @@ export const receivePurchase = async (
 	input: ReceivePurchaseInput
 ): Promise<number> => {
 	const { data, error } = await (supabase as any).rpc('receive_purchase', {
+		p_supplier_id: input.supplierId,
 		p_supplier: input.supplier,
 		p_items: input.items,
 		p_purchased_at: input.purchasedAt ?? null,
@@ -75,25 +79,44 @@ export const getPurchases = async (): Promise<PurchaseRow[]> => {
 	return (data ?? []) as PurchaseRow[];
 };
 
-/** Productos con stock propio, para el buscador del formulario de compra. */
-export interface OwnedProductOption {
+/**
+ * Buscador de productos para cargar una compra.
+ * Trae TODO el catálogo: el producto siempre se carga primero (por el sync de
+ * CDR o a mano) y la compra sólo le suma stock del depósito. Devuelve los dos
+ * stocks por separado para que se vea qué es de CDR y qué es nuestro.
+ */
+export interface ProductStockOption {
 	product_id: string;
 	variant_id: string;
 	name: string;
+	external_code: string | null;
+	source: string | null;
+	fulfillment: string | null;
+	/** Vendible = CDR + propio. */
 	stock: number;
+	owned_stock: number;
+	cdr_stock: number | null;
 	avg_cost_usd: number | null;
 	price: number;
 }
 
-export const searchOwnedProducts = async (
+export const searchProductsForPurchase = async (
 	term: string
-): Promise<OwnedProductOption[]> => {
+): Promise<ProductStockOption[]> => {
 	let q = (supabase as any)
 		.from('products')
-		.select('id, name, fulfillment, variants(id, stock, price, avg_cost_usd)')
-		.in('fulfillment', ['propio', 'ambos'])
+		.select(
+			'id, name, external_code, source, fulfillment, variants(id, stock, owned_stock, cdr_stock, price, avg_cost_usd)'
+		)
 		.limit(20);
-	if (term.trim()) q = q.ilike('search_text', `%${term.trim().toLowerCase()}%`);
+
+	const clean = term.trim().toLowerCase();
+	if (clean) {
+		// Misma regla que el resto de la web: todas las palabras, sin acentos.
+		for (const word of clean.split(/\s+/).filter(Boolean)) {
+			q = q.ilike('search_text', `%${word}%`);
+		}
+	}
 
 	const { data, error } = await q;
 	if (error) throw new Error(error.message);
@@ -102,7 +125,12 @@ export const searchOwnedProducts = async (
 			product_id: p.id,
 			variant_id: v.id,
 			name: p.name,
+			external_code: p.external_code ?? null,
+			source: p.source ?? null,
+			fulfillment: p.fulfillment ?? null,
 			stock: Number(v.stock) || 0,
+			owned_stock: Number(v.owned_stock) || 0,
+			cdr_stock: v.cdr_stock == null ? null : Number(v.cdr_stock),
 			avg_cost_usd: v.avg_cost_usd == null ? null : Number(v.avg_cost_usd),
 			price: Number(v.price) || 0,
 		}))

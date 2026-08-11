@@ -197,7 +197,10 @@
       "Bash('/c/Program Files/Google/Chrome/Application/chrome.exe' --headless=new --disable-gpu --no-sandbox --virtual-time-budget=4000 --window-size=794,1123 --screenshot=C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin-Desktop-NexusCode-Proyectos-rfstore/7e7e67bd-74cf-423b-9970-ddb020179acf/scratchpad/p3d.png file:///C:/Users/Admin/AppData/Local/Temp/claude/C--Users-Admin-Desktop-NexusCode-Proyectos-rfstore/7e7e67bd-74cf-423b-9970-ddb020179acf/scratchpad/s.html)",
       "Bash(grep -rn \"100vw\\\\|min-w-\\\\[\\\\|w-\\\\[[0-9]\\\\{3,\\\\}px\\\\]\\\\|overflow-x\" --include=\"*.tsx\" --include=\"*.css\" src)",
       "Artifact",
-      "Bash(echo \" EXIT=$?\")"
+      "Bash(echo \" EXIT=$?\")",
+      "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 12; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 10; \"TSC_EXIT=$LASTEXITCODE\")",
+      "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx vite build 2>&1 | Select-Object -Last 5; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }

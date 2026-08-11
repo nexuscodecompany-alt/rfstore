@@ -5,13 +5,20 @@ import { HiOutlineTrash, HiOutlinePlus } from 'react-icons/hi2';
 import {
 	getPurchases,
 	receivePurchase,
-	searchOwnedProducts,
-	type OwnedProductOption,
+	searchProductsForPurchase,
+	type ProductStockOption,
 } from '../../actions/purchases';
+import { getSuppliers } from '../../actions';
 import { useUsdUyuRate } from '../../hooks';
+import { Link } from 'react-router-dom';
 import { formatMoney } from '../../helpers';
 
-interface Line extends OwnedProductOption {
+// Un renglón de la compra: un producto del catálogo, o un concepto suelto
+// (embalaje, un servicio) que no mueve stock pero suma al costo.
+interface Line {
+	key: string;
+	product: ProductStockOption | null;
+	description: string;
 	quantity: number;
 	unitCost: number;
 }
@@ -20,7 +27,7 @@ export const DashboardPurchasesPage = () => {
 	const qc = useQueryClient();
 	const { data: fx } = useUsdUyuRate();
 
-	const [supplier, setSupplier] = useState('');
+	const [supplierId, setSupplierId] = useState('');
 	const [invoice, setInvoice] = useState('');
 	const [purchasedAt, setPurchasedAt] = useState(
 		new Date().toISOString().slice(0, 10)
@@ -33,15 +40,20 @@ export const DashboardPurchasesPage = () => {
 	const [lines, setLines] = useState<Line[]>([]);
 
 	const [term, setTerm] = useState('');
-	const [options, setOptions] = useState<OwnedProductOption[]>([]);
+	const [options, setOptions] = useState<ProductStockOption[]>([]);
 	const [searching, setSearching] = useState(false);
 
 	const { data: purchases = [] } = useQuery({
 		queryKey: ['purchases'],
 		queryFn: getPurchases,
 	});
+	const { data: suppliers = [] } = useQuery({
+		queryKey: ['suppliers'],
+		queryFn: getSuppliers,
+	});
 
-	// Buscador de productos propios (los dropship los maneja CDR).
+	// Buscador sobre TODO el catálogo: el producto ya existe (vino de CDR o lo
+	// cargaron a mano) y la compra sólo le suma stock del depósito.
 	useEffect(() => {
 		if (term.trim().length < 2) {
 			setOptions([]);
@@ -50,7 +62,7 @@ export const DashboardPurchasesPage = () => {
 		setSearching(true);
 		const t = setTimeout(async () => {
 			try {
-				setOptions(await searchOwnedProducts(term));
+				setOptions(await searchProductsForPurchase(term));
 			} catch (e) {
 				console.warn(e);
 			} finally {
@@ -60,15 +72,35 @@ export const DashboardPurchasesPage = () => {
 		return () => clearTimeout(t);
 	}, [term]);
 
-	const addLine = (opt: OwnedProductOption) => {
-		if (lines.some(l => l.variant_id === opt.variant_id)) return;
+	const addLine = (opt: ProductStockOption) => {
+		if (lines.some(l => l.product?.variant_id === opt.variant_id)) return;
 		setLines(prev => [
 			...prev,
-			{ ...opt, quantity: 1, unitCost: opt.avg_cost_usd ?? opt.price ?? 0 },
+			{
+				key: opt.variant_id,
+				product: opt,
+				description: '',
+				quantity: 1,
+				unitCost: opt.avg_cost_usd ?? opt.price ?? 0,
+			},
 		]);
 		setTerm('');
 		setOptions([]);
 	};
+
+	// Renglón sin producto: para lo que no va al catálogo (flete de un envío
+	// puntual, embalaje, un service). Suma al costo de la compra y nada más.
+	const addFreeLine = () =>
+		setLines(prev => [
+			...prev,
+			{
+				key: `libre-${prev.length}-${prev.reduce((a, l) => a + l.quantity, 0)}`,
+				product: null,
+				description: '',
+				quantity: 1,
+				unitCost: 0,
+			},
+		]);
 
 	const goodsTotal = useMemo(
 		() => lines.reduce((acc, l) => acc + l.quantity * l.unitCost, 0),
@@ -79,10 +111,14 @@ export const DashboardPurchasesPage = () => {
 	const extrasUsd = (Number(freight) || 0) + (Number(taxes) || 0);
 	const totalUsd = goodsUsd + extrasUsd;
 
+	const supplierName =
+		suppliers.find(x => x.id === supplierId)?.name ?? '';
+
 	const { mutate: save, isPending } = useMutation({
 		mutationFn: () =>
 			receivePurchase({
-				supplier,
+				supplierId: supplierId || null,
+				supplier: supplierName,
 				invoiceNumber: invoice,
 				purchasedAt,
 				currency,
@@ -91,30 +127,33 @@ export const DashboardPurchasesPage = () => {
 				taxesUsd: Number(taxes) || 0,
 				notes,
 				items: lines.map(l => ({
-					variant_id: l.variant_id,
+					variant_id: l.product?.variant_id ?? null,
 					quantity: l.quantity,
 					unit_cost: l.unitCost,
+					description: l.product ? undefined : l.description,
 				})),
 			}),
 		onSuccess: id => {
 			toast.success(`Compra #${id} recibida: el stock ya está actualizado`);
 			setLines([]);
-			setSupplier('');
 			setInvoice('');
 			setFreight('');
 			setTaxes('');
 			setNotes('');
 			qc.invalidateQueries({ queryKey: ['purchases'] });
 			qc.invalidateQueries({ queryKey: ['admin-products'] });
+			qc.invalidateQueries({ queryKey: ['products'] });
 		},
 		onError: (e: Error) => toast.error(e.message),
 	});
 
 	const canSave =
 		!isPending &&
-		supplier.trim().length > 1 &&
+		!!supplierId &&
 		lines.length > 0 &&
-		lines.every(l => l.quantity > 0 && l.unitCost >= 0) &&
+		lines.every(
+			l => l.quantity > 0 && l.unitCost >= 0 && (l.product || l.description.trim())
+		) &&
 		(currency === 'USD' || effectiveFx > 0);
 
 	return (
@@ -134,12 +173,30 @@ export const DashboardPurchasesPage = () => {
 
 				<div className='grid gap-3 sm:grid-cols-2 lg:grid-cols-4'>
 					<Field label='Proveedor'>
-						<input
+						<select
 							className='inp'
-							value={supplier}
-							onChange={e => setSupplier(e.target.value)}
-							placeholder='Ej: CDR, Newsan, importación propia…'
-						/>
+							value={supplierId}
+							onChange={e => setSupplierId(e.target.value)}
+						>
+							<option value=''>Elegí el proveedor…</option>
+							{suppliers.map(sup => (
+								<option key={sup.id} value={sup.id}>
+									{sup.name}
+								</option>
+							))}
+						</select>
+						{suppliers.length === 0 && (
+							<p className='mt-1 text-xs text-amber-700'>
+								No hay proveedores cargados.{' '}
+								<Link
+									to='/dashboard/taxonomias'
+									className='font-semibold underline'
+								>
+									Cargalos acá
+								</Link>
+								.
+							</p>
+						)}
 					</Field>
 					<Field label='Factura / remito'>
 						<input
@@ -208,9 +265,18 @@ export const DashboardPurchasesPage = () => {
 
 				{/* Buscador de productos */}
 				<div className='relative'>
-					<label className='text-xs font-semibold text-ink-600'>
-						Agregar producto (buscá por nombre o código)
-					</label>
+					<div className='flex flex-wrap items-end justify-between gap-2'>
+						<label className='text-xs font-semibold text-ink-600'>
+							Agregar producto del catálogo (buscá por nombre o código)
+						</label>
+						<button
+							type='button'
+							onClick={addFreeLine}
+							className='text-xs font-semibold text-brand-700 hover:underline'
+						>
+							+ Agregar un renglón sin producto (embalaje, servicio…)
+						</button>
+					</div>
 					<input
 						className='inp mt-1'
 						value={term}
@@ -224,8 +290,8 @@ export const DashboardPurchasesPage = () => {
 							)}
 							{!searching && options.length === 0 && (
 								<li className='px-3 py-2 text-sm text-ink-400'>
-									Sin resultados. Recordá marcar el producto como “propio” en su
-									ficha.
+									Sin resultados. El producto tiene que existir primero: cargalo
+									en Productos (o esperá a que lo traiga el sync de CDR).
 								</li>
 							)}
 							{options.map(o => (
@@ -235,12 +301,17 @@ export const DashboardPurchasesPage = () => {
 										onClick={() => addLine(o)}
 										className='flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-brand-50'
 									>
-										<span className='truncate'>{o.name}</span>
+										<span className='min-w-0 flex-1 truncate'>
+											{o.name}
+											{o.external_code && (
+												<span className='ml-1 font-mono text-[10px] text-ink-400'>
+													{o.external_code}
+												</span>
+											)}
+										</span>
 										<span className='shrink-0 text-xs text-ink-400'>
-											stock {o.stock}
-											{o.avg_cost_usd != null
-												? ` · costo ${formatMoney(o.avg_cost_usd)}`
-												: ''}
+											propio {o.owned_stock}
+											{o.cdr_stock != null ? ` · CDR ${o.cdr_stock}` : ''}
 										</span>
 									</button>
 								</li>
@@ -264,12 +335,42 @@ export const DashboardPurchasesPage = () => {
 							</thead>
 							<tbody>
 								{lines.map((l, i) => (
-									<tr key={l.variant_id} className='border-t border-ink-100'>
+									<tr key={l.key} className='border-t border-ink-100'>
 										<td className='p-2'>
-											<p className='font-medium text-ink-800'>{l.name}</p>
-											<p className='text-xs text-ink-400'>
-												stock actual: {l.stock}
-											</p>
+											{l.product ? (
+												<>
+													<p className='font-medium text-ink-800'>
+														{l.product.name}
+													</p>
+													<p className='text-xs text-ink-400'>
+														Hoy: {l.product.owned_stock} propio
+														{l.product.cdr_stock != null
+															? ` · ${l.product.cdr_stock} en CDR`
+															: ''}{' '}
+														→ quedará {l.product.owned_stock + l.quantity} propio
+													</p>
+												</>
+											) : (
+												<>
+													<input
+														className='inp'
+														placeholder='Concepto (ej: embalaje, service…)'
+														value={l.description}
+														onChange={e =>
+															setLines(prev =>
+																prev.map((x, j) =>
+																	j === i
+																		? { ...x, description: e.target.value }
+																		: x
+																)
+															)
+														}
+													/>
+													<p className='mt-0.5 text-xs text-ink-400'>
+														Sin producto: suma al costo, no mueve stock.
+													</p>
+												</>
+											)}
 										</td>
 										<td className='p-2'>
 											<input
@@ -347,9 +448,11 @@ export const DashboardPurchasesPage = () => {
 					</button>
 				</div>
 				<p className='text-xs text-ink-400'>
-					El flete y los impuestos se reparten entre los productos según cuánto
+					El flete y los impuestos se reparten entre los renglones según cuánto
 					pesa cada uno en la compra, así el costo de cada unidad queda con todo
-					incluido.
+					incluido. Si comprás stock de un producto que hoy despacha CDR, pasa a
+					<b> ambos</b>: se venden primero tus unidades y, cuando se terminan,
+					sigue el stock de CDR.
 				</p>
 			</section>
 
