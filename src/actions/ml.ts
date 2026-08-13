@@ -286,6 +286,7 @@ export interface RepriceResult {
 	active?: number;
 	paused?: number;
 	enqueued?: number;
+	repointed?: number;
 	enqueuedPaused?: number;
 	would_enqueue?: number;
 	skippedSamePrice?: number;
@@ -298,6 +299,12 @@ export interface RepriceResult {
 // Las pausadas entran para que no vuelvan a la venta con el margen viejo. dry_run no encola.
 export const repriceActiveMl = (dry_run = false) =>
 	invokeMlFn<RepriceResult>('ml-reprice-active', { dry_run });
+
+// Repreciado PUNTUAL: sólo las publicaciones de estos productos. Se usa cuando el
+// admin le cambia el margen manual a un producto que ya está en ML, para que el
+// precio de la publicación salga del mismo margen que la web sin repreciar todo.
+export const repriceProductsMl = (product_ids: string[]) =>
+	invokeMlFn<RepriceResult>('ml-reprice-active', { product_ids });
 
 // --------- Publicaciones de catálogo ---------
 // ML genera publicaciones de catálogo colgadas de una publicación nuestra y les espeja

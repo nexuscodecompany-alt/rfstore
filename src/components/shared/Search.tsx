@@ -97,7 +97,11 @@ export const Search = () => {
               const minCost = variants.length
                 ? Math.min(...variants.map((v: any) => Number(v.price) || 0))
                 : Number((product as any).price) || 0;
-              const displayPrice = salePrice(minCost, pricing);
+              const displayPrice = salePrice(
+                minCost,
+                pricing,
+                (product as any).margin_override_percent
+              );
               return (
                 <li className="py-2 group" key={(product as any).id}>
                   <button

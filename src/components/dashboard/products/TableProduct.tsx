@@ -12,9 +12,7 @@ import {
   usePricingConfig,
   usePublishMlItem,
   useUpdateMlContent,
-  useSetProductContentLocked,
-  useSetProductStockLocked,
-  useSetProductSyncPaused,
+  useSetProductSyncLocks,
   useSetMlItemStatus,
   useSetVariantStock,
   useRecalcMlReadiness,
@@ -23,9 +21,10 @@ import {
 } from '../../../hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Loader } from '../../shared/Loader';
-import { formatDate, formatPrice, salePrice, mlMarginFor, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
+import { formatDate, formatPrice, salePrice, mlMarginFor, hasMarginOverride, DEFAULT_ML_PRICING, type MlPricingConfig } from '../../../helpers';
 import { getMlPricingConfig } from '../../../actions/ml-pricing';
 import type { MlAttrInput, MlMissingAttr } from '../../../actions/ml';
+import { CdrSyncLocksModal, type CdrSyncLocksValue } from './CdrSyncLocksModal';
 import type { AdminSortField } from '../../../actions/product';
 import { useFilterParams, type ParamValue } from '../../../hooks/useFilterParams';
 import { Pagination } from '../../shared/Pagination';
@@ -162,14 +161,19 @@ export const TableProduct = () => {
     onPublished: () => setMlAttrModal(null),
   });
   const { updateContent, isUpdatingContent, updatingContentVars } = useUpdateMlContent();
-  const { setContentLocked } = useSetProductContentLocked();
-  const { setStockLocked } = useSetProductStockLocked();
-  const { setSyncPaused } = useSetProductSyncPaused();
+  const { setSyncLocks, isSettingSyncLocks } = useSetProductSyncLocks();
   const { setMlStatus, isSettingMlStatus, mlStatusVars } = useSetMlItemStatus();
 
-  // "Sync pausada" = los tres candados puestos (contenido + precio + stock).
-  const isSyncPaused = (p: any) =>
-    p.content_locked === true && p.price_locked === true && p.stock_locked === true;
+  // Producto abierto en el modal de candados de CDR (null = cerrado).
+  const [locksModal, setLocksModal] = useState<{
+    id: string;
+    name: string;
+    locks: CdrSyncLocksValue;
+  } | null>(null);
+
+  // Cuántos datos tiene pausados: 0 = se sincroniza entero, 3 = 100% manual.
+  const lockedCount = (p: any) =>
+    [p.price_locked, p.content_locked, p.stock_locked].filter(Boolean).length;
   const { recalc, isRecalculating, recalcVars } = useRecalcMlReadiness();
 
   const handleUpdateMlContent = (product: any, variantId: string | undefined) => {
@@ -521,7 +525,7 @@ export const TableProduct = () => {
                       )}
                       {/* Con los tres candados puestos mostramos uno solo, más claro
                           que repetir tres chips diciendo lo mismo. */}
-                      {isSyncPaused(product) ? (
+                      {lockedCount(product) === 3 ? (
                         <span
                           title="Sync de CDR pausada: CDR no toca nombre, descripción, precio ni stock de este producto"
                           className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-900 ring-1 ring-amber-400"
@@ -768,64 +772,24 @@ export const TableProduct = () => {
                           <button
                             className="block w-full border-t border-ink-100 px-4 py-2 text-left text-xs font-bold text-amber-700 hover:bg-amber-50"
                             onClick={() => {
-                              const pausing = !isSyncPaused(product);
-                              if (
-                                !pausing ||
-                                window.confirm(
-                                  `¿Pausar la sync de CDR de "${product.name}"?\n\nCDR deja de tocar TODO: nombre, descripción, precio y stock. El producto queda 100% manual hasta que la reanudes.`
-                                )
-                              ) {
-                                setSyncPaused({ id: product.id, paused: pausing });
-                              }
-                              setOpenMenuIndex(null);
-                            }}
-                            title="Frena por completo el sync de CDR para este producto (contenido + precio + stock)"
-                          >
-                            {isSyncPaused(product)
-                              ? '▶ Reanudar sync de CDR'
-                              : '⏸ Pausar sync de CDR'}
-                          </button>
-                        )}
-                        {product.source === 'cdr' && (
-                          <button
-                            className="block w-full text-left px-4 py-2 text-xs font-medium text-violet-700 hover:bg-violet-50"
-                            onClick={() => {
-                              const locking = !(product as any).stock_locked;
-                              if (
-                                !locking ||
-                                window.confirm(
-                                  `¿Poner "${product.name}" en stock manual?\n\nEl sync de CDR va a dejar de tocarle el stock: lo manejás vos desde la columna Stock. El precio se sigue actualizando.\n\nCuando CDR vuelva a tener stock, sacale el candado para que se sincronice de nuevo.`
-                                )
-                              ) {
-                                setStockLocked({
-                                  id: product.id,
-                                  locked: locking,
-                                });
-                              }
-                              setOpenMenuIndex(null);
-                            }}
-                            title="Si el stock es manual, el sync de CDR no lo pisa (para cuando tenés mercadería propia y CDR está en 0)"
-                          >
-                            {(product as any).stock_locked
-                              ? 'Volver a stock de CDR'
-                              : 'Stock manual (CDR)'}
-                          </button>
-                        )}
-                        {product.source === 'cdr' && (
-                          <button
-                            className="block w-full text-left px-4 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100"
-                            onClick={() => {
-                              setContentLocked({
+                              setLocksModal({
                                 id: product.id,
-                                locked: !(product as any).content_locked,
+                                name: product.name,
+                                locks: {
+                                  price: (product as any).price_locked === true,
+                                  content: (product as any).content_locked === true,
+                                  stock: (product as any).stock_locked === true,
+                                },
                               });
                               setOpenMenuIndex(null);
                             }}
-                            title="Si bloqueás el contenido, el sync de CDR no pisa el nombre ni la descripción de este producto"
+                            title="Elegí qué deja de sincronizar CDR en este producto: precio, stock y/o nombre y descripción"
                           >
-                            {(product as any).content_locked
-                              ? 'Desbloquear contenido (CDR)'
-                              : 'Bloquear contenido (CDR)'}
+                            {lockedCount(product) === 0
+                              ? '⏸ Pausar sync de CDR…'
+                              : `⏸ Sync de CDR (${lockedCount(product)} pausado${
+                                  lockedCount(product) === 1 ? '' : 's'
+                                })`}
                           </button>
                         )}
                         {!(product as any).is_in_ml && (
@@ -873,6 +837,20 @@ export const TableProduct = () => {
 
           <Pagination page={page} setPage={setPage} totalItems={totalProducts} />
         </>
+      )}
+
+      {locksModal && (
+        <CdrSyncLocksModal
+          open
+          productName={locksModal.name}
+          value={locksModal.locks}
+          submitting={isSettingSyncLocks}
+          onClose={() => setLocksModal(null)}
+          onSubmit={locks => {
+            setSyncLocks({ id: locksModal.id, locks });
+            setLocksModal(null);
+          }}
+        />
       )}
 
       {mlAttrModal && (
@@ -980,18 +958,43 @@ const StockCell = ({ product, total }: { product: any; total: number }) => {
 };
 
 interface PriceCellsProps {
-  product: { price_usd?: number | null; category_id?: string | null; subcategory_id?: string | null };
+  product: {
+    price_usd?: number | null;
+    category_id?: string | null;
+    subcategory_id?: string | null;
+    margin_override_percent?: number | null;
+  };
   mlCfg: MlPricingConfig;
 }
 const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
   const pricing = usePricingConfig();
   const cost = Number(product.price_usd ?? 0);
+  // Margen manual del producto (si el admin le puso precio a mano): rige en los
+  // dos canales y por eso se pasa tanto a la web como a ML.
+  const override = product.margin_override_percent;
+  const isManual = hasMarginOverride(override);
   // Mismo cálculo que la web pública: usa la config de márgenes guardada (no el default).
-  const web = salePrice(cost, pricing);
+  const web = salePrice(cost, pricing, override);
   // Precio ML en USD (mismo criterio que la web), aunque el listing real pueda ir
   // en pesos al BROU: costo × (1 + margen) × (1 + IVA).
-  const mlMarginPct = mlMarginFor(cost, product.category_id ?? null, product.subcategory_id ?? null, mlCfg);
+  const mlMarginPct = mlMarginFor(
+    cost,
+    product.category_id ?? null,
+    product.subcategory_id ?? null,
+    mlCfg,
+    override
+  );
   const mlUsd = cost > 0 ? cost * (1 + mlMarginPct / 100) * (1 + mlCfg.iva_percent / 100) : 0;
+  // Chip "manual": para que en el listado se vea de un vistazo qué productos
+  // tienen precio puesto a mano y cuáles siguen la tabla de márgenes.
+  const manualChip = isManual ? (
+    <span
+      className='ml-1 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-200'
+      title={`Margen manual: ${Number(override)}%`}
+    >
+      manual
+    </span>
+  ) : null;
   return (
     <>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter'>
@@ -999,6 +1002,7 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
       </td>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter text-emerald-700'>
         {cost > 0 ? formatPrice(web) : '—'}
+        {cost > 0 && manualChip}
       </td>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter text-blue-700'>
         {cost > 0 ? formatPrice(mlUsd) : '—'}

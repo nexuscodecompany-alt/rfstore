@@ -47,7 +47,7 @@ export async function getFilteredProducts({
 let baseQuery = supabase
   .from('products_with_price')
   .select(
-    'id, name, slug, images, features, description, created_at, brand_id, category_id, subcategory_id, price, source, external_code, online_payment',
+    'id, name, slug, images, features, description, created_at, brand_id, category_id, subcategory_id, price, source, external_code, online_payment, margin_override_percent',
     { count: 'exact' }
   )
   .range(from, to);
@@ -149,6 +149,12 @@ if (searchTerm?.trim()) {
         source: ((r as any).source as 'local' | 'cdr') ?? 'local',
         external_code: ((r as any).external_code as string | null) ?? null,
         online_payment: (r as any).online_payment === true,
+        // Margen manual: el front tiene que calcular el precio igual que la vista.
+        margin_override_percent:
+          (r as any).margin_override_percent === null ||
+          (r as any).margin_override_percent === undefined
+            ? null
+            : Number((r as any).margin_override_percent),
       };
     });
 

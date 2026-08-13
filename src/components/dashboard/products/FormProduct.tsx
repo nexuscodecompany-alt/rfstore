@@ -6,21 +6,27 @@ import { useNavigate, useParams } from "react-router-dom";
 import { SectionFormProduct } from "./SectionFormProduct";
 import { InputForm } from "./InputForm";
 import { FeaturesInput } from "./FeaturesInput";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
-import { generateSlug } from "../../../helpers";
+import { generateSlug, hasMarginOverride } from "../../../helpers";
 import { VariantsInput } from "./VariantsInput";
 import { UploaderImages } from "./UploaderImages";
 import { Editor } from "./Editor";
+import { PriceBox } from "./PriceBox";
+import { CdrSyncLocksModal, type CdrSyncLocksValue } from "./CdrSyncLocksModal";
 import {
   useCreateProduct,
   useProduct,
   useUpdateProduct,
   useTaxonomiesAdmin,
+  useSetProductSyncLocks,
 } from "../../../hooks";
 import { Loader } from "../../shared/Loader";
 import { JSONContent } from "@tiptap/react";
 import { create } from "zustand";
+import type { ProductInput } from "../../../interfaces";
+import type { CdrSyncLocks } from "../../../actions";
+import { repriceProductsMl } from "../../../actions/ml";
 
 
 
@@ -47,6 +53,9 @@ const initialState: ProductFormValues = {
   // que antes de existir esta opción. El admin lo prende por producto.
   onlinePayment: false,
   fulfillment: 'propio' as 'dropship' | 'propio' | 'ambos',
+  // Precio manual apagado: el precio sale de la tabla de márgenes por tramo.
+  manualPrice: false,
+  marginPercent: 0,
 };
 
 interface ProductFormState {
@@ -114,6 +123,17 @@ export const FormProduct = ({ titleForm }: Props) => {
 
   const isCdrProduct = product?.source === "cdr";
 
+  // Modal de candados de CDR: se abre solo cuando el admin guarda con precio
+  // manual (así elige qué deja de sincronizar antes de que se guarde).
+  const [locksModalOpen, setLocksModalOpen] = useState(false);
+  const [locksValue, setLocksValue] = useState<CdrSyncLocksValue>({
+    price: false,
+    content: false,
+    stock: false,
+  });
+  const [pendingSubmit, setPendingSubmit] = useState<ProductInput | null>(null);
+  const { setSyncLocksAsync, isSettingSyncLocks } = useSetProductSyncLocks();
+
   const watchCategory = watch("categoryId");
   const filteredSubcategories = subcategories.filter(
     (s) => s.category_id === watchCategory
@@ -164,6 +184,14 @@ export const FormProduct = ({ titleForm }: Props) => {
 
         onlinePayment: product.online_payment === true,
         fulfillment: (product as { fulfillment?: 'dropship' | 'propio' | 'ambos' }).fulfillment ?? 'propio',
+        // Margen manual guardado (null = automático por tramo).
+        manualPrice: hasMarginOverride(
+          (product as { margin_override_percent?: number | null }).margin_override_percent
+        ),
+        marginPercent: Number(
+          (product as { margin_override_percent?: number | null })
+            .margin_override_percent ?? 0
+        ),
       };
 
       // Actualizamos el form y el store
@@ -172,9 +200,49 @@ export const FormProduct = ({ titleForm }: Props) => {
     }
   }, [product, isLoading, isDirty, reset, setFormData]);
 
+  // Guarda de verdad (crear o actualizar). Se llama directo, o después de que el
+  // admin resuelve el modal de candados cuando puso precio manual.
+  const persistProduct = (payload: ProductInput) => {
+    if (slug) {
+      updateProduct(payload, {
+        // Si el producto está publicado en ML, el margen nuevo tiene que llegar
+        // también a la publicación: encolamos el repreciado sólo de este producto
+        // (la cola lo empuja a ML). Sin esto, la web quedaba con el precio nuevo y
+        // Mercado Libre con el viejo.
+        onSuccess: () => {
+          const isInMl = (product as { is_in_ml?: boolean } | undefined)?.is_in_ml === true;
+          const marginChanged =
+            payload.marginOverride !==
+            ((product as { margin_override_percent?: number | null } | undefined)
+              ?.margin_override_percent ?? null);
+          if (!isInMl || !marginChanged || !product?.id) return;
+          repriceProductsMl([product.id])
+            .then(() =>
+              toast.success('Precio de Mercado Libre encolado para actualizar', {
+                position: 'bottom-right',
+              })
+            )
+            .catch(() =>
+              toast.error(
+                'El producto se guardó, pero no se pudo encolar el precio de ML. Usá “Repreciar publicaciones”.',
+                { position: 'bottom-right', duration: 6000 }
+              )
+            );
+        },
+      });
+    } else {
+      createProduct(payload, {
+        onSuccess: () => {
+          resetForm();
+          navigate("/dashboard/productos");
+        },
+      });
+    }
+  };
+
   const onSubmit = handleSubmit((data) => {
     const features = data.features.map((feature) => feature.value);
-    const submissionData = {
+    const submissionData: ProductInput = {
       name: data.name,
       slug: data.slug,
       variants: data.variants,
@@ -186,18 +254,31 @@ export const FormProduct = ({ titleForm }: Props) => {
       subcategoryId: data.subcategoryId || null,
       onlinePayment: data.onlinePayment === true,
       fulfillment: data.fulfillment ?? 'propio',
+      // Precio manual apagado -> null, o sea vuelve al margen por tramo.
+      marginOverride: data.manualPrice ? Number(data.marginPercent ?? 0) : null,
     };
 
-    if (slug) {
-      updateProduct(submissionData);
-    } else {
-      createProduct(submissionData, {
-        onSuccess: () => {
-          resetForm();
-          navigate("/dashboard/productos");
-        },
+    // Precio manual sobre un producto de CDR: antes de guardar le preguntamos qué
+    // quiere pausar del sync, con el precio pre-tildado. Si no, CDR le sigue
+    // moviendo el costo y el precio final se le cambia a cada rato.
+    const needsLocksPrompt =
+      isCdrProduct &&
+      data.manualPrice === true &&
+      !!product?.id &&
+      (product as { price_locked?: boolean }).price_locked !== true;
+
+    if (needsLocksPrompt) {
+      setPendingSubmit(submissionData);
+      setLocksValue({
+        price: true,
+        content: (product as { content_locked?: boolean }).content_locked === true,
+        stock: (product as { stock_locked?: boolean }).stock_locked === true,
       });
+      setLocksModalOpen(true);
+      return;
     }
+
+    persistProduct(submissionData);
   }, (formErrors) => {
     // Si la validación falla, antes el formulario no daba ninguna señal.
     // Mostramos el primer mensaje de error para que el admin sepa qué corregir.
@@ -350,6 +431,16 @@ export const FormProduct = ({ titleForm }: Props) => {
             register={register}
           />
 
+          {/* Desglose del precio en vivo: costo -> margen -> IVA -> total, con
+              el margen y el total editables si el admin prende "Precio manual". */}
+          <PriceBox
+            register={register}
+            watch={watch}
+            setValue={setValue}
+            categoryId={watchCategory}
+            subcategoryId={watch("subcategoryId")}
+          />
+
           {/* Forma de venta: pago online vs. consulta por WhatsApp.
               Los productos de CDR se venden online siempre, así que ahí la
               opción no aplica (mostramos el estado, sin checkbox). */}
@@ -436,6 +527,36 @@ export const FormProduct = ({ titleForm }: Props) => {
           </button>
         </div>
       </form>
+
+      {/* Precio manual sobre un producto de CDR: elegí qué deja de sincronizar
+          antes de guardar. Al confirmar se aplican los candados y recién ahí se
+          guarda el producto. */}
+      <CdrSyncLocksModal
+        open={locksModalOpen}
+        productName={product?.name ?? watch("name")}
+        value={locksValue}
+        submitting={isSettingSyncLocks || isUpdatePending}
+        intro="Le pusiste precio manual a este producto. ¿Qué querés que CDR deje de tocar? Al guardar se aplican estos candados y se guarda el producto."
+        onClose={() => {
+          setLocksModalOpen(false);
+          setPendingSubmit(null);
+        }}
+        onSubmit={async (locks: CdrSyncLocks) => {
+          if (product?.id) {
+            try {
+              await setSyncLocksAsync({ id: product.id, locks });
+            } catch {
+              // El hook ya avisa por toast; si falla no guardamos a medias.
+              return;
+            }
+          }
+          setLocksModalOpen(false);
+          if (pendingSubmit) {
+            persistProduct(pendingSubmit);
+            setPendingSubmit(null);
+          }
+        }}
+      />
     </div>
   );
 };

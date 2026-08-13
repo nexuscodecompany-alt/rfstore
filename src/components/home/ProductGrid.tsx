@@ -25,8 +25,12 @@ export const ProductGrid = ({ title, products }: Props) => {
 
 	const finalPrice = (p: PreparedProducts) =>
 		p.variants?.length
-			? Math.min(...p.variants.map(v => salePrice(v.price, pricing)))
-			: salePrice(p.price, pricing);
+			? Math.min(
+					...p.variants.map(v =>
+						salePrice(v.price, pricing, p.margin_override_percent)
+					)
+			  )
+			: salePrice(p.price, pricing, p.margin_override_percent);
 
 	const sortedProducts = [...filteredProducts].sort((a, b) => {
 		const pa = finalPrice(a);
@@ -91,6 +95,7 @@ export const ProductGrid = ({ title, products }: Props) => {
 						source={product.source}
 						externalCode={product.external_code}
 						onlinePayment={product.online_payment}
+						marginOverride={product.margin_override_percent}
 					/>
 				))}
 			</div>

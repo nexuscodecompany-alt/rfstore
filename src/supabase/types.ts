@@ -708,6 +708,7 @@ export type Database = {
           image_md5s: Json | null
           images: string[]
           last_synced_at: string | null
+          margin_override_percent: number | null
           markup_percent: number | null
           name: string
           online_payment: boolean
@@ -732,6 +733,7 @@ export type Database = {
           image_md5s?: Json | null
           images: string[]
           last_synced_at?: string | null
+          margin_override_percent?: number | null
           markup_percent?: number | null
           name: string
           online_payment?: boolean
@@ -756,6 +758,7 @@ export type Database = {
           image_md5s?: Json | null
           images?: string[]
           last_synced_at?: string | null
+          margin_override_percent?: number | null
           markup_percent?: number | null
           name?: string
           online_payment?: boolean
@@ -886,6 +889,7 @@ export type Database = {
           features: string[] | null
           id: string | null
           images: string[] | null
+          margin_override_percent: number | null
           name: string | null
           online_payment: boolean | null
           price: number | null

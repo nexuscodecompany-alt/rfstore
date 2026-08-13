@@ -352,6 +352,40 @@ export const setProductPriceLocked = async (id: string, locked: boolean) => {
     if (error) throw new Error(error.message);
 };
 
+// Candados de sync de CDR, de a uno o varios a la vez. Sólo escribe las claves
+// que vengan: así el modal puede tocar el precio sin resetear stock/contenido.
+export interface CdrSyncLocks {
+    price?: boolean;
+    content?: boolean;
+    stock?: boolean;
+}
+export const setProductSyncLocks = async (id: string, locks: CdrSyncLocks) => {
+    const patch: Record<string, boolean> = {};
+    if (locks.price !== undefined) patch.price_locked = locks.price;
+    if (locks.content !== undefined) patch.content_locked = locks.content;
+    if (locks.stock !== undefined) patch.stock_locked = locks.stock;
+    if (Object.keys(patch).length === 0) return;
+
+    const { error } = await supabase
+        .from('products')
+        .update(patch as never)
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
+// Margen manual del producto. `null` lo devuelve al margen automático por tramo.
+// Rige para la web y para Mercado Libre (mismo valor en los dos canales).
+export const setProductMarginOverride = async (
+    id: string,
+    percent: number | null
+) => {
+    const { error } = await supabase
+        .from('products')
+        .update({ margin_override_percent: percent } as never)
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
 // Pausa TOTAL del sync de CDR para un producto: prende (o apaga) los tres candados
 // de una — contenido, precio y stock. El producto queda 100% manual hasta reanudar.
 export const setProductSyncPaused = async (id: string, paused: boolean) => {
@@ -391,6 +425,8 @@ export const createProduct = async (productInput: ProductInput) => {
             // Sin esto el producto queda "por consulta" (comportamiento histórico).
             online_payment: productInput.onlinePayment === true,
             fulfillment: productInput.fulfillment ?? 'propio',
+            // Margen manual (null = automático por tramo).
+            margin_override_percent: productInput.marginOverride ?? null,
         })
         .select()
         .single();
@@ -527,6 +563,10 @@ export const updateProduct = async (
             subcategory_id: productInput.subcategoryId || null,
             online_payment: productInput.onlinePayment === true,
             fulfillment: productInput.fulfillment ?? 'propio',
+            // `undefined` = el form no toca el margen; `null` = volver a automático.
+            ...(productInput.marginOverride === undefined
+                ? {}
+                : { margin_override_percent: productInput.marginOverride }),
         })
         .eq('id', productId)
         .select()

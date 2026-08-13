@@ -78,13 +78,14 @@ Deno.serve(async req => {
 		const variantIds = [...new Set(body.items.map(i => i.variant_id))];
 		const { data: variantRows, error: varErr } = await supabaseAdmin
 			.from('variants')
-			.select('id, price, stock, products(name, source, online_payment, external_code, price_usd)')
+			.select('id, price, stock, products(name, source, online_payment, external_code, price_usd, margin_override_percent)')
 			.in('id', variantIds);
 		if (varErr) throw new Error(`variants: ${varErr.message}`);
-		interface VarInfo { price: number; stock: number; source: string; onlinePayment: boolean; externalCode: string | null; costUsd: number | null; }
+		interface VarInfo { price: number; stock: number; source: string; onlinePayment: boolean; externalCode: string | null; costUsd: number | null; marginOverride: number | null; }
 		const infoByVariant = new Map<string, VarInfo>();
 		for (const row of (variantRows ?? []) as any[]) {
 			const p = Array.isArray(row.products) ? row.products[0] : row.products;
+			const rawOverride = p?.margin_override_percent;
 			infoByVariant.set(String(row.id), {
 				price: Number(row.price) || 0,
 				stock: Number(row.stock) || 0,
@@ -92,6 +93,12 @@ Deno.serve(async req => {
 				onlinePayment: p?.online_payment === true,
 				externalCode: p?.external_code ?? null,
 				costUsd: p?.price_usd === null || p?.price_usd === undefined ? null : Number(p.price_usd),
+				// Margen manual del producto: si el admin le puso precio a mano, el
+				// precio canonico sale de ESE margen (igual que la web), no del tramo.
+				marginOverride:
+					rawOverride === null || rawOverride === undefined || isNaN(Number(rawOverride))
+						? null
+						: Number(rawOverride),
 			});
 		}
 		for (const it of body.items) {
@@ -142,18 +149,26 @@ Deno.serve(async req => {
 		// cdr_markup_percent_global -> DOBLE MARKUP: el cliente veia 62 y se le cobraba 74.4.
 		// El COSTO sale de products.price_usd en los CDR y de variants.price en los
 		// manuales (que es donde el admin lo carga: "Precio (USD, costo sin IVA)").
+		// La clave es (costo + margen manual): dos productos con el mismo costo pueden
+		// tener precios distintos si uno tiene precio puesto a mano.
 		const costByVariant = new Map<string, number>();
+		const priceKeyByVariant = new Map<string, string>();
 		for (const [vid, info] of infoByVariant) {
-			const cost = info.source === 'cdr' ? (info.costUsd ?? info.price) : info.price;
-			costByVariant.set(vid, Number(cost) || 0);
+			const cost = Number(info.source === 'cdr' ? (info.costUsd ?? info.price) : info.price) || 0;
+			costByVariant.set(vid, cost);
+			priceKeyByVariant.set(vid, `${cost}|${info.marginOverride ?? ''}`);
 		}
-		const saleByCost = new Map<number, number>();
-		for (const cost of new Set(costByVariant.values())) {
-			const { data: sp } = await supabaseAdmin.rpc('rf_sale_price', { cost });
-			saleByCost.set(cost, Number(sp) || 0);
+		const saleByKey = new Map<string, number>();
+		for (const key of new Set(priceKeyByVariant.values())) {
+			const [costStr, overrideStr] = key.split('|');
+			const { data: sp } = await supabaseAdmin.rpc('rf_sale_price', {
+				cost: Number(costStr),
+				p_override: overrideStr === '' ? null : Number(overrideStr),
+			});
+			saleByKey.set(key, Number(sp) || 0);
 		}
 		const lineTotals = body.items.map(it => {
-			const sp = saleByCost.get(costByVariant.get(it.variant_id) ?? 0) ?? 0;
+			const sp = saleByKey.get(priceKeyByVariant.get(it.variant_id) ?? '') ?? 0;
 			const unitFinal = sp > 0 ? sp : Number(Number(it.unit_price_usd).toFixed(2));
 			return { ...it, unit_final_usd: unitFinal, line_total: unitFinal * it.quantity };
 		});
@@ -182,7 +197,7 @@ Deno.serve(async req => {
 		const priceFactor = subtotal > 0 ? discountedProducts / subtotal : 1;
 		const totalAmount = Number((discountedProducts + shippingCharge).toFixed(2));
 
-		// Cotizacion USD->UYU (BCU) cacheada: la MISMA que muestra el checkout. La
+		// Cotizacion USD->UYU (BROU eBROU venta) cacheada: la MISMA que muestra el checkout. La
 		// preference se crea en UYU para que el cobro coincida EXACTO con lo mostrado.
 		// (Si se mandara en USD, MP convierte a su propia tasa y cobra de mas.)
 		// Sin cache valida, cae a USD para no romper el checkout.

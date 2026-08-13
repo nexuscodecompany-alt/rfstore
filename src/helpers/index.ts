@@ -323,20 +323,58 @@ export const marginForCost = (cost: number, cfg: PricingConfig): number => {
 	return 0;
 };
 
+// Margen (%) efectivo de un producto en la WEB: el manual del producto si tiene,
+// si no el tramo que le toca por costo. Un margen manual de 0 es válido (vender
+// al costo + IVA), así que sólo null/undefined/NaN significan "automático".
+export const hasMarginOverride = (
+	override: number | null | undefined
+): override is number =>
+	override !== null && override !== undefined && !isNaN(Number(override));
+
+export const webMarginFor = (
+	cost: number,
+	cfg: PricingConfig,
+	override?: number | null
+): number => {
+	if (hasMarginOverride(override)) return Number(override);
+	const ivaCost = cost * (1 + cfg.iva_percent / 100);
+	return marginForCost(ivaCost, cfg);
+};
+
 // Costo (sin IVA) -> precio final de venta (margen por tramo + IVA).
 // Redondeado SIEMPRE hacia arriba al entero (sin decimales). Ej: 12.22 -> 13.
+// `override` = margen manual del producto (products.margin_override_percent):
+// si viene, se saltea la tabla de tramos. Debe coincidir con la función SQL
+// public.rf_sale_price(cost, override).
 export const salePrice = (
 	cost: number | null | undefined,
-	cfg: PricingConfig = DEFAULT_PRICING
+	cfg: PricingConfig = DEFAULT_PRICING,
+	override?: number | null
 ): number => {
 	if (cost === null || cost === undefined || isNaN(cost)) return 0;
 	// El tramo del margen se decide por el costo CON IVA (no el costo base), igual que ML.
-	// Solo elige el tramo; el precio final se calcula con el costo real. Debe coincidir
-	// con la función SQL public.rf_sale_price.
-	const ivaCost = cost * (1 + cfg.iva_percent / 100);
-	const pct = marginForCost(ivaCost, cfg);
+	// Solo elige el tramo; el precio final se calcula con el costo real.
+	const pct = webMarginFor(cost, cfg, override);
 	const final = cost * (1 + pct / 100) * (1 + cfg.iva_percent / 100);
 	return Math.ceil(final);
+};
+
+// Inversa de salePrice: dado el precio final que quiere el admin, qué margen (%)
+// hay que guardar. Se usa en el form del producto para que pueda tipear el TOTAL
+// y ver el margen, o al revés. Devuelve null si el costo no sirve como base.
+export const marginForSalePrice = (
+	cost: number | null | undefined,
+	target: number | null | undefined,
+	cfg: PricingConfig = DEFAULT_PRICING
+): number | null => {
+	const c = Number(cost ?? 0);
+	const t = Number(target ?? 0);
+	if (!c || c <= 0 || !t || t <= 0 || isNaN(c) || isNaN(t)) return null;
+	const withIva = c * (1 + cfg.iva_percent / 100);
+	const pct = (t / withIva - 1) * 100;
+	// Dos decimales: el redondeo hacia arriba de salePrice hace que varios
+	// márgenes den el mismo total, así que no hace falta más precisión.
+	return Math.max(0, Math.round(pct * 100) / 100);
 };
 
 // Precio ML: 30% margen + IVA. Si costo > umbral USD => USD; sino UYU al BROU.
@@ -382,13 +420,18 @@ export const DEFAULT_ML_PRICING: MlPricingConfig = {
 	subcategory_overrides: {},
 };
 
-// Margen ML (%) para un producto. Precedencia: subcategoría > categoría > tramo por costo.
+// Margen ML (%) para un producto.
+// Precedencia: margen manual del producto > subcategoría > categoría > tramo por costo.
+// El margen manual es el mismo valor que usa la web (products.margin_override_percent):
+// cuando el admin fija un precio a mano, rige en los dos canales.
 export const mlMarginFor = (
 	cost: number,
 	categoryId: string | null | undefined,
 	subcategoryId: string | null | undefined,
-	cfg: MlPricingConfig
+	cfg: MlPricingConfig,
+	override?: number | null
 ): number => {
+	if (hasMarginOverride(override)) return Number(override);
 	if (subcategoryId && cfg.subcategory_overrides && cfg.subcategory_overrides[subcategoryId] != null) {
 		return Number(cfg.subcategory_overrides[subcategoryId]);
 	}
@@ -408,11 +451,12 @@ export const mlPriceFromConfig = (
 	fxRate: number,
 	categoryId: string | null | undefined,
 	subcategoryId: string | null | undefined,
-	cfg: MlPricingConfig
+	cfg: MlPricingConfig,
+	override?: number | null
 ): MlPriceResult => {
 	const cost = Number(costUsd ?? 0);
 	if (!cost || cost <= 0 || !fxRate || fxRate <= 0) return { price: 0, currency: 'UYU' };
-	const markup = mlMarginFor(cost, categoryId, subcategoryId, cfg);
+	const markup = mlMarginFor(cost, categoryId, subcategoryId, cfg, override);
 	const withMarkupIva = cost * (1 + markup / 100) * (1 + cfg.iva_percent / 100);
 	// Precio redondo: siempre entero hacia arriba, sin decimales/milesimas.
 	if (cost > cfg.usd_threshold) return { price: Math.ceil(withMarkupIva), currency: 'USD' };
