@@ -256,7 +256,7 @@ Deno.serve(async (req: Request) => {
   if (!product_id || !variant_id) return json({ ok: false, error: 'missing_product_or_variant_id' }, 400);
 
   try {
-    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, margin_override_percent').eq('id', product_id).single();
+    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, ml_margin_override_percent').eq('id', product_id).single();
     if (pErr || !product) throw new Error(`product_not_found: ${pErr?.message ?? 'null'}`);
     // Sin filtros propios (decision del admin): publicamos aunque este inactivo; ML decide.
     if (!product.active) await logEvent('ml_publish_forced_inactive', { product_id, variant_id });
@@ -297,10 +297,11 @@ Deno.serve(async (req: Request) => {
     // definen pensando en el precio con IVA. Solo afecta la eleccion del tramo; el precio
     // final se sigue calculando con el costo real (costUsd) en computePriceAndCurrency.
     const ivaCostUsd = costUsd * (1 + effIva / 100);
-    // Margen MANUAL del producto (products.margin_override_percent): si el admin le puso
-    // precio a mano desde el panel, ese margen manda y se saltea tramos y overrides por
-    // categoria. Es el MISMO valor que usa la web, asi los dos canales quedan alineados.
-    const rawOverride = (product as any).margin_override_percent;
+    // Margen MANUAL de ML (products.ml_margin_override_percent): si el admin le puso
+    // precio a mano a la publicacion, ese margen manda y se saltea tramos y overrides
+    // por categoria. Es un campo APARTE del margen manual de la web: en ML se vende mas
+    // caro para cubrir la comision, asi que cada canal se ajusta por su lado.
+    const rawOverride = (product as any).ml_margin_override_percent;
     const manualMargin = rawOverride === null || rawOverride === undefined || isNaN(Number(rawOverride))
       ? null
       : Number(rawOverride);

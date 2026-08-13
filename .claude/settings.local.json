@@ -204,7 +204,9 @@
       "Bash(powershell -NoProfile -Command 'Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '\\\\''*vite*'\\\\'' -and $_.Name -eq '\\\\''node.exe'\\\\'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force; '\\\\''detenido '\\\\'' + $_.ProcessId }')",
       "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 6; \"TSC_EXIT=$LASTEXITCODE\")",
       "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 8; \"TSC_EXIT=$LASTEXITCODE\")",
-      "Bash(npx --yes deno@2 check supabase/functions/ml-reprice-active/index.ts supabase/functions/ml-publish-item/index.ts)"
+      "Bash(npx --yes deno@2 check supabase/functions/ml-reprice-active/index.ts supabase/functions/ml-publish-item/index.ts)",
+      "Skill(impeccable)",
+      "Bash(grep -n \"dashboard/productos/editar\\\\|to={\\\\`/dashboard\" src/components/dashboard/products/TableProduct.tsx)"
     ]
   }
 }

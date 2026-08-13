@@ -4,9 +4,14 @@
 // por cada una en ml_sync_queue. El cron ml-process-sync-queue las empuja a ML (20/min).
 // Disparo manual desde el panel ('Repreciar publicaciones activas').
 //
-// v3 (2026-08-13): respeta el MARGEN MANUAL por producto (products.margin_override_percent).
-// Si el admin le puso precio a mano desde el panel, ese margen pisa los tramos y los
-// overrides por categoria, igual que en la web. Null = margen automatico de siempre.
+// v4 (2026-08-13): el margen manual de ML vive en products.ml_margin_override_percent,
+// separado del de la web (margin_override_percent): en ML se vende mas caro para cubrir
+// la comision, asi que cada canal se ajusta por su lado.
+//
+// v3 (2026-08-13): respeta el MARGEN MANUAL por producto y acepta body.product_ids para
+// repreciar SOLO esos productos (lo usa el panel al guardar un margen manual); en ese
+// modo, si ya habia un update_price pendiente para la variante, se le PISA el payload
+// en vez de saltearlo.
 //
 // v2 (2026-08-06): tambien se reprecian las publicaciones PAUSADAS. Antes solo se
 // tomaban los mappings 'active', asi que las 456 pausadas se quedaban con el precio
@@ -22,10 +27,12 @@ const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-// Margen manual del producto: gana sobre cualquier tramo/override de categoria.
+// Margen manual de ML (products.ml_margin_override_percent): gana sobre cualquier
+// tramo/override de categoria. Es INDEPENDIENTE del margen manual de la web
+// (margin_override_percent): en ML se vende mas caro para cubrir la comision.
 // Un 0 es valido (vender al costo + IVA), asi que solo null/undefined/NaN son "automatico".
 function marginOverrideOf(prod: any): number | null {
-  const raw = prod?.margin_override_percent;
+  const raw = prod?.ml_margin_override_percent;
   if (raw === null || raw === undefined) return null;
   const n = Number(raw);
   return isNaN(n) ? null : n;
@@ -87,7 +94,7 @@ Deno.serve(async (req: Request) => {
     // pausadas entran para que no vuelvan a la venta con el margen viejo.
     let mapQuery = supabase
       .from('ml_item_mapping')
-      .select('id, variant_id, product_id, status, last_known_price_uyu, products(price_usd, category_id, subcategory_id, margin_override_percent)')
+      .select('id, variant_id, product_id, status, last_known_price_uyu, products(price_usd, category_id, subcategory_id, ml_margin_override_percent)')
       .in('status', ['active', 'paused']);
     if (productIds.length > 0) mapQuery = mapQuery.in('product_id', productIds);
     const { data: maps, error: mErr } = await mapQuery;

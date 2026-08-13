@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FaEllipsis } from 'react-icons/fa6';
 import { HiOutlineExternalLink } from 'react-icons/hi';
+import { HiOutlinePhoto } from 'react-icons/hi2';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -48,8 +49,12 @@ export const liveMlMapping = (rows?: MlMappingRow[] | null): MlMappingRow | unde
 // ordenables a nivel base: "Precio Web" y "Precio ML" se calculan aplicando márgenes
 // por tramo/categoría sobre el costo, así que ordenar por costo NO daría el mismo
 // orden y el control mentiría.
-const tableHeaders: { label: string; sort?: AdminSortField }[] = [
-  { label: '' },
+const tableHeaders: { label: string; sort?: AdminSortField; className?: string }[] = [
+  // La miniatura necesita ancho FIJO: con 13 columnas el navegador reparte el ancho
+  // sobrante y esta celda es la primera en colapsar. Al comprimirse, el
+  // `max-width:100%` que Tailwind le pone a toda <img> le ganaba al `w-16` y la
+  // foto quedaba en ~20px. Con el ancho declarado acá la columna ya no se achica.
+  { label: '', className: 'w-[104px]' },
   { label: 'Nombre', sort: 'name' },
   { label: 'Origen' },
   { label: 'Marca' },
@@ -457,7 +462,7 @@ export const TableProduct = () => {
           <thead className="border-b border-gray-200 pb-3">
             <tr className="text-sm font-bold">
               {tableHeaders.map((header, index) => (
-                <th key={index} className="h-12 px-4 text-left">
+                <th key={index} className={`h-12 px-4 text-left ${header.className ?? ''}`}>
                   {header.sort ? (
                     <button
                       type="button"
@@ -501,16 +506,11 @@ export const TableProduct = () => {
 
               return (
                 <tr key={index}>
-                  <td className="p-4 align-middle sm:table-cell">
-                    <img
-                      src={
-                        product.images[0] ||
-                        'https://ui.shadcn.com/placeholder.svg'
-                      }
-                      alt="Imagen Product"
-                      loading="lazy"
-                      decoding="async"
-                      className="w-16 h-16 aspect-square rounded-md object-contain"
+                  <td className="w-[104px] p-4 align-middle sm:table-cell">
+                    <ProductThumb
+                      src={product.images?.[0]}
+                      alt={product.name}
+                      slug={product.slug}
                     />
                   </td>
                   <td className="p-4 align-middle">
@@ -873,6 +873,60 @@ export const TableProduct = () => {
   );
 };
 
+// Miniatura del producto. Caja de tamaño fijo con la foto centrada: las imágenes de
+// CDR vienen en formatos y proporciones dispares, así que el marco lo pone la celda y
+// la foto se acomoda adentro. Si no hay imagen o falla la descarga (pasa con las que
+// el sync todavía no bajó) mostramos un cartel propio, no un ícono roto.
+const ProductThumb = ({
+  src,
+  alt,
+  slug,
+}: {
+  src?: string | null;
+  alt: string;
+  slug?: string | null;
+}) => {
+  const [failed, setFailed] = useState(false);
+  // Producto nuevo -> otra imagen: hay que volver a intentar la carga.
+  useEffect(() => setFailed(false), [src]);
+
+  const frame =
+    'grid h-16 w-16 place-items-center overflow-hidden rounded-xl bg-white ring-1 ring-ink-200';
+
+  const content =
+    src && !failed ? (
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        decoding="async"
+        onError={() => setFailed(true)}
+        className="h-full w-full object-contain p-1"
+      />
+    ) : (
+      <div
+        className="flex h-full w-full flex-col items-center justify-center gap-1 bg-ink-50 text-ink-400"
+        title={src ? 'La imagen no se pudo cargar' : 'Este producto todavía no tiene imagen'}
+      >
+        <HiOutlinePhoto size={18} aria-hidden />
+        <span className="text-[9px] font-bold uppercase tracking-wide">
+          {src ? 'rota' : 'sin foto'}
+        </span>
+      </div>
+    );
+
+  if (!slug) return <div className={frame}>{content}</div>;
+  return (
+    <Link
+      to={`/dashboard/productos/editar/${slug}`}
+      className={`${frame} transition-shadow hover:shadow-soft hover:ring-brand-300`}
+      title={alt}
+    >
+      {content}
+    </Link>
+  );
+};
+
 // Celda "Stock". Con el candado de stock puesto es editable a mano: el sync de CDR
 // ya no la pisa. Si el producto está en ML, guardar dispara el sync de cantidad.
 const StockCell = ({ product, total }: { product: any; total: number }) => {
@@ -963,18 +1017,31 @@ interface PriceCellsProps {
     category_id?: string | null;
     subcategory_id?: string | null;
     margin_override_percent?: number | null;
+    ml_margin_override_percent?: number | null;
   };
   mlCfg: MlPricingConfig;
 }
+
+// Chip "manual" al lado del precio: de un vistazo se ve qué canal tiene el precio
+// puesto a mano y cuál sigue la tabla de márgenes.
+const ManualChip = ({ margin }: { margin: number }) => (
+  <span
+    className='ml-1 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-200'
+    title={`Margen manual: ${margin}%`}
+  >
+    manual
+  </span>
+);
+
 const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
   const pricing = usePricingConfig();
   const cost = Number(product.price_usd ?? 0);
-  // Margen manual del producto (si el admin le puso precio a mano): rige en los
-  // dos canales y por eso se pasa tanto a la web como a ML.
-  const override = product.margin_override_percent;
-  const isManual = hasMarginOverride(override);
+  // Un margen manual por canal: en ML se vende más caro que en la web, así que son
+  // dos números independientes.
+  const webOverride = product.margin_override_percent;
+  const mlOverride = product.ml_margin_override_percent;
   // Mismo cálculo que la web pública: usa la config de márgenes guardada (no el default).
-  const web = salePrice(cost, pricing, override);
+  const web = salePrice(cost, pricing, webOverride);
   // Precio ML en USD (mismo criterio que la web), aunque el listing real pueda ir
   // en pesos al BROU: costo × (1 + margen) × (1 + IVA).
   const mlMarginPct = mlMarginFor(
@@ -982,19 +1049,9 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
     product.category_id ?? null,
     product.subcategory_id ?? null,
     mlCfg,
-    override
+    mlOverride
   );
   const mlUsd = cost > 0 ? cost * (1 + mlMarginPct / 100) * (1 + mlCfg.iva_percent / 100) : 0;
-  // Chip "manual": para que en el listado se vea de un vistazo qué productos
-  // tienen precio puesto a mano y cuáles siguen la tabla de márgenes.
-  const manualChip = isManual ? (
-    <span
-      className='ml-1 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 ring-1 ring-amber-200'
-      title={`Margen manual: ${Number(override)}%`}
-    >
-      manual
-    </span>
-  ) : null;
   return (
     <>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter'>
@@ -1002,10 +1059,15 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
       </td>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter text-emerald-700'>
         {cost > 0 ? formatPrice(web) : '—'}
-        {cost > 0 && manualChip}
+        {cost > 0 && hasMarginOverride(webOverride) && (
+          <ManualChip margin={Number(webOverride)} />
+        )}
       </td>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter text-blue-700'>
         {cost > 0 ? formatPrice(mlUsd) : '—'}
+        {cost > 0 && hasMarginOverride(mlOverride) && (
+          <ManualChip margin={Number(mlOverride)} />
+        )}
       </td>
     </>
   );

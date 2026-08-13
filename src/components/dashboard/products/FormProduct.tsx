@@ -53,9 +53,11 @@ const initialState: ProductFormValues = {
   // que antes de existir esta opción. El admin lo prende por producto.
   onlinePayment: false,
   fulfillment: 'propio' as 'dropship' | 'propio' | 'ambos',
-  // Precio manual apagado: el precio sale de la tabla de márgenes por tramo.
+  // Precio manual apagado en los dos canales: cada uno sale de su tabla de márgenes.
   manualPrice: false,
   marginPercent: 0,
+  manualPriceMl: false,
+  marginPercentMl: 0,
 };
 
 interface ProductFormState {
@@ -184,13 +186,21 @@ export const FormProduct = ({ titleForm }: Props) => {
 
         onlinePayment: product.online_payment === true,
         fulfillment: (product as { fulfillment?: 'dropship' | 'propio' | 'ambos' }).fulfillment ?? 'propio',
-        // Margen manual guardado (null = automático por tramo).
+        // Márgenes manuales guardados, uno por canal (null = automático).
         manualPrice: hasMarginOverride(
           (product as { margin_override_percent?: number | null }).margin_override_percent
         ),
         marginPercent: Number(
           (product as { margin_override_percent?: number | null })
             .margin_override_percent ?? 0
+        ),
+        manualPriceMl: hasMarginOverride(
+          (product as { ml_margin_override_percent?: number | null })
+            .ml_margin_override_percent
+        ),
+        marginPercentMl: Number(
+          (product as { ml_margin_override_percent?: number | null })
+            .ml_margin_override_percent ?? 0
         ),
       };
 
@@ -211,10 +221,15 @@ export const FormProduct = ({ titleForm }: Props) => {
         // Mercado Libre con el viejo.
         onSuccess: () => {
           const isInMl = (product as { is_in_ml?: boolean } | undefined)?.is_in_ml === true;
+          // Sólo el margen de ML cambia el precio de la publicación; el de la web no.
+          const prev =
+            (product as { ml_margin_override_percent?: number | null } | undefined)
+              ?.ml_margin_override_percent ?? null;
+          const next = payload.mlMarginOverride ?? null;
           const marginChanged =
-            payload.marginOverride !==
-            ((product as { margin_override_percent?: number | null } | undefined)
-              ?.margin_override_percent ?? null);
+            prev === null || next === null
+              ? prev !== next
+              : Number(prev) !== Number(next);
           if (!isInMl || !marginChanged || !product?.id) return;
           repriceProductsMl([product.id])
             .then(() =>
@@ -256,6 +271,7 @@ export const FormProduct = ({ titleForm }: Props) => {
       fulfillment: data.fulfillment ?? 'propio',
       // Precio manual apagado -> null, o sea vuelve al margen por tramo.
       marginOverride: data.manualPrice ? Number(data.marginPercent ?? 0) : null,
+      mlMarginOverride: data.manualPriceMl ? Number(data.marginPercentMl ?? 0) : null,
     };
 
     // Precio manual sobre un producto de CDR: antes de guardar le preguntamos qué
@@ -263,7 +279,7 @@ export const FormProduct = ({ titleForm }: Props) => {
     // moviendo el costo y el precio final se le cambia a cada rato.
     const needsLocksPrompt =
       isCdrProduct &&
-      data.manualPrice === true &&
+      (data.manualPrice === true || data.manualPriceMl === true) &&
       !!product?.id &&
       (product as { price_locked?: boolean }).price_locked !== true;
 

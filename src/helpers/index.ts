@@ -362,10 +362,12 @@ export const salePrice = (
 // Inversa de salePrice: dado el precio final que quiere el admin, qué margen (%)
 // hay que guardar. Se usa en el form del producto para que pueda tipear el TOTAL
 // y ver el margen, o al revés. Devuelve null si el costo no sirve como base.
+// Sólo necesita el IVA: el margen es justamente lo que se despeja. Por eso acepta
+// tanto la PricingConfig de la web como la de ML (las dos tienen iva_percent).
 export const marginForSalePrice = (
 	cost: number | null | undefined,
 	target: number | null | undefined,
-	cfg: PricingConfig = DEFAULT_PRICING
+	cfg: { iva_percent: number } = DEFAULT_PRICING
 ): number | null => {
 	const c = Number(cost ?? 0);
 	const t = Number(target ?? 0);

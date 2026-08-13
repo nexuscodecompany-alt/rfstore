@@ -53,11 +53,15 @@ export interface Product {
 	price_usd?: number | null;
 	markup_percent?: number | null;
 	/**
-	 * Margen manual (%) fijado por el admin para este producto. Si tiene valor,
-	 * pisa el margen por tramo (y los overrides por categoría en ML): rige tanto
-	 * en la web como en Mercado Libre. Null/undefined = margen automático.
+	 * Margen manual (%) de la WEB (RF Store). Si tiene valor pisa el margen por
+	 * tramo. Null/undefined = automático.
 	 */
 	margin_override_percent?: number | null;
+	/**
+	 * Margen manual (%) de MERCADO LIBRE, independiente del de la web: en ML se
+	 * vende más caro para cubrir la comisión. Null/undefined = regla ML automática.
+	 */
+	ml_margin_override_percent?: number | null;
 }
 
 export interface PreparedProducts {
@@ -97,10 +101,12 @@ export interface ProductInput {
 	onlinePayment?: boolean;
 	fulfillment?: 'dropship' | 'propio' | 'ambos';
 	/**
-	 * Margen manual (%) del producto. `null` = automático por tramo.
+	 * Margen manual (%) de la web. `null` = automático por tramo.
 	 * `undefined` = no tocar lo que ya esté guardado.
 	 */
 	marginOverride?: number | null;
+	/** Ídem para Mercado Libre (independiente del de la web). */
+	mlMarginOverride?: number | null;
 }
 
 export interface VariantInput {

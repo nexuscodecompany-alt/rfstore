@@ -119,11 +119,20 @@ export const productSchema = z.object({
 		.enum(['dropship', 'propio', 'ambos'])
 		.optional()
 		.default('propio'),
-	// Precio manual: cuando está prendido se guarda `marginPercent` en
-	// products.margin_override_percent y ese margen pisa la tabla de tramos, en
-	// la web y en Mercado Libre. Apagado = margen automático (se guarda null).
+	// Precio manual de la WEB: prendido guarda `marginPercent` en
+	// products.margin_override_percent y ese margen pisa la tabla de tramos.
+	// Apagado = margen automático (se guarda null).
 	manualPrice: z.boolean().optional().default(false),
 	marginPercent: z
+		.number({ invalid_type_error: 'El margen tiene que ser un número' })
+		.min(0, 'El margen no puede ser negativo')
+		.max(1000, 'El margen no puede pasar de 1000%')
+		.optional()
+		.default(0),
+	// Ídem para MERCADO LIBRE, con su propio margen: en ML se vende más caro
+	// para cubrir la comisión, así que los dos canales van por separado.
+	manualPriceMl: z.boolean().optional().default(false),
+	marginPercentMl: z
 		.number({ invalid_type_error: 'El margen tiene que ser un número' })
 		.min(0, 'El margen no puede ser negativo')
 		.max(1000, 'El margen no puede pasar de 1000%')

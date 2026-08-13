@@ -425,8 +425,9 @@ export const createProduct = async (productInput: ProductInput) => {
             // Sin esto el producto queda "por consulta" (comportamiento histórico).
             online_payment: productInput.onlinePayment === true,
             fulfillment: productInput.fulfillment ?? 'propio',
-            // Margen manual (null = automático por tramo).
+            // Márgenes manuales por canal (null = automático por tramo).
             margin_override_percent: productInput.marginOverride ?? null,
+            ml_margin_override_percent: productInput.mlMarginOverride ?? null,
         })
         .select()
         .single();
@@ -567,6 +568,9 @@ export const updateProduct = async (
             ...(productInput.marginOverride === undefined
                 ? {}
                 : { margin_override_percent: productInput.marginOverride }),
+            ...(productInput.mlMarginOverride === undefined
+                ? {}
+                : { ml_margin_override_percent: productInput.mlMarginOverride }),
         })
         .eq('id', productId)
         .select()

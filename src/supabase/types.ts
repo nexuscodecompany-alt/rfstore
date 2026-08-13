@@ -709,6 +709,7 @@ export type Database = {
           images: string[]
           last_synced_at: string | null
           margin_override_percent: number | null
+          ml_margin_override_percent: number | null
           markup_percent: number | null
           name: string
           online_payment: boolean
@@ -734,6 +735,7 @@ export type Database = {
           images: string[]
           last_synced_at?: string | null
           margin_override_percent?: number | null
+          ml_margin_override_percent?: number | null
           markup_percent?: number | null
           name: string
           online_payment?: boolean
@@ -759,6 +761,7 @@ export type Database = {
           images?: string[]
           last_synced_at?: string | null
           margin_override_percent?: number | null
+          ml_margin_override_percent?: number | null
           markup_percent?: number | null
           name?: string
           online_payment?: boolean
