@@ -35,11 +35,11 @@ interface Row {
 const ROWS: Row[] = [
 	{
 		key: 'price',
-		title: 'Precio (costo de CDR)',
+		title: 'Costo',
 		pausedHint:
-			'El costo queda clavado en el que tenés cargado. CDR no lo va a mover.',
+			'Queda clavado el costo que tenés cargado. Tu precio de venta deja de moverse.',
 		syncedHint:
-			'Si CDR cambia el costo, el precio de venta se recalcula solo con tu margen.',
+			'CDR manda el costo. Cuando lo cambia, tu precio de venta se recalcula con el margen que tengas puesto.',
 	},
 	{
 		key: 'stock',
@@ -87,7 +87,7 @@ export const CdrSyncLocksModal = ({
 		<div className='fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink-950/50 p-4 backdrop-blur-sm'>
 			<div className='my-8 w-full max-w-lg rounded-2xl bg-white shadow-2xl'>
 				<div className='flex items-center justify-between border-b border-ink-100 px-5 py-4'>
-					<h2 className='text-lg font-bold text-ink-900'>Sync de CDR</h2>
+					<h2 className='text-lg font-bold text-ink-900'>Qué le copia CDR</h2>
 					<button
 						onClick={onClose}
 						disabled={submitting}

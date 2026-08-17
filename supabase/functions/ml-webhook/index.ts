@@ -109,7 +109,11 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
   const shippingUsd = toUsd(await mlShipping(order, token), order.currency_id);
 
   const { data: inserted, error: insErr } = await supabase.from('orders').insert({
-    customer_id: null, address_id: null, total_amount: total, status: 'pagado', payment_method: null, payment_status: 'paid', channel: 'ml', ml_order_id: mlOrderId, ml_pack_id: order.pack_id ? String(order.pack_id) : null, ml_currency: mlCurrency, total_original: totalOriginal, fx_rate: mlCurrency === 'UYU' && usdRate > 0 ? usdRate : 1, ml_commission_usd: commissionUsd, ml_shipping_cost_usd: shippingUsd, paid_at: order.date_closed ?? new Date().toISOString(),
+    // v13: una venta de ML ya viene COBRADA por ML, no espera confirmación de
+    // nadie, así que entra directamente como 'Concretado'. Antes entraba con
+    // 'pagado', un estado que el selector del panel no ofrece: el <select> caía
+    // en la primera opción y las 130 ventas de ML figuraban como "Cotización".
+    customer_id: null, address_id: null, total_amount: total, status: 'Concretado', payment_method: null, payment_status: 'paid', channel: 'ml', ml_order_id: mlOrderId, ml_pack_id: order.pack_id ? String(order.pack_id) : null, ml_currency: mlCurrency, total_original: totalOriginal, fx_rate: mlCurrency === 'UYU' && usdRate > 0 ? usdRate : 1, ml_commission_usd: commissionUsd, ml_shipping_cost_usd: shippingUsd, paid_at: order.date_closed ?? new Date().toISOString(),
   } as any).select('id').single();
   if (insErr || !inserted) { console.warn('orders insert ml_order:', insErr?.message); return { ok: false, error: `insert_order: ${insErr?.message ?? 'no_id'}` }; }
   const orderId = inserted.id;

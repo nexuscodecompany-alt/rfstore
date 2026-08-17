@@ -7,6 +7,18 @@
 // + "nueva venta" al admin), igual que hace mp-webhook cuando MP aprueba un
 // pago. Antes no mandaba nada: el cliente que transfería nunca se enteraba de
 // que le habíamos confirmado el pago.
+//
+// v13: los estados que escribíamos ('pagado' / 'rechazado') no existen en el
+// panel (usa Cotización / Concretado / Modificado / Cancelado), así que la orden
+// quedaba con un estado que el listado no sabía mostrar ni editar. Ahora
+// aprobar deja 'Concretado' y rechazar 'Cancelado'. El rechazo va por
+// reject_manual_payment, que devuelve el stock de forma idempotente: el RPC
+// viejo (release_order_stock) sólo hacía algo si la orden seguía en
+// 'pago_pendiente' y si no devolvía false en silencio.
+//
+// OJO: transferencia y depósito son los ÚNICOS pagos que esperan al admin. Los
+// de MercadoPago y los de Mercado Libre entran ya cobrados y sus webhooks los
+// dejan 'Concretado' directamente.
 
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
@@ -104,34 +116,26 @@ Deno.serve(async req => {
 
 			// El stock ya se decrementó al crear la orden (place_cdr_order).
 			// Acá solo marcamos pagada.
-			await supabaseAdmin
+			const { error: updErr } = await supabaseAdmin
 				.from('orders')
 				.update({
 					payment_status: 'paid',
-					status: 'pagado',
+					status: 'Concretado',
 					paid_at: new Date().toISOString(),
 				})
 				.eq('id', body.order_id);
+			if (updErr) throw new Error(updErr.message);
 
 			if (!wasPaid) {
 				mailError = await sendConfirmationMail(body.order_id);
 				mailSent = mailError === null;
 			}
 		} else {
-			// Rechazar: liberar stock (release_order_stock es idempotente)
-			try {
-				await supabaseAdmin.rpc('release_order_stock', {
-					p_order_id: body.order_id,
-					p_new_status: 'rechazado',
-				});
-			} catch (e) {
-				console.warn('release_order_stock failed:', e);
-				// Igual marcamos la orden como rechazada aunque falle el release
-				await supabaseAdmin
-					.from('orders')
-					.update({ payment_status: 'rejected', status: 'rechazado' })
-					.eq('id', body.order_id);
-			}
+			// Rechazar: cancela, devuelve stock (idempotente) y marca el pago rechazado.
+			const { error: rejErr } = await supabaseAdmin.rpc('reject_manual_payment', {
+				p_order_id: body.order_id,
+			});
+			if (rejErr) throw new Error(rejErr.message);
 		}
 
 		return new Response(JSON.stringify({ ok: true, mail_sent: mailSent, mail_error: mailError }), {

@@ -206,7 +206,15 @@
       "PowerShell(Set-Location 'C:\\\\Users\\\\Admin\\\\Desktop\\\\NexusCode-Proyectos\\\\rfstore'; npx tsc -b 2>&1 | Select-Object -Last 8; \"TSC_EXIT=$LASTEXITCODE\")",
       "Bash(npx --yes deno@2 check supabase/functions/ml-reprice-active/index.ts supabase/functions/ml-publish-item/index.ts)",
       "Skill(impeccable)",
-      "Bash(grep -n \"dashboard/productos/editar\\\\|to={\\\\`/dashboard\" src/components/dashboard/products/TableProduct.tsx)"
+      "Bash(grep -n \"dashboard/productos/editar\\\\|to={\\\\`/dashboard\" src/components/dashboard/products/TableProduct.tsx)",
+      "Bash(mkdir -p \"/c/Users/Admin/Desktop/guia-rfstore/img\")",
+      "Read(//c/Users/Admin/AppData/Local/Temp/claude-chrome-screenshots-EVFeqO/**)",
+      "Bash(cp screenshot-1786638103479-2.jpg \"/c/Users/Admin/Desktop/guia-rfstore/img/1-auto.jpg\")",
+      "Bash(cp screenshot-1786638158118-3.jpg \"/c/Users/Admin/Desktop/guia-rfstore/img/2-manual.jpg\")",
+      "Bash(cp screenshot-1786638182795-4.jpg \"/c/Users/Admin/Desktop/guia-rfstore/img/3-precio.jpg\")",
+      "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --disable-gpu --no-pdf-header-footer --print-to-pdf=\"C:\\\\Users\\\\Admin\\\\Desktop\\\\guia-rfstore\\\\Guia-precio-manual-RF-Store.pdf\" \"file:///C:/Users/Admin/Desktop/guia-rfstore/guia.html\")",
+      "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { $c.Source; supabase --version } else { \"no supabase cli\" }; $n = Get-Command npx -ErrorAction SilentlyContinue; if \\($n\\) { \"npx ok\" })",
+      "PowerShell(supabase functions *)"
     ]
   }
 }

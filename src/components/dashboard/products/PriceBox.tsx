@@ -17,6 +17,12 @@ interface Props {
 	setValue: UseFormSetValue<ProductFormValues>;
 	categoryId: string;
 	subcategoryId?: string;
+	/** Producto del catálogo de CDR: sólo ahí hay costo sincronizado que congelar. */
+	isCdrProduct?: boolean;
+	/** products.price_locked: el costo está congelado y CDR no lo pisa. */
+	costLocked?: boolean;
+	/** Abre el modal de candados desde acá. */
+	onEditSync?: () => void;
 }
 
 const money = (n: number) =>
@@ -236,6 +242,9 @@ export const PriceBox = ({
 	setValue,
 	categoryId,
 	subcategoryId,
+	isCdrProduct = false,
+	costLocked = false,
+	onEditSync,
 }: Props) => {
 	const pricing = usePricingConfig();
 	const { data: mlPricingCfg } = useQuery({
@@ -254,12 +263,43 @@ export const PriceBox = ({
 
 	return (
 		<div className="mt-4">
-			<div className="mb-2 flex items-baseline justify-between gap-3">
+			<div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
 				<h3 className="text-sm font-bold text-slate-800">Precio de venta</h3>
 				<span className="text-xs text-slate-500">
 					Cada canal tiene su margen: se ajustan por separado.
 				</span>
 			</div>
+
+			{/* De dónde sale el COSTO, que es la otra mitad del precio. Se muestra acá
+			    para que no haya que adivinar por qué un precio se mueve solo: el margen
+			    lo ponés vos, el costo lo puede seguir moviendo CDR. */}
+			{isCdrProduct && cost > 0 && (
+				<div
+					className={`mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-xs ${
+						costLocked
+							? 'border-amber-200 bg-amber-50 text-amber-900'
+							: 'border-slate-200 bg-slate-50 text-slate-600'
+					}`}
+				>
+					<span>
+						<span className="font-bold">
+							{costLocked ? 'Costo congelado' : 'Costo sincronizado con CDR'}
+						</span>
+						{costLocked
+							? ' — CDR no lo toca, tu precio queda clavado.'
+							: ' — si CDR lo cambia, el precio final se recalcula con tu margen.'}
+					</span>
+					{onEditSync && (
+						<button
+							type="button"
+							onClick={onEditSync}
+							className="shrink-0 font-semibold text-brand-700 underline underline-offset-2 hover:text-brand-800"
+						>
+							{costLocked ? 'Volver a sincronizar' : 'Congelar costo'}
+						</button>
+					)}
+				</div>
+			)}
 
 			<div className="grid gap-3 md:grid-cols-2">
 				<ChannelPanel
@@ -288,10 +328,10 @@ export const PriceBox = ({
 				/>
 			</div>
 
-			{(manualWeb || manualMl) && (
+			{(manualWeb || manualMl) && isCdrProduct && !costLocked && (
 				<p className="mt-2 text-xs text-slate-500">
-					Al guardar te vamos a preguntar qué querés que CDR deje de tocar en este
-					producto, para que el costo no se mueva solo.
+					Al guardar te preguntamos si querés congelar el costo, así el precio que
+					fijaste no se mueve cuando CDR cambie el suyo.
 				</p>
 			)}
 		</div>

@@ -583,6 +583,16 @@ export const formatDateLong = (date: string): string => {
 	});
 };
 
+// Sólo la hora, para acompañar a la fecha en los listados: "13:49".
+// Se muestra en la hora local del navegador (en Uruguay, UTC-3): en la base los
+// timestamps van en UTC, así que la orden de las 10:49 figuraba como 13:49.
+export const formatTimeShort = (date: string): string =>
+	new Date(date).toLocaleTimeString('es-UY', {
+		hour: '2-digit',
+		minute: '2-digit',
+		hour12: false,
+	});
+
 // Función para formatear la fecha a formato dd/mm/yyyy
 export const formatDate = (date: string): string => {
 	const dateObject = new Date(date);
@@ -609,28 +619,56 @@ export const getStatus = (status: string): string => {
 	}
 };
 
-// Estilos de badge según el estado de la orden (panel admin)
+// Estilos de badge según el estado de la orden (panel admin). Contempla los dos
+// juegos de estados que conviven: los que pone el ADMIN a mano (Cotización,
+// Concretado, Modificado, Cancelado) y los que pone el SISTEMA al cobrar o
+// vencer un pedido (pagado, pago_pendiente, expirado, rechazado).
 export const orderStatusBadge = (status: string): string => {
 	switch (status) {
 		case 'Concretado':
+		case 'pagado':
 			return 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200';
 		case 'Cancelado':
+		case 'rechazado':
 			return 'bg-rose-50 text-rose-700 ring-1 ring-rose-200';
 		case 'Modificado':
+		case 'pago_pendiente':
 			return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200';
 		case 'Cotización':
 			return 'bg-brand-50 text-brand-700 ring-1 ring-brand-200';
+		case 'expirado':
+			return 'bg-ink-100 text-ink-600 ring-1 ring-ink-200';
 		default:
 			return 'bg-ink-100 text-ink-700 ring-1 ring-ink-200';
 	}
 };
 
+// Estados que el admin puede elegir a mano.
 export const orderStatusOptions = [
 	'Cotización',
 	'Concretado',
 	'Modificado',
 	'Cancelado',
 ];
+
+/**
+ * Texto legible de un estado. Los que pone el sistema vienen en minúscula y con
+ * guión bajo; sin esto, la ficha de la orden mostraba "pago_pendiente" crudo.
+ */
+export const orderStatusLabel = (status: string): string => {
+	switch (status) {
+		case 'pagado':
+			return 'Pagado';
+		case 'pago_pendiente':
+			return 'Pago pendiente';
+		case 'expirado':
+			return 'Expirado';
+		case 'rechazado':
+			return 'Rechazado';
+		default:
+			return status;
+	}
+};
 
 // Función para formatear fecha y hora: 4 may 2026, 17:32
 export const formatDateTime = (date: string): string => {

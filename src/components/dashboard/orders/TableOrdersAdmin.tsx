@@ -6,9 +6,11 @@ import { HiChevronRight, HiOutlineShoppingCart } from 'react-icons/hi2';
 import { confirmManualPayment } from '../../../actions';
 import {
 	formatDateLong,
+	formatTimeShort,
 	formatPrice,
 	formatMoneyCur,
 	orderStatusBadge,
+	orderStatusLabel,
 	orderStatusOptions,
 	isUnpaidMpCheckout,
 	isTrulyAbandoned,
@@ -43,14 +45,38 @@ interface OrderRow {
 	ids: number[]; // todas las órdenes que agrupa (1 si no es pack)
 	realTotal: number; // total en la MONEDA REAL de la venta (pesos ML, USD web)
 	currency: 'UYU' | 'USD';
+	altTotal: number | null; // el mismo total en la otra moneda (null si no aplica)
+	altCurrency: 'UYU' | 'USD';
 	count: number; // cantidad de pedidos del pack
 }
 
 // Moneda y monto REAL de la venta: pesos para ML/UYU (total_original), dólares para web.
 const realCurrency = (o: OrderWithCustomer): 'UYU' | 'USD' =>
 	o.ml_currency === 'UYU' ? 'UYU' : 'USD';
+// OJO: total_original NO es siempre la moneda real de la venta. En las órdenes web
+// guarda el monto en PESOS que cobró MercadoPago (total_amount × fx_rate), y ahí
+// ml_currency viene null. Tomarlo sin mirar la moneda mostraba el número en pesos
+// con la etiqueta USD: una venta web de USD 307 figuraba como "USD 12.618,00".
+// Mismo criterio que manualSales.ts y que la ficha de la orden.
 const realTotalOf = (o: OrderWithCustomer): number =>
-	o.total_original != null ? Number(o.total_original) : Number(o.total_amount ?? 0);
+	realCurrency(o) === 'UYU' && o.total_original != null
+		? Number(o.total_original)
+		: Number(o.total_amount ?? 0);
+
+// La contracara del total: lo mismo expresado en la OTRA moneda. En la web el
+// cliente compra en dólares y MercadoPago cobra en pesos; en ML la venta es en
+// pesos y el número interno de RF es en dólares. Mostrar las dos saca la duda de
+// "¿esto son pesos o dólares?" y sirve para conciliar contra lo que deposita la
+// pasarela. Devuelve null cuando no hay conversión (venta manual en USD, o sin
+// cotización guardada), para no repetir el mismo número dos veces.
+const altCurrencyOf = (o: OrderWithCustomer): 'UYU' | 'USD' =>
+	realCurrency(o) === 'UYU' ? 'USD' : 'UYU';
+const altTotalOf = (o: OrderWithCustomer): number | null => {
+	const usd = Number(o.total_amount ?? 0);
+	const original = o.total_original != null ? Number(o.total_original) : null;
+	if (original == null || Math.abs(original - usd) < 0.01) return null;
+	return realCurrency(o) === 'UYU' ? usd : original;
+};
 
 const groupByPack = (list: OrderWithCustomer[]): OrderRow[] => {
 	const rows: OrderRow[] = [];
@@ -61,6 +87,11 @@ const groupByPack = (list: OrderWithCustomer[]): OrderRow[] => {
 			const row = rows[packIndex.get(pack)!];
 			row.ids.push(o.id);
 			row.realTotal += realTotalOf(o);
+			// El equivalente en la otra moneda sólo se suma si TODOS los pedidos del
+			// pack lo tienen: una suma parcial sería peor que no mostrar nada.
+			const alt = altTotalOf(o);
+			row.altTotal =
+				row.altTotal != null && alt != null ? row.altTotal + alt : null;
 			row.count += 1;
 			continue;
 		}
@@ -71,6 +102,8 @@ const groupByPack = (list: OrderWithCustomer[]): OrderRow[] => {
 			ids: [o.id],
 			realTotal: realTotalOf(o),
 			currency: realCurrency(o),
+			altTotal: altTotalOf(o),
+			altCurrency: altCurrencyOf(o),
 			count: 1,
 		});
 	}
@@ -83,22 +116,31 @@ const StatusSelect = ({
 }: {
 	value: string;
 	onChange: (status: string) => void;
-}) => (
-	<select
-		value={value}
-		onClick={e => e.stopPropagation()}
-		onChange={e => onChange(e.target.value)}
-		className={`cursor-pointer rounded-full border-0 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide outline-none focus:ring-2 focus:ring-brand-300 ${orderStatusBadge(
-			value
-		)}`}
-	>
-		{orderStatusOptions.map(option => (
-			<option value={option} key={option} className='bg-white text-ink-800'>
-				{option}
-			</option>
-		))}
-	</select>
-);
+}) => {
+	// El estado puede venir del SISTEMA ('pagado', 'expirado', 'rechazado') y no
+	// estar entre los que el admin elige a mano. Un <select> cuyo value no matchea
+	// ninguna option renderiza la PRIMERA: todas las órdenes pagadas (web y ML) se
+	// veían como "Cotización". Metemos el estado actual al principio de la lista.
+	const options = orderStatusOptions.includes(value)
+		? orderStatusOptions
+		: [value, ...orderStatusOptions];
+	return (
+		<select
+			value={value}
+			onClick={e => e.stopPropagation()}
+			onChange={e => onChange(e.target.value)}
+			className={`cursor-pointer rounded-full border-0 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide outline-none focus:ring-2 focus:ring-brand-300 ${orderStatusBadge(
+				value
+			)}`}
+		>
+			{options.map(option => (
+				<option value={option} key={option} className='bg-white text-ink-800'>
+					{orderStatusLabel(option)}
+				</option>
+			))}
+		</select>
+	);
+};
 
 export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 	const navigate = useNavigate();
@@ -261,7 +303,12 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 											</div>
 										</td>
 										<td className='px-5 py-4 text-ink-600'>
-											{formatDateLong(row.rep.created_at)}
+											<span className='block'>
+												{formatDateLong(row.rep.created_at)}
+											</span>
+											<span className='block text-xs tabular-nums text-ink-400'>
+												{formatTimeShort(row.rep.created_at)}
+											</span>
 										</td>
 										<td className='px-5 py-4'>
 											<StatusSelect
@@ -276,8 +323,15 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 												</span>
 											)}
 										</td>
-										<td className='px-5 py-4 text-right font-semibold text-ink-900'>
-											{formatMoneyCur(row.realTotal, row.currency)}
+										<td className='px-5 py-4 text-right'>
+											<span className='block font-semibold tabular-nums text-ink-900'>
+												{formatMoneyCur(row.realTotal, row.currency)}
+											</span>
+											{row.altTotal != null && (
+												<span className='block text-[11px] tabular-nums text-ink-400'>
+													≈ {formatMoneyCur(row.altTotal, row.altCurrency)}
+												</span>
+											)}
 										</td>
 										<td className='px-5 py-4 text-ink-300'>
 											<HiChevronRight size={18} />
@@ -320,11 +374,21 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 											{rowSub(row)}
 										</p>
 										<p className='mt-1 text-xs text-ink-400'>
-											{formatDateLong(row.rep.created_at)}
+											{formatDateLong(row.rep.created_at)} ·{' '}
+											<span className='tabular-nums'>
+												{formatTimeShort(row.rep.created_at)}
+											</span>
 										</p>
 									</div>
-									<span className='shrink-0 font-bold text-ink-900'>
-										{formatMoneyCur(row.realTotal, row.currency)}
+									<span className='shrink-0 text-right'>
+										<span className='block font-bold tabular-nums text-ink-900'>
+											{formatMoneyCur(row.realTotal, row.currency)}
+										</span>
+										{row.altTotal != null && (
+											<span className='block text-[11px] tabular-nums text-ink-400'>
+												≈ {formatMoneyCur(row.altTotal, row.altCurrency)}
+											</span>
+										)}
 									</span>
 								</div>
 								<div className='mt-3' onClick={e => e.stopPropagation()}>

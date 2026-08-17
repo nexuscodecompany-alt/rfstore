@@ -455,6 +455,22 @@ export const FormProduct = ({ titleForm }: Props) => {
             setValue={setValue}
             categoryId={watchCategory}
             subcategoryId={watch("subcategoryId")}
+            isCdrProduct={isCdrProduct}
+            costLocked={(product as { price_locked?: boolean } | undefined)?.price_locked === true}
+            onEditSync={
+              product?.id
+                ? () => {
+                    // Abierto a mano: no hay guardado pendiente, sólo se tocan los candados.
+                    setPendingSubmit(null);
+                    setLocksValue({
+                      price: (product as { price_locked?: boolean }).price_locked === true,
+                      content: (product as { content_locked?: boolean }).content_locked === true,
+                      stock: (product as { stock_locked?: boolean }).stock_locked === true,
+                    });
+                    setLocksModalOpen(true);
+                  }
+                : undefined
+            }
           />
 
           {/* Forma de venta: pago online vs. consulta por WhatsApp.
@@ -552,7 +568,11 @@ export const FormProduct = ({ titleForm }: Props) => {
         productName={product?.name ?? watch("name")}
         value={locksValue}
         submitting={isSettingSyncLocks || isUpdatePending}
-        intro="Le pusiste precio manual a este producto. ¿Qué querés que CDR deje de tocar? Al guardar se aplican estos candados y se guarda el producto."
+        intro={
+          pendingSubmit
+            ? "Le pusiste precio manual. Si congelás el costo, el precio que fijaste no se mueve más; lo que dejes destildado lo sigue actualizando CDR. Al guardar se aplican los candados y se guarda el producto."
+            : undefined
+        }
         onClose={() => {
           setLocksModalOpen(false);
           setPendingSubmit(null);

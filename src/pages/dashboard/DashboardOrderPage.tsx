@@ -27,6 +27,7 @@ import {
 	formatPriceCurrency,
 	formatDateTime,
 	orderStatusBadge,
+	orderStatusLabel,
 	formatPhoneUy,
 	normalizePhoneUy,
 	whatsappLink,
@@ -235,7 +236,7 @@ export const DashboardOrderPage = () => {
 							order.status
 						)}`}
 					>
-						{order.status}
+						{orderStatusLabel(order.status)}
 					</span>
 				</div>
 			</div>
