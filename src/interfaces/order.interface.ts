@@ -36,6 +36,10 @@ export interface OrderWithCustomer {
 	ml_pack_id?: string | null;
 	payment_method?: string | null;
 	payment_status?: string | null;
+	/** Pago combinado: cuánto entró por cada vía. Sirve para distinguir una
+	 *  híbrida a medio cobrar (venta real) de una que nadie llegó a pagar. */
+	paid_mp_usd?: number | null;
+	paid_transfer_usd?: number | null;
 	concept_id?: string | null;
 	manual_description?: string | null;
 	sale_concepts?: { name: string } | null;

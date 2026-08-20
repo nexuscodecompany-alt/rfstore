@@ -232,10 +232,14 @@ export const uploadPaymentProof = async (orderId: number, file: File) => {
 		.from('payment-proofs')
 		.createSignedUrl(path, 60 * 60 * 24 * 7);
 
-	const { error: orderErr } = await supabase
-		.from('orders')
-		.update({ payment_proof_url: path, payment_status: 'pending' })
-		.eq('id', orderId);
+	// Vía RPC y no con un update directo: la tabla `orders` ya no acepta
+	// escrituras del cliente (podía marcarse la orden como pagada sola). Esta
+	// función valida que el pedido sea suyo y sólo escribe el comprobante.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { error: orderErr } = await (supabase.rpc as any)('set_payment_proof', {
+		p_order_id: orderId,
+		p_path: path,
+	});
 	if (orderErr) throw new Error(orderErr.message);
 
 	return { path, signedUrl: signed?.signedUrl ?? null };

@@ -1,5 +1,11 @@
 // deno-lint-ignore-file no-explicit-any
-// mp-create-preference v24 (2026-08-11)
+// mp-create-preference v29 (2026-08-20)
+//  - EL STOCK YA NO SE RESERVA AL CREAR LA ORDEN. Sale del catálogo recién
+//    cuando MercadoPago confirma el pago. Decisión del dueño: el 99% del
+//    catálogo es dropship de CDR, reservar de nuestro lado no reserva nada allá
+//    y le bloqueaba la compra a quien sí iba a pagar.
+//
+// v24 (2026-08-11)
 //  - Envio gratis SOLO en Montevideo (>= USD 150). La zona metropolitana llega
 //    por agencia y se cobra siempre; el interior va por DAC y lo abona el
 //    cliente al retirar (nunca entra en el total).
@@ -73,7 +79,7 @@ interface ReqBody {
 	coupon_code?: string;
 	invoice?: InvoiceData | null;
 	// --- Modo pago combinado ---
-	// La orden ya existe (la creó place_cdr_order con su stock reservado): acá
+	// La orden ya existe (la creó place_cdr_order, sin tomar stock): acá
 	// sólo se pide el link de pago por la parte que va con tarjeta.
 	existing_order_id?: number;
 	amount_usd?: number;
@@ -89,9 +95,9 @@ Deno.serve(async req => {
 		const body: ReqBody = await req.json();
 
 		// ============ MODO PAGO COMBINADO ============
-		// La orden ya existe y el stock ya está reservado. Sólo hay que cobrar la
-		// parte de MercadoPago. NO se recalcula el carrito ni se toca el stock: eso
-		// ya lo hizo place_cdr_order.
+		// La orden ya existe. Sólo hay que cobrar la parte de MercadoPago; el
+		// carrito no se recalcula. El stock lo toma register_hybrid_payment cuando
+		// esta parte se cobre de verdad.
 		if (body.existing_order_id) {
 			const { data: userData, error: userErr } = await supabaseUser.auth.getUser();
 			if (userErr || !userData.user) return new Response(JSON.stringify({ error: 'no autenticado' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -137,9 +143,8 @@ Deno.serve(async req => {
 			const prefResp = await fetch('https://api.mercadopago.com/checkout/preferences', { method: 'POST', headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(prefBody) });
 			if (!prefResp.ok) {
 				const errText = await prefResp.text();
-				// NO se cancela la orden: el stock sigue reservado y el admin puede
-				// reintentar el cobro. Cancelarla acá perdería la venta entera por un
-				// error de la pasarela.
+				// NO se cancela la orden: el admin puede reintentar el cobro.
+				// Cancelarla acá perdería la venta entera por un error de la pasarela.
 				throw new Error(`MP API ${prefResp.status}: ${errText.slice(0, 500)}`);
 			}
 			const pref = await prefResp.json();
@@ -331,7 +336,9 @@ Deno.serve(async req => {
 		const { error: itemsErr } = await supabaseAdmin.from('order_items').insert(lineTotals.map(l => ({ order_id: orderRow.id, variant_id: l.variant_id, price: l.unit_final_usd, quantity: l.quantity, cost_usd: costByVariant.get(l.variant_id) || null, is_extra: l.is_extra === true, extra_source: l.is_extra === true ? l.extra_source ?? null : null })));
 		if (itemsErr) throw new Error(`order_items: ${itemsErr.message}`);
 
-		for (const l of lineTotals) { const { data: v } = await supabaseAdmin.from('variants').select('stock').eq('id', l.variant_id).single(); if (!v) continue; await supabaseAdmin.from('variants').update({ stock: Math.max(0, Number(v.stock) - l.quantity) }).eq('id', l.variant_id); }
+		// El stock NO se descuenta al generar el link: todavía no pagó nadie. Se
+		// descuenta cuando MercadoPago confirma el pago (mp-webhook -> take_order_stock).
+		// Antes se reservaba acá y quedaba trabado 6 h por cada checkout abandonado.
 
 		const mpItems: Array<{ title: string; quantity: number; currency_id: string; unit_price: number }> = lineTotals.map(l => ({ title: l.title, quantity: l.quantity, currency_id: curId, unit_price: Math.max(minUnit, toCharge(l.unit_final_usd * priceFactor)) }));
 		if (shippingCharge > 0) {

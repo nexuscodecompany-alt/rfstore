@@ -5,10 +5,29 @@ import { supabase } from '../supabase/client';
 /*  CLASIFICACIÓN DE ÓRDENES (panel admin)                                 */
 /* ====================================================================== */
 
-// Un "checkout sin pagar": orden de Mercado Pago que nunca se pagó. El cliente
-// llegó al pago y no lo completó. NO es una venta.
-export const isUnpaidMpCheckout = (o: OrderWithCustomer): boolean =>
-	o.payment_method === 'mercadopago' && o.payment_status !== 'paid';
+/**
+ * Un "checkout sin pagar": el cliente llegó a la pasarela y no completó. NO es
+ * una venta y no tiene que ensuciar el listado de órdenes.
+ *
+ * La orden existe igual porque al crearla se RESERVA el stock (si no, dos
+ * personas compran la última unidad). Después vence sola y lo devuelve.
+ *
+ * Incluye el PAGO COMBINADO, pero sólo cuando no entró NADA: si ya se cobró una
+ * de las dos partes es una venta de verdad esperando la otra, y esa sí va en el
+ * listado con su cartel de "no despachar".
+ */
+export const isUnpaidMpCheckout = (o: OrderWithCustomer): boolean => {
+	if (o.payment_status === 'paid') return false;
+	if (o.payment_method === 'mercadopago') return true;
+	if (o.payment_method === 'hybrid') {
+		const cobrado =
+			(Number(o.paid_mp_usd) || 0) + (Number(o.paid_transfer_usd) || 0);
+		return cobrado <= 0;
+	}
+	// Transferencia y depósito NO son abandonos: el cliente eligió pagar por
+	// fuera y hay que esperarlo.
+	return false;
+};
 
 // Ventana para considerar que un checkout sin pagar fue en realidad un REINTENTO
 // de una compra que el mismo cliente sí completó después (típicamente minutos).

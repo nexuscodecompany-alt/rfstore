@@ -36,6 +36,29 @@ const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, {
 	auth: { persistSession: false, autoRefreshToken: false },
 });
 
+/**
+ * Saca del catálogo las unidades del pedido. Se llama con la plata ya
+ * confirmada. Idempotente: confirmar dos veces no descuenta dos veces.
+ *
+ * Devuelve el detalle de lo que faltó, si faltó algo. No se puede rechazar el
+ * cobro a esta altura, así que la orden queda marcada y el admin lo resuelve.
+ */
+async function tomarStock(orderId: number): Promise<any[]> {
+	try {
+		const { data, error } = await supabaseAdmin.rpc('take_order_stock', { p_order_id: orderId });
+		if (error) { console.error(`[manual-payment-confirm] take_order_stock ${orderId}: ${error.message}`); return []; }
+		const faltantes = (data as any)?.faltantes ?? [];
+		if (Array.isArray(faltantes) && faltantes.length > 0) {
+			console.error(`[manual-payment-confirm] ORDEN ${orderId} CONFIRMADA SIN STOCK:`, JSON.stringify(faltantes));
+			return faltantes;
+		}
+		return [];
+	} catch (e) {
+		console.error('[manual-payment-confirm] tomarStock:', e);
+		return [];
+	}
+}
+
 /** Mail de "pago confirmado" (cliente) + "nueva venta" (admin). No bloqueante. */
 async function sendConfirmationMail(orderId: number): Promise<string | null> {
 	try {
@@ -135,6 +158,7 @@ Deno.serve(async req => {
 
 		let mailError: string | null = null;
 		let mailSent = false;
+		let faltantes: any[] = [];
 
 		if (body.action === 'approve') {
 			// Si ya estaba pagada, no reenviamos el mail (aprobar dos veces no debe
@@ -159,6 +183,12 @@ Deno.serve(async req => {
 				});
 				if (hybErr) throw new Error(hybErr.message);
 
+				// register_hybrid_payment toma el stock por dentro apenas entra la
+				// primera parte. Acá sólo levantamos el faltante, si hubo.
+				const { data: post } = await supabaseAdmin
+					.from('orders').select('stock_shortfall').eq('id', body.order_id).single();
+				const faltaHib = Array.isArray(post?.stock_shortfall) ? (post!.stock_shortfall as any[]) : [];
+
 				if (completa === true) {
 					mailError = await sendConfirmationMail(body.order_id);
 					mailSent = mailError === null;
@@ -172,13 +202,12 @@ Deno.serve(async req => {
 						pending_part: completa === true ? null : faltaMp ? 'mercadopago' : null,
 						mail_sent: mailSent,
 						mail_error: mailError,
+						stock_shortfall: faltaHib,
 					}),
 					{ status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
 				);
 			}
 
-			// El stock ya se decrementó al crear la orden (place_cdr_order).
-			// Acá solo marcamos pagada.
 			const { error: updErr } = await supabaseAdmin
 				.from('orders')
 				.update({
@@ -188,6 +217,11 @@ Deno.serve(async req => {
 				})
 				.eq('id', body.order_id);
 			if (updErr) throw new Error(updErr.message);
+
+			// Desde el 20/08/2026 la orden por transferencia NO reserva stock: las
+			// unidades salen del catálogo recién acá, cuando el admin confirma que
+			// la plata entró.
+			faltantes = await tomarStock(body.order_id);
 
 			if (!wasPaid) {
 				mailError = await sendConfirmationMail(body.order_id);
@@ -201,10 +235,10 @@ Deno.serve(async req => {
 			if (rejErr) throw new Error(rejErr.message);
 		}
 
-		return new Response(JSON.stringify({ ok: true, mail_sent: mailSent, mail_error: mailError }), {
-			status: 200,
-			headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-		});
+		return new Response(
+			JSON.stringify({ ok: true, mail_sent: mailSent, mail_error: mailError, stock_shortfall: faltantes }),
+			{ status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+		);
 	} catch (e) {
 		const msg = e instanceof Error ? e.message : String(e);
 		return new Response(JSON.stringify({ error: msg }), {

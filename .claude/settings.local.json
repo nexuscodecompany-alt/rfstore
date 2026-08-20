@@ -234,7 +234,11 @@
       "PowerShell(npx tsc --noEmit -p tsconfig.app.json 2>&1 | Select-Object -First 15; if \\($?\\) { \"TYPECHECK OK\" })",
       "PowerShell(npx tsc --noEmit -p tsconfig.app.json 2>&1 | Select-Object -First 12; if \\($?\\) { \"TYPECHECK OK\" })",
       "Bash(python3 -)",
-      "Bash(npx --yes esbuild@0.23.0 supabase/functions/send-transfer-email/index.ts supabase/functions/expire-pending-orders/index.ts --loader:.ts=ts --format=esm --outdir=/tmp/chk2)"
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/send-transfer-email/index.ts supabase/functions/expire-pending-orders/index.ts --loader:.ts=ts --format=esm --outdir=/tmp/chk2)",
+      "Bash(grep -E \"\\\\.\\(update|insert|upsert|delete\\)\\\\\\(|^\\\\s*$\")",
+      "Bash(npx deno *)",
+      "Bash(cp \"C:/Users/Admin/Desktop/NexusCode-Proyectos/rfstore/public/img/img-docs/logonegrorf.jpg\" .)",
+      "Bash(cp \"C:/Users/Admin/Desktop/NexusCode-Proyectos/rfstore/public/img/img-docs/logoblancorf.jpg\" .)"
     ]
   }
 }

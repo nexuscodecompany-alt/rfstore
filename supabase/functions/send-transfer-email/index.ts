@@ -23,6 +23,15 @@
 //    momento y podía mostrar otro número que el que vio el cliente al comprar.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
+// Encabezado con el logo, arriba de todo. El archivo vive en el sitio público
+// (los clientes de mail no leen assets locales) y es JPG de fondo blanco, así
+// que la banda que lo contiene también va en blanco.
+// OJO: el mail de carrito abandonado NO lleva logo a propósito — se midió que
+// las imágenes lo mandan a la pestaña Promociones de Gmail.
+const LOGO_ROW =
+	`<tr><td align="center" style="padding:24px 28px 6px;background:#ffffff;"><img src="https://www.rfstore.uy/img/img-docs/logoblancorf.jpg" width="46" height="46" alt="RF Store" style="display:block;border:0;outline:none;text-decoration:none;"></td></tr>`;
+
+
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const ANON = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -263,7 +272,7 @@ function renderEmail(opts: {
 	const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">
       <tr><td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;">
+        <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;">${LOGO_ROW}
           <tr><td style="padding:24px 32px;background:#111;color:#fff;">
             <h1 style="margin:0;font-size:20px;">RF Store</h1>
           </td></tr>
@@ -334,7 +343,7 @@ function renderProofEmail(opts: {
 	const subject = `📎 Comprobante subido — Pedido #${orderId} — USD ${totalUsd.toFixed(0)}`;
 	const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;"><tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;">${LOGO_ROW}
         <tr><td style="padding:20px 28px;background:#0ea5e9;color:#fff;">
           <h1 style="margin:0;font-size:18px;">📎 Comprobante subido — Pedido #${orderId}</h1>
           <p style="margin:4px 0 0;opacity:0.95;font-size:13px;">${escapeHtml(metodo)} — USD ${totalUsd.toFixed(0)}</p>
@@ -417,7 +426,7 @@ function renderAdminEmail(opts: {
 
 	const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;"><tr><td align="center">
-      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:600px;">${LOGO_ROW}
         <tr><td style="padding:20px 28px;background:${hybrid ? '#dc2626' : '#f59e0b'};color:#fff;">
           <h1 style="margin:0;font-size:18px;">${hybrid ? '⚠️' : '🕒'} Pedido #${orderId} ${hybrid ? '— pago combinado' : 'esperando pago'}</h1>
           <p style="margin:4px 0 0;opacity:0.95;font-size:13px;">${escapeHtml(metodo)} — ${totalLabel}</p>

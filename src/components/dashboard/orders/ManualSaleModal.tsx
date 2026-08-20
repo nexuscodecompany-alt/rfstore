@@ -18,8 +18,17 @@ import {
 	useUsdUyuRate,
 } from '../../../hooks';
 import { supabase } from '../../../supabase/client';
-import { sendManualSaleConfirmation } from '../../../actions';
-import type { ManualSale, ManualSaleItem } from '../../../actions';
+import {
+	sendManualSaleConfirmation,
+	sendManualSalePaymentLink,
+	manualPaymentMethodLabels,
+	manualPaymentMethodOptions,
+} from '../../../actions';
+import type {
+	ManualSale,
+	ManualSaleItem,
+	ManualPaymentMethod,
+} from '../../../actions';
 import { formatMoneyCur, formatDateLong } from '../../../helpers';
 
 type Currency = 'USD' | 'UYU';
@@ -137,7 +146,21 @@ const ViewManualSale = ({
 		onError: (e: Error) => toast.error(e.message),
 	});
 
+	// Cobro pendiente: le manda al cliente cómo pagar (link de MP, datos de
+	// Abitab, o las dos cosas si es combinado). En transferencia no aplica: esos
+	// datos los pasa el admin en persona.
+	const enviarCobro = useMutation({
+		mutationFn: sendManualSalePaymentLink,
+		onSuccess: r => toast.success(`Cobro enviado a ${r.sentTo}`),
+		onError: (e: Error) => toast.error(e.message),
+	});
+
 	if (!sale) return <p className='text-sm text-ink-500'>Cargando…</p>;
+
+	const puedeEnviarCobro =
+		!sale.paid &&
+		!!sale.customer?.email &&
+		['mercadopago', 'hybrid', 'deposit'].includes(sale.paymentMethod);
 
 	return (
 		<div className='space-y-4'>
@@ -145,6 +168,68 @@ const ViewManualSale = ({
 				<Info label='Fecha' value={formatDateLong(sale.created_at)} />
 				<Info label='Concepto' value={sale.conceptName ?? '—'} />
 				<Info label='Descripción' value={sale.description || '—'} full />
+			</div>
+
+			{/* Cómo se cobra. Antes no se guardaba y todas figuraban como MercadoPago. */}
+			<div className='rounded-xl border border-ink-200 bg-white p-3'>
+				<div className='grid grid-cols-2 gap-3 text-sm'>
+					<Info
+						label='Método de pago'
+						value={
+							sale.paymentMethod
+								? manualPaymentMethodLabels[sale.paymentMethod]
+								: 'Sin especificar'
+						}
+					/>
+					<Info label='Estado' value={sale.paid ? 'Cobrada' : 'Pendiente de cobro'} />
+					{sale.paymentSplit && (
+						<Info
+							label='Reparto'
+							value={`MercadoPago ${formatMoneyCur(
+								sale.paymentSplit.mercadopago,
+								sale.currency
+							)} · Transferencia ${formatMoneyCur(
+								sale.paymentSplit.transfer,
+								sale.currency
+							)}`}
+							full
+						/>
+					)}
+				</div>
+
+				{!sale.paid && (
+					<div className='mt-3 space-y-2'>
+						<p className='rounded-md bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900'>
+							Todavía no entró la plata, así que <b>no descontó stock</b>. Cuando
+							cobres, marcala como cobrada desde el listado de órdenes.
+						</p>
+
+						{puedeEnviarCobro ? (
+							<button
+								type='button'
+								disabled={enviarCobro.isPending}
+								onClick={() => enviarCobro.mutate(sale.id)}
+								className='rounded-lg bg-ink-900 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50'
+							>
+								{enviarCobro.isPending
+									? 'Enviando…'
+									: sale.paymentMethod === 'hybrid'
+									? 'Enviar link de MP + datos bancarios'
+									: sale.paymentMethod === 'mercadopago'
+									? 'Enviar link de MercadoPago'
+									: 'Enviar datos de Abitab / Redpagos'}
+							</button>
+						) : (
+							<p className='text-[12px] text-ink-500'>
+								{!sale.paymentMethod
+									? 'Editá la venta y elegí el método de pago para poder mandarle el cobro.'
+									: sale.paymentMethod === 'transfer'
+									? 'En transferencia los datos de la cuenta se los pasás vos: no se manda mail.'
+									: 'Cargale el mail del cliente para poder mandarle el cobro.'}
+							</p>
+						)}
+					</div>
+				)}
 			</div>
 
 			{/* Cliente: sólo si la venta lo tiene cargado. Es lo que habilita el
@@ -346,6 +431,19 @@ const ManualSaleForm = ({
 		state: sale?.address?.state ?? '',
 		postalCode: sale?.address?.postalCode ?? '',
 	});
+	// Cómo paga y si ya pagó. Antes esto no se preguntaba: la venta se guardaba
+	// sin método y el listado la mostraba como MercadoPago.
+	// Arranca VACÍO a propósito, también en el alta: el bug que reportó el dueño
+	// era justamente que la venta se guardaba con un método que nadie eligió.
+	// En una venta vieja, dejarlo vacío manda null y el RPC no lo toca.
+	const [metodoPago, setMetodoPago] = useState<ManualPaymentMethod | ''>(
+		sale?.paymentMethod ?? ''
+	);
+	const [yaCobrada, setYaCobrada] = useState(sale ? sale.paid : true);
+	const [montoMp, setMontoMp] = useState(
+		sale?.paymentSplit ? String(Math.round(sale.paymentSplit.mercadopago * 100) / 100) : ''
+	);
+
 	const [quiereFactura, setQuiereFactura] = useState(!!sale?.invoice);
 	const [factura, setFactura] = useState({
 		rut: sale?.invoice?.rut ?? '',
@@ -359,6 +457,12 @@ const ManualSaleForm = ({
 	const rutDigits = factura.rut.replace(/\D/g, '');
 
 	const n = (s: string) => Number(s) || 0;
+	const cobrada = yaCobrada;
+	const esCombinado = metodoPago === 'hybrid';
+	const restoTransfer = Math.round((n(saleAmount) - n(montoMp)) * 100) / 100;
+	const splitOk =
+		!esCombinado || (n(montoMp) > 0 && restoTransfer > 0);
+
 	const grossProfit = n(saleAmount) - n(cost);
 	const profit = grossProfit - n(commission) - n(shipping) - n(other);
 	const effectiveFx = currency === 'UYU' ? n(fxRate) || fx?.rate || 0 : 1;
@@ -377,6 +481,26 @@ const ManualSaleForm = ({
 		// si lo cargaron mal, mejor frenar acá que crear un cliente basura.
 		if (cliente.email.trim() && !/^.+@.+\..+$/.test(cliente.email.trim())) {
 			alert('El email del cliente no es válido.');
+			return;
+		}
+		// En el alta el método es obligatorio: guardarlo sin elegir es exactamente
+		// el bug que hacía figurar todas las ventas como MercadoPago.
+		if (!isEdit && !metodoPago) {
+			alert('Elegí el método de pago de la venta.');
+			return;
+		}
+		if (esCombinado && !splitOk) {
+			alert(
+				'En el pago combinado los dos montos tienen que ser mayores a cero y sumar el total.'
+			);
+			return;
+		}
+		// Sin mail del cliente no hay a quién mandarle el cobro.
+		if (!cobrada && !cliente.email.trim() && metodoPago !== 'transfer') {
+			alert(
+				'Para poder mandarle el cobro hace falta el mail del cliente.\n\n' +
+					'Si no lo tenés, cargala como ya cobrada o elegí transferencia (ahí los datos se los pasás vos).'
+			);
 			return;
 		}
 		if (quiereFactura) {
@@ -401,6 +525,11 @@ const ManualSaleForm = ({
 			fxRate: effectiveFx,
 			saleDate: saleDate
 				? new Date(`${saleDate}T12:00:00`).toISOString()
+				: null,
+			paymentMethod: metodoPago || null,
+			paid: cobrada,
+			paymentSplit: esCombinado
+				? { mercadopago: n(montoMp), transfer: restoTransfer }
 				: null,
 			items,
 			customer: cliente.email.trim()
@@ -600,6 +729,104 @@ const ManualSaleForm = ({
 							onChange={e => setDireccion({ ...direccion, state: e.target.value })}
 						/>
 					</Field>
+				</div>
+
+				{/* ── Cobro ───────────────────────────────────────────────────── */}
+				<div className='rounded-lg border border-ink-200 bg-ink-50/50 p-3'>
+					<h4 className='mb-3 text-xs font-semibold uppercase tracking-wide text-ink-600'>
+						Cobro
+					</h4>
+
+					<div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+						<Field label='Método de pago'>
+							<select
+								className='inp'
+								value={metodoPago}
+								onChange={e =>
+									setMetodoPago(e.target.value as ManualPaymentMethod | '')
+								}
+							>
+								<option value=''>Elegí cómo paga…</option>
+								{/* Sólo los métodos que ofrece una venta manual. `deposit`
+								    existe en la web pero acá no se ofrece; si una venta vieja
+								    lo tuviera, se agrega abajo para no perderlo al editar. */}
+								{manualPaymentMethodOptions.map(m => (
+									<option key={m} value={m}>
+										{manualPaymentMethodLabels[m]}
+									</option>
+								))}
+								{sale?.paymentMethod &&
+									!manualPaymentMethodOptions.includes(sale.paymentMethod) && (
+										<option value={sale.paymentMethod}>
+											{manualPaymentMethodLabels[sale.paymentMethod]}
+										</option>
+									)}
+							</select>
+							{isEdit && metodoPago === '' && (
+								<span className='mt-1 block text-[11px] text-ink-500'>
+									Venta vieja sin método. Elegilo sólo si sabés cuál fue: si lo
+									dejás así, no se toca.
+								</span>
+							)}
+						</Field>
+
+						<Field label='Estado del cobro'>
+							<select
+								className='inp'
+								value={cobrada ? 'paid' : 'pending'}
+								onChange={e => setYaCobrada(e.target.value === 'paid')}
+							>
+								<option value='paid'>Ya cobrada</option>
+								<option value='pending'>Pendiente de cobro</option>
+							</select>
+						</Field>
+					</div>
+
+					{esCombinado && (
+						<div className='mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2'>
+							<Field label={`Con MercadoPago (${currency})`}>
+								<input
+									className='inp'
+									inputMode='decimal'
+									value={montoMp}
+									onChange={e => setMontoMp(e.target.value)}
+								/>
+							</Field>
+							<Field label={`Por transferencia (${currency})`}>
+								<input
+									className='inp bg-ink-100'
+									value={restoTransfer > 0 ? restoTransfer : ''}
+									readOnly
+								/>
+								<span className='mt-1 block text-[11px] text-ink-500'>
+									Se calcula solo: el resto del total.
+								</span>
+							</Field>
+							{!splitOk && n(saleAmount) > 0 && (
+								<p className='sm:col-span-2 text-[12px] text-rose-600'>
+									Los dos montos tienen que ser mayores a cero.
+								</p>
+							)}
+						</div>
+					)}
+
+					{!cobrada && (
+						<p className='mt-3 rounded-md bg-amber-50 px-3 py-2 text-[12px] leading-relaxed text-amber-900'>
+							{metodoPago === 'transfer' ? (
+								<>
+									Queda <b>Pendiente</b> y <b>no descuenta stock</b> hasta que
+									registres el cobro. Los datos de la cuenta se los pasás vos: en
+									transferencia no se manda mail.
+								</>
+							) : (
+								<>
+									Queda <b>Pendiente</b> y <b>no descuenta stock</b> hasta que
+									entre la plata. Al guardar vas a poder mandarle el cobro por
+									mail desde el detalle de la venta.
+								</>
+							)}
+						</p>
+					)}
 				</div>
 
 				<label className='flex items-center gap-2 pt-1 text-sm'>

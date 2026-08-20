@@ -18,6 +18,40 @@ export interface ManualSaleItem {
 	label: string; // "Producto · color/almacenamiento" para mostrar
 }
 
+/**
+ * Por dónde cobra el cliente. Antes no se guardaba (quedaba null) y el panel
+ * mostraba todas las ventas manuales como MercadoPago.
+ *
+ * Sólo MercadoPago y transferencia, o las dos combinadas — decisión del dueño.
+ * `deposit` sigue en el tipo porque las órdenes de la WEB sí lo usan, pero no
+ * se ofrece al cargar una venta manual.
+ */
+export type ManualPaymentMethod =
+	| 'transfer'
+	| 'deposit'
+	| 'mercadopago'
+	| 'hybrid';
+
+export const manualPaymentMethodLabels: Record<ManualPaymentMethod, string> = {
+	mercadopago: 'MercadoPago',
+	transfer: 'Transferencia bancaria',
+	hybrid: 'Combinado (MercadoPago + transferencia)',
+	deposit: 'Depósito (Abitab / Redpagos)',
+};
+
+/** Los que se pueden elegir al cargar una venta manual. */
+export const manualPaymentMethodOptions: ManualPaymentMethod[] = [
+	'mercadopago',
+	'transfer',
+	'hybrid',
+];
+
+/** Reparto del pago combinado, en la moneda de la venta. */
+export interface ManualPaymentSplit {
+	mercadopago: number;
+	transfer: number;
+}
+
 export interface ManualSale {
 	id: number;
 	created_at: string;
@@ -36,6 +70,12 @@ export interface ManualSale {
 	other: number;
 	grossProfit: number; // venta - costo
 	profit: number; // neta = venta - costo - comisión - envío - otros
+	// Cómo paga y si ya pagó. Una venta pendiente NO descontó stock todavía.
+	// null = ventas cargadas antes del 20/08/2026, cuando el método no se pedía.
+	// NO se adivina: el panel las muestra como "Sin especificar".
+	paymentMethod: ManualPaymentMethod | null;
+	paid: boolean;
+	paymentSplit: ManualPaymentSplit | null;
 	// Productos del catálogo vinculados (los que descontaron stock).
 	items: ManualSaleItem[];
 	// Datos del comprador, si se cargaron. Con esto la venta se puede confirmar
@@ -99,6 +139,12 @@ export interface ManualSaleInput {
 	other: number;
 	fxRate: number; // pesos por USD (se usa solo si currency === 'UYU')
 	saleDate?: string | null; // ISO; si no viene, ahora
+	/** Por dónde paga. null en una edición = dejar el que ya tenía. */
+	paymentMethod: ManualPaymentMethod | null;
+	/** ¿Ya entró la plata? Si es false, la venta queda Pendiente y NO toca stock. */
+	paid: boolean;
+	/** Sólo para 'hybrid': cuánto por cada vía, en la moneda de la venta. */
+	paymentSplit?: ManualPaymentSplit | null;
 	// Productos del catálogo a descontar de stock (opcional). Vacío = venta libre.
 	items: ManualSaleItem[];
 	// Opcionales: si se cargan, la venta queda igual que una compra web.
@@ -128,6 +174,21 @@ const addressPayload = (input: ManualSaleInput) =>
 				country: input.address.country?.trim() || 'Uruguay',
 		  }
 		: null;
+
+/**
+ * El reparto del pago combinado viaja en USD, igual que `orders.payment_split`
+ * de la web. La base valida que los dos montos sumen el total, así que la
+ * conversión tiene que usar exactamente el mismo redondeo que `p_total_usd`.
+ */
+const splitPayload = (input: ManualSaleInput, toUsd: (n: number) => number) => {
+	if (input.paymentMethod !== 'hybrid' || !input.paymentSplit) return null;
+	const round2 = (n: number) => Math.round(n * 100) / 100;
+	const mp = round2(toUsd(input.paymentSplit.mercadopago));
+	const total = round2(toUsd(input.saleAmount));
+	// La transferencia se calcula como el RESTO, no convirtiéndola aparte: dos
+	// redondeos independientes pueden no sumar el total y la base lo rechaza.
+	return { mercadopago: mp, transfer: round2(total - mp) };
+};
 
 const invoicePayload = (input: ManualSaleInput) =>
 	input.invoice && input.invoice.rut.trim()
@@ -183,6 +244,7 @@ export const getManualSales = async (
 		.select(
 			`id, created_at, status, concept_id, manual_description,
 			 total_amount, total_original, ml_currency, fx_rate,
+			 payment_method, payment_status, payment_split,
 			 manual_cost_usd, ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 			 invoice_requested, invoice_rut, invoice_business_name, invoice_trade_name,
 			 invoice_address, invoice_city, invoice_state, invoice_email,
@@ -229,6 +291,15 @@ export const getManualSales = async (
 			other,
 			grossProfit: saleAmount - cost,
 			profit: saleAmount - cost - commission - shipping - other,
+			paymentMethod: (o.payment_method ?? null) as ManualPaymentMethod | null,
+			paid: o.payment_status === 'paid',
+			// El reparto se guarda en USD; acá se muestra en la moneda de la venta.
+			paymentSplit: o.payment_split
+				? {
+						mercadopago: Number(o.payment_split.mercadopago ?? 0) * (currency === 'UYU' ? fx : 1),
+						transfer: Number(o.payment_split.transfer ?? 0) * (currency === 'UYU' ? fx : 1),
+				  }
+				: null,
 			customer: o.customers
 				? {
 						id: o.customers.id as string,
@@ -304,6 +375,10 @@ export const createManualSale = async (
 		p_customer: customerPayload(input),
 		p_address: addressPayload(input),
 		p_invoice: invoicePayload(input),
+		p_payment_method: input.paymentMethod,
+		// Sin método no se toca el estado del cobro: el RPC conserva el que tenía.
+		p_payment_status: input.paymentMethod ? (input.paid ? 'paid' : 'pending') : null,
+		p_payment_split: splitPayload(input, toUsd),
 	});
 	if (error) throw new Error(error.message);
 	return { id: data as number };
@@ -340,6 +415,9 @@ export const updateManualSale = async (
 		p_customer: customerPayload(input),
 		p_address: addressPayload(input),
 		p_invoice: invoicePayload(input),
+		p_payment_method: input.paymentMethod,
+		p_payment_status: input.paid ? 'paid' : 'pending',
+		p_payment_split: splitPayload(input, toUsd),
 	});
 	if (error) throw new Error(error.message);
 };
@@ -362,6 +440,32 @@ export const sendManualSaleConfirmation = async (orderId: number): Promise<void>
 	if ((data as { error?: string } | null)?.error) {
 		throw new Error((data as { error: string }).error);
 	}
+};
+
+/**
+ * Le manda al comprador cómo pagar una venta manual que quedó pendiente:
+ * el link de MercadoPago, los datos de Abitab/Redpagos, o las dos cosas si es
+ * combinado.
+ *
+ * En TRANSFERENCIA sola no manda nada — la cuenta se la pasa el admin en
+ * persona. La edge devuelve 400 en ese caso y el panel no ofrece el botón.
+ */
+export const sendManualSalePaymentLink = async (
+	orderId: number
+): Promise<{ initPoint: string | null; sentTo: string }> => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { data, error } = await (supabase.functions as any).invoke(
+		'manual-sale-payment-link',
+		{ body: { order_id: orderId } }
+	);
+	// La edge manda el motivo en el body; el error de invoke sólo trae el status.
+	const detalle = (data as { error?: string } | null)?.error;
+	if (error) throw new Error(detalle || error.message);
+	if (detalle) throw new Error(detalle);
+	return {
+		initPoint: (data as { init_point?: string | null }).init_point ?? null,
+		sentTo: (data as { sent_to: string }).sent_to,
+	};
 };
 
 export const deleteManualSale = async (id: number): Promise<void> => {

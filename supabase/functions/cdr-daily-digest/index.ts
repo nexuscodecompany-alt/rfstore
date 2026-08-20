@@ -8,6 +8,15 @@
 // Si no hay novedades, NO manda mail. body.dry_run => devuelve los datos sin enviar.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
+// Encabezado con el logo, arriba de todo. El archivo vive en el sitio público
+// (los clientes de mail no leen assets locales) y es JPG de fondo blanco, así
+// que la banda que lo contiene también va en blanco.
+// OJO: el mail de carrito abandonado NO lleva logo a propósito — se midió que
+// las imágenes lo mandan a la pestaña Promociones de Gmail.
+const LOGO_ROW =
+	`<tr><td align="center" style="padding:24px 28px 6px;background:#ffffff;"><img src="https://www.rfstore.uy/img/img-docs/logoblancorf.jpg" width="46" height="46" alt="RF Store" style="display:block;border:0;outline:none;text-decoration:none;"></td></tr>`;
+
+
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -55,7 +64,7 @@ function buildHtml(when: string, nuevos: NewRow[], cambios: ChangedRow[]): strin
     </table>`;
   return `<!doctype html><html><body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;"><tr><td align="center">
-      <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:640px;">
+      <table width="640" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden;max-width:640px;">${LOGO_ROW}
         <tr><td style="padding:24px 32px;background:#111;color:#fff;"><h1 style="margin:0;font-size:20px;">RF Store — Resumen diario</h1></td></tr>
         <tr><td style="padding:24px 32px;">
           <p style="margin:0 0 4px;color:#555;">${esc(when)}</p>

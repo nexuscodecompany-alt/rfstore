@@ -35,12 +35,19 @@ const didNotPay = (o: OrderWithCustomer): boolean =>
  * Pago que espera la confirmación del admin: transferencia, depósito, y también
  * el combinado (donde lo que confirma es la PARTE que vino por transferencia).
  */
-export const needsPaymentConfirm = (o: OrderWithCustomer): boolean =>
-	(o.payment_method === 'transfer' ||
+export const needsPaymentConfirm = (o: OrderWithCustomer): boolean => {
+	if (o.payment_status === 'paid' || didNotPay(o)) return false;
+	// Una venta manual la cobra el admin por donde sea, así que siempre puede
+	// registrar el cobro él. OJO: esto vale SÓLO para el canal manual — una orden
+	// web de MercadoPago no se puede marcar pagada a mano, tiene que venir del
+	// webhook con el pago verificado contra la API de MP.
+	if (o.channel === 'manual') return true;
+	return (
+		o.payment_method === 'transfer' ||
 		o.payment_method === 'deposit' ||
-		o.payment_method === 'hybrid') &&
-	o.payment_status !== 'paid' &&
-	!didNotPay(o);
+		o.payment_method === 'hybrid'
+	);
+};
 
 // Una fila del listado. Para una venta normal representa una orden; para una venta
 // ML en carrito (pack) agrupa todas las órdenes del pack en una sola.
@@ -181,8 +188,12 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 			const mensaje = esHibrido
 				? `El pedido #${o.id} es de PAGO COMBINADO.\n\nAl confirmar se registra sólo la parte que vino por TRANSFERENCIA. Si la de MercadoPago todavía no se acreditó, el pedido queda en Pendiente y no se despacha.\n\n¿Ya recibiste la transferencia?`
 				: `El pedido #${o.id} se pagó por ${
-						o.payment_method === 'deposit' ? 'depósito' : 'transferencia'
-				  } y el pago figura PENDIENTE.\n\nAl concretarlo queda como pagado y se le manda el mail de confirmación al cliente. ¿Ya recibiste la plata?`;
+						o.payment_method === 'deposit'
+							? 'depósito'
+							: o.payment_method === 'mercadopago'
+							? 'MercadoPago'
+							: 'transferencia'
+				  } y el pago figura PENDIENTE.\n\nAl concretarlo queda como pagado, SE DESCUENTA EL STOCK y se le manda el mail de confirmación al cliente. ¿Ya recibiste la plata?`;
 			if (!window.confirm(mensaje)) return; // La orden sigue como estaba.
 			confirmPayment(row.ids);
 			return;

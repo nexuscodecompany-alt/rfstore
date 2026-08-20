@@ -1,7 +1,11 @@
-// mp-webhook v14
-// El stock se descuenta al crear la orden (mp-create-preference); acá solo
-// marcamos pagado/rechazado, liberamos stock al rechazar, y MANDAMOS MAIL
-// de confirmación al comprador cuando MP confirma el pago.
+// mp-webhook v16
+// Marcamos pagado/rechazado, DESCONTAMOS EL STOCK y mandamos el mail de
+// confirmación al comprador cuando MP confirma el pago.
+//
+// v16 (2026-08-20): el stock ya no se reserva al crear la orden — sale del
+// catálogo recién acá, con el pago aprobado. Si en el medio se agotó, el cobro
+// NO se rechaza (la plata ya entró): se descuenta lo que hay y queda constancia
+// en orders.stock_shortfall para que el admin lo resuelva con el cliente.
 //
 // v14: un pago aprobado por MercadoPago ya está cobrado — no espera confirmación
 // del admin, así que la orden queda 'Concretado' directamente. Antes quedaba
@@ -45,6 +49,66 @@ async function sendConfirmationMail(orderId: number): Promise<void> {
 	}
 }
 
+/**
+ * Saca del catálogo las unidades de la orden. Se llama SÓLO con el pago ya
+ * aprobado. Es idempotente, así que el webhook repetido de MP no descuenta dos
+ * veces.
+ *
+ * Si algo se agotó mientras el cliente pagaba no se puede echar atrás el cobro,
+ * así que se descuenta lo que haya y se avisa al admin.
+ */
+async function tomarStock(orderId: number): Promise<void> {
+	try {
+		const { data, error } = await supabase.rpc('take_order_stock', { p_order_id: orderId });
+		if (error) { console.error(`[mp-webhook] take_order_stock orden ${orderId}: ${error.message}`); return; }
+		const faltantes = (data as any)?.faltantes ?? [];
+		if (Array.isArray(faltantes) && faltantes.length > 0) {
+			console.error(`[mp-webhook] ORDEN ${orderId} COBRADA SIN STOCK SUFICIENTE:`, JSON.stringify(faltantes));
+			await avisarFaltante(orderId, faltantes);
+		}
+	} catch (e) {
+		console.error('[mp-webhook] tomarStock:', e);
+	}
+}
+
+/** Mail al admin: se cobró algo que no había. Hay que hablar con el cliente. */
+async function avisarFaltante(orderId: number, faltantes: any[]): Promise<void> {
+	const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+	const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? 'ventas@rfstore.uy';
+	const FROM = Deno.env.get('RESEND_FROM') ?? 'RF Store <ventas@send.rfstore.uy>';
+	if (!RESEND_API_KEY) { console.warn('[mp-webhook] sin RESEND_API_KEY, no se avisa el faltante'); return; }
+
+	const filas = faltantes.map((f: any) =>
+		`<tr><td style="padding:6px 10px;border-bottom:1px solid #eee">${f.producto ?? f.codigo ?? '—'}</td>
+		     <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:center">${f.pedido}</td>
+		     <td style="padding:6px 10px;border-bottom:1px solid #eee;text-align:center;color:#b91c1c"><b>${f.habia}</b></td></tr>`
+	).join('');
+
+	try {
+		await fetch('https://api.resend.com/emails', {
+			method: 'POST',
+			headers: { Authorization: `Bearer ${RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				from: FROM,
+				to: [ADMIN_EMAIL],
+				subject: `Pedido #${orderId}: cobrado sin stock suficiente`,
+				html: `<div style="font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;max-width:560px">
+					<img src="https://www.rfstore.uy/img/img-docs/logoblancorf.jpg" width="46" height="46" alt="RF Store" style="display:block;border:0;margin:0 0 18px">
+					<p style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 14px;margin:0 0 16px">
+						<b>El pago del pedido #${orderId} entró, pero no había stock de todo.</b><br>
+						Hay que conseguirlo, ofrecer un reemplazo o devolverle la parte que falte.
+					</p>
+					<table style="border-collapse:collapse;width:100%;font-size:14px">
+						<tr style="background:#f8fafc"><th style="padding:6px 10px;text-align:left">Producto</th>
+							<th style="padding:6px 10px">Pedido</th><th style="padding:6px 10px">Había</th></tr>
+						${filas}
+					</table>
+				</div>`,
+			}),
+		});
+	} catch (e) { console.warn('[mp-webhook] avisarFaltante:', e); }
+}
+
 async function processApproved(orderId: number, paymentId: string): Promise<void> {
 	const { data: existing } = await supabase.from('orders').select('id, payment_status, payment_method, payment_split').eq('id', orderId).single();
 	if (!existing) return;
@@ -66,6 +130,13 @@ async function processApproved(orderId: number, paymentId: string): Promise<void
 			p_amount: montoMp,
 		});
 		if (error) { console.warn('[mp-webhook] register_hybrid_payment:', error.message); return; }
+
+		// register_hybrid_payment ya tomó el stock por dentro (entró plata real,
+		// aunque falte la otra parte). Acá sólo levantamos el faltante para avisar.
+		const { data: post } = await supabase.from('orders').select('stock_shortfall').eq('id', orderId).single();
+		const faltantes = (post?.stock_shortfall as any) ?? null;
+		if (Array.isArray(faltantes) && faltantes.length > 0) await avisarFaltante(orderId, faltantes);
+
 		if (completa === true) {
 			// Las dos partes están cobradas: recién ahora es una venta cerrada.
 			await sendConfirmationMail(orderId);
@@ -81,6 +152,9 @@ async function processApproved(orderId: number, paymentId: string): Promise<void
 		paid_at: new Date().toISOString(),
 		mp_payment_id: paymentId,
 	}).eq('id', orderId);
+
+	// Recién con el pago aprobado sale el stock del catálogo.
+	await tomarStock(orderId);
 
 	// Mail de confirmación al comprador (no bloqueante)
 	await sendConfirmationMail(orderId);
