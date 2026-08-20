@@ -157,10 +157,18 @@ const ViewManualSale = ({
 
 	if (!sale) return <p className='text-sm text-ink-500'>Cargando…</p>;
 
+	// Transferencia queda afuera a propósito: esos datos los pasa el admin en
+	// persona. Y sin método cargado (ventas viejas) no hay nada que mandar.
+	const METODOS_CON_COBRO_POR_MAIL: ManualPaymentMethod[] = [
+		'mercadopago',
+		'hybrid',
+		'deposit',
+	];
 	const puedeEnviarCobro =
 		!sale.paid &&
 		!!sale.customer?.email &&
-		['mercadopago', 'hybrid', 'deposit'].includes(sale.paymentMethod);
+		!!sale.paymentMethod &&
+		METODOS_CON_COBRO_POR_MAIL.includes(sale.paymentMethod);
 
 	return (
 		<div className='space-y-4'>
