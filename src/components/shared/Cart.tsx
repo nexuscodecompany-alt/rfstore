@@ -4,6 +4,7 @@ import { IoMdClose } from 'react-icons/io';
 import { Link } from 'react-router-dom';
 import { RiSecurePaymentLine } from 'react-icons/ri';
 import { CartItem } from './CartItem';
+import { CheckoutExtras } from '../checkout/CheckoutExtras';
 import { useCartStore } from '../../store/cart.store';
 import { usePaymentsEnabled } from '../../hooks';
 import { canBuyOnline } from '../../helpers';
@@ -52,6 +53,13 @@ export const Cart = () => {
 								<CartItem item={item} key={item.variantId} />
 							))}
 						</ul>
+
+						{/* Venta cruzada, versión chica: 2 para no empujar el botón de
+						    comprar fuera de pantalla. El bloque no se pinta si no hay nada
+						    configurado para lo que el cliente lleva. */}
+						<div className='mt-8'>
+							<CheckoutExtras limit={2} compact />
+						</div>
 					</div>
 
 					{/* BOTONES ACCIÓN */}

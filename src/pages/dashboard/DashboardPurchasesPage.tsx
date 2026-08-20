@@ -190,7 +190,7 @@ export const DashboardPurchasesPage = () => {
 							<p className='mt-1 text-xs text-amber-700'>
 								No hay proveedores cargados.{' '}
 								<Link
-									to='/dashboard/taxonomias'
+									to='/dashboard/productos/taxonomias'
 									className='font-semibold underline'
 								>
 									Cargalos acá

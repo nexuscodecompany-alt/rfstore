@@ -620,7 +620,7 @@ export const getStatus = (status: string): string => {
 };
 
 // Estilos de badge según el estado de la orden (panel admin). Contempla los dos
-// juegos de estados que conviven: los que pone el ADMIN a mano (Cotización,
+// juegos de estados que conviven: los que pone el ADMIN a mano (Pendiente,
 // Concretado, Modificado, Cancelado) y los que pone el SISTEMA al cobrar o
 // vencer un pedido (pagado, pago_pendiente, expirado, rechazado).
 export const orderStatusBadge = (status: string): string => {
@@ -634,6 +634,8 @@ export const orderStatusBadge = (status: string): string => {
 		case 'Modificado':
 		case 'pago_pendiente':
 			return 'bg-amber-50 text-amber-700 ring-1 ring-amber-200';
+		case 'Pendiente':
+		// Nombre viejo: quedó en órdenes históricas y en links guardados.
 		case 'Cotización':
 			return 'bg-brand-50 text-brand-700 ring-1 ring-brand-200';
 		case 'expirado':
@@ -643,9 +645,11 @@ export const orderStatusBadge = (status: string): string => {
 	}
 };
 
-// Estados que el admin puede elegir a mano.
+// Estados que el admin puede elegir a mano. "Pendiente" reemplazó a "Cotización"
+// (2026-08-20): es también el estado de las órdenes con pago híbrido, que quedan
+// esperando a que se complete el pago por los dos medios.
 export const orderStatusOptions = [
-	'Cotización',
+	'Pendiente',
 	'Concretado',
 	'Modificado',
 	'Cancelado',
@@ -659,12 +663,18 @@ export const orderStatusLabel = (status: string): string => {
 	switch (status) {
 		case 'pagado':
 			return 'Pagado';
+		// "Esperando pago" y no "Pago pendiente": conviviendo con el estado
+		// "Pendiente" del admin, dos etiquetas casi iguales serían indistinguibles
+		// de un vistazo en el listado.
 		case 'pago_pendiente':
-			return 'Pago pendiente';
+			return 'Esperando pago';
 		case 'expirado':
 			return 'Expirado';
 		case 'rechazado':
 			return 'Rechazado';
+		// Órdenes viejas: se muestran con el nombre nuevo.
+		case 'Cotización':
+			return 'Pendiente';
 		default:
 			return status;
 	}

@@ -214,7 +214,27 @@
       "Bash(cp screenshot-1786638182795-4.jpg \"/c/Users/Admin/Desktop/guia-rfstore/img/3-precio.jpg\")",
       "Bash(\"/c/Program Files/Google/Chrome/Application/chrome.exe\" --headless=new --disable-gpu --no-pdf-header-footer --print-to-pdf=\"C:\\\\Users\\\\Admin\\\\Desktop\\\\guia-rfstore\\\\Guia-precio-manual-RF-Store.pdf\" \"file:///C:/Users/Admin/Desktop/guia-rfstore/guia.html\")",
       "PowerShell($c = Get-Command supabase -ErrorAction SilentlyContinue; if \\($c\\) { $c.Source; supabase --version } else { \"no supabase cli\" }; $n = Get-Command npx -ErrorAction SilentlyContinue; if \\($n\\) { \"npx ok\" })",
-      "PowerShell(supabase functions *)"
+      "PowerShell(supabase functions *)",
+      "Bash(printf \"%s\\\\n\" \"export * from './checkoutExtras';\")",
+      "Bash(printf \"%s\\\\n\" \"export * from './dashboard/DashboardExtrasPage';\")",
+      "WebFetch(domain:developers.mercadolivre.com.br)",
+      "WebFetch(domain:fixed.uy)",
+      "WebFetch(domain:southamerica-east1-fixedtesting-10ce2.cloudfunctions.net)",
+      "Bash(printf \"%s\\\\n\" \"export * from './RecoverCartPage';\")",
+      "Bash(printf \"%s\\\\n\" \"export * from './abandonedCart';\")",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://localhost:3000/\" -TimeoutSec 15 -UseBasicParsing; \"dev server OK \\($\\($r.StatusCode\\)\\)\" } catch { \"dev server caido: $\\($_.Exception.Message\\)\" })",
+      "Bash(grep -n \"^\t\\);$\\\\|^};$\\\\|^const Field\" src/pages/dashboard/DashboardCouponsPage.tsx)",
+      "PowerShell($d = Get-Command deno -ErrorAction SilentlyContinue; if \\($d\\) { \"deno: $\\($d.Source\\)\"; deno --version } else { \"no deno\" })",
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/ml-webhook/index.ts --loader:.ts=ts --format=esm --outfile=/dev/null)",
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/abandoned-cart-recovery/index.ts --loader:.ts=ts --format=esm --outfile=/dev/null)",
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/mp-create-preference/index.ts --loader:.ts=ts --format=esm --outfile=/dev/null)",
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/expire-pending-orders/index.ts supabase/functions/mp-webhook/index.ts --loader:.ts=ts --format=esm --outdir=/tmp/chk)",
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/manual-payment-confirm/index.ts --loader:.ts=ts --format=esm --outfile=/dev/null)",
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/send-transfer-email/index.ts --loader:.ts=ts --format=esm --outfile=/dev/null)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.app.json 2>&1 | Select-Object -First 15; if \\($?\\) { \"TYPECHECK OK\" })",
+      "PowerShell(npx tsc --noEmit -p tsconfig.app.json 2>&1 | Select-Object -First 12; if \\($?\\) { \"TYPECHECK OK\" })",
+      "Bash(python3 -)",
+      "Bash(npx --yes esbuild@0.23.0 supabase/functions/send-transfer-email/index.ts supabase/functions/expire-pending-orders/index.ts --loader:.ts=ts --format=esm --outdir=/tmp/chk2)"
     ]
   }
 }

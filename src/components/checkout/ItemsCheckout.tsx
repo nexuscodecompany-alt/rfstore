@@ -1,6 +1,7 @@
 import { formatPrice } from '../../helpers';
 import { useCartStore } from '../../store/cart.store';
 import { useCheckoutShippingStore } from '../../store/checkoutShipping.store';
+import { CheckoutExtras } from './CheckoutExtras';
 
 export const ItemsCheckout = () => {
 	const cartItems = useCartStore(state => state.items);
@@ -45,7 +46,7 @@ export const ItemsCheckout = () => {
 				))}
 			</ul>
 
-			<div className='mt-4 p-7 space-y-3'>
+			<div className='mt-4 space-y-3 px-1'>
 				<div className='flex justify-between text-sm text-gray-600'>
 					<p>Subtotal</p>
 					<p>{formatPrice(totalAmount)}</p>
@@ -64,6 +65,13 @@ export const ItemsCheckout = () => {
 					<p>Total:</p>
 					<p>{formatPrice(total)}</p>
 				</div>
+			</div>
+
+			{/* Venta cruzada, JUSTO debajo del total: el cliente ya vio lo que va a
+			    pagar y todavía no eligió cómo. Agregar acá actualiza el total de
+			    arriba en el momento. */}
+			<div className='mt-6'>
+				<CheckoutExtras limit={4} />
 			</div>
 		</div>
 	);

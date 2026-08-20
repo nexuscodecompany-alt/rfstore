@@ -101,6 +101,7 @@ export const getOrderById = async (orderId: number) => {
 		.select(
 			`
 				id, total_amount, status, created_at, payment_method, payment_status,
+				payment_split, paid_mp_usd, paid_transfer_usd,
 				fx_rate, fx_source, total_original,
 				shipping_zone, shipping_barrio, shipping_department, shipping_cost_usd,
 				discount_usd, coupon_code,
@@ -133,6 +134,13 @@ export const getOrderById = async (orderId: number) => {
 		status: order.status,
 		paymentMethod: order.payment_method as string | null,
 		paymentStatus: order.payment_status as string,
+		// Pago combinado: cuánto va por cada medio y cuánto se acreditó ya.
+		paymentSplit:
+			((order as { payment_split?: { mercadopago?: number; transfer?: number } | null })
+				.payment_split as { mercadopago?: number; transfer?: number } | null) ?? null,
+		paidMpUsd: Number((order as { paid_mp_usd?: number }).paid_mp_usd ?? 0) || 0,
+		paidTransferUsd:
+			Number((order as { paid_transfer_usd?: number }).paid_transfer_usd ?? 0) || 0,
 		created_at: order.created_at,
 		// Cotización CONGELADA al comprar: la página de gracias y los mails
 		// muestran el mismo número que vio el cliente en el checkout, aunque el
@@ -204,11 +212,14 @@ export const getOrderByIdAdmin = async (id: number) => {
 			`
 				id, total_amount, status, created_at, channel, ml_order_id, ml_pack_id,
 				payment_method, payment_status, payment_proof_url, paid_at,
+				payment_split, paid_mp_usd, paid_transfer_usd,
+				invoice_requested, invoice_rut, invoice_business_name, invoice_trade_name,
+				invoice_address, invoice_city, invoice_state, invoice_email,
 				ml_currency, fx_rate, total_original,
 				ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
 				shipping_zone, shipping_barrio, shipping_department, shipping_cost_usd,
 				addresses:addresses(*),
-				order_items:order_items(quantity, price, cost_usd, variants(color_name, storage, products(name, images, slug, external_code))),
+				order_items:order_items(quantity, price, cost_usd, is_extra, extra_source, variants(color_name, storage, products(name, images, slug, external_code))),
 				customers:customers(full_name, email, phone)
 			`
 		)
@@ -273,6 +284,23 @@ export const getOrderByIdAdmin = async (id: number) => {
 		paymentStatus: (order.payment_status as string | null) ?? null,
 		paymentProofUrl: (order.payment_proof_url as string | null) ?? null,
 		paidAt: (order.paid_at as string | null) ?? null,
+		// Pago combinado: lo comprometido por cada medio y lo que ya entró.
+		paymentSplit:
+			(order.payment_split as { mercadopago?: number; transfer?: number } | null) ?? null,
+		paidMpUsd: Number(order.paid_mp_usd ?? 0) || 0,
+		paidTransferUsd: Number(order.paid_transfer_usd ?? 0) || 0,
+		// Datos fiscales, si pidió factura con RUT.
+		invoice: order.invoice_requested
+			? {
+					rut: (order.invoice_rut as string | null) ?? '',
+					businessName: (order.invoice_business_name as string | null) ?? '',
+					tradeName: (order.invoice_trade_name as string | null) ?? null,
+					address: (order.invoice_address as string | null) ?? '',
+					city: (order.invoice_city as string | null) ?? null,
+					state: (order.invoice_state as string | null) ?? null,
+					email: (order.invoice_email as string | null) ?? null,
+			  }
+			: null,
 		orderItems: (order.order_items as any[]).map((item: any) => ({
 			productImage: item.variants?.products?.images?.[0] || '',
 			productName: item.variants?.products?.name || '',
@@ -285,6 +313,8 @@ export const getOrderByIdAdmin = async (id: number) => {
 			quantity: item.quantity,
 			color_name: item.variants ? item.variants.color_name : '',
 			storage: item.variants ? item.variants.storage : '',
+			// Vino del bloque "Sumá a tu compra" del checkout, no lo buscó el cliente.
+			isExtra: (item as { is_extra?: boolean }).is_extra === true,
 		})),
 		totalAmount: order.total_amount,
 		// Moneda real de la venta (ML puede cobrar en UYU). fx_rate = pesos por USD.

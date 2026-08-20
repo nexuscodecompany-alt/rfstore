@@ -69,7 +69,10 @@ export const ThankyouPage = () => {
 	}, [data]);
 
 	useEffect(() => {
-		if (data?.paymentMethod !== 'transfer') return;
+		// El pago combinado también necesita los datos bancarios: una de sus dos
+		// partes se abona por transferencia.
+		if (data?.paymentMethod !== 'transfer' && data?.paymentMethod !== 'hybrid')
+			return;
 		(async () => {
 			try {
 				const map = await getAppSettings();
@@ -131,11 +134,40 @@ export const ThankyouPage = () => {
 					</p>
 				</div>
 
-				{data.paymentMethod === 'transfer' && (
+				{/* Pago combinado: lo primero que tiene que entender el cliente es que
+				    su pedido no se procesa hasta que estén las DOS partes. */}
+				{data.paymentMethod === 'hybrid' && data.paymentSplit && (
+					<div className='w-full space-y-2 rounded-md border-2 border-blue-200 bg-blue-50/70 p-5 md:w-[600px]'>
+						<h3 className='font-bold text-blue-900'>
+							Tu pedido es con pago combinado
+						</h3>
+						<div className='flex justify-between text-sm text-blue-900'>
+							<span>Con MercadoPago</span>
+							<span className='font-semibold tabular-nums'>
+								USD {(Number(data.paymentSplit.mercadopago) || 0).toFixed(2)}
+							</span>
+						</div>
+						<div className='flex justify-between text-sm text-blue-900'>
+							<span>Por transferencia</span>
+							<span className='font-semibold tabular-nums'>
+								USD {(Number(data.paymentSplit.transfer) || 0).toFixed(2)}
+							</span>
+						</div>
+						<p className='border-t border-blue-200 pt-2 text-[13px] leading-relaxed text-blue-800'>
+							<b>Procesamos tu pedido cuando estén acreditados los dos pagos.</b> Te
+							lo reservamos por <b>24 horas</b>: pasado ese plazo, si no entraron las
+							dos partes, la reserva se libera.
+						</p>
+					</div>
+				)}
+
+				{(data.paymentMethod === 'transfer' || data.paymentMethod === 'hybrid') && (
 					<div className='border-2 border-emerald-200 bg-emerald-50/60 w-full p-5 rounded-md space-y-3 md:w-[600px]'>
 						<div className='flex items-center justify-between'>
 							<h3 className='font-bold text-emerald-900'>
-								Datos para transferir — Pedido #{data.id}
+								{data.paymentMethod === 'hybrid'
+									? `Datos para la parte por transferencia — Pedido #${data.id}`
+									: `Datos para transferir — Pedido #${data.id}`}
 							</h3>
 							<span className='text-xs text-emerald-700 font-medium'>
 								Te mandamos también un mail
@@ -144,14 +176,27 @@ export const ThankyouPage = () => {
 						<TransferDetails
 							info={transferInfo}
 							orderId={data.id}
-							totalAmount={data.totalAmount}
-							totalUyu={totalUyu}
+							// En el combinado se transfiere SÓLO esa parte, no el total.
+							totalAmount={
+								data.paymentMethod === 'hybrid' && data.paymentSplit
+									? Number(data.paymentSplit.transfer) || 0
+									: data.totalAmount
+							}
+							totalUyu={
+								data.paymentMethod === 'hybrid' && data.paymentSplit && data.fxRate
+									? Math.round(
+											(Number(data.paymentSplit.transfer) || 0) * Number(data.fxRate)
+									  )
+									: totalUyu
+							}
 							formatUyu={formatUyu}
 						/>
 					</div>
 				)}
 
-				{(data.paymentMethod === 'transfer' || data.paymentMethod === 'deposit') && (
+				{(data.paymentMethod === 'transfer' ||
+					data.paymentMethod === 'deposit' ||
+					data.paymentMethod === 'hybrid') && (
 					<PaymentProofBlock orderId={data.id} />
 				)}
 

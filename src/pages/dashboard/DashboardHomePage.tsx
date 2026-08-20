@@ -12,6 +12,7 @@ import { useDashboardMetrics } from '../../hooks/dashboard/useDashboardMetrics';
 import { useUsdUyuRate } from '../../hooks';
 import { formatPrice, formatMoneyCur } from '../../helpers';
 import type { TopProduct, DashboardOverview } from '../../actions/dashboard';
+import { AbandonedCartsSection } from '../../components/dashboard/AbandonedCartsSection';
 
 /* ---------- helpers de fecha ---------- */
 const toISODate = (d: Date) => d.toISOString().slice(0, 10);
@@ -262,6 +263,18 @@ const PaymentBreakdown = ({
 	);
 };
 
+/**
+ * Separador de grupo. El panel tenía todas las tarjetas seguidas y no se sabía
+ * dónde terminaba un tema y empezaba otro: ahora Ganancia / Ventas / Clientes /
+ * Catálogo se leen como bloques distintos.
+ */
+const GroupTitle = ({ title, hint }: { title: string; hint: string }) => (
+	<div className='flex items-baseline gap-3 border-b border-ink-200 pb-2 pt-2'>
+		<h2 className='text-lg font-bold text-ink-900'>{title}</h2>
+		<p className='hidden text-xs text-ink-500 sm:block'>{hint}</p>
+	</div>
+);
+
 const SectionCard = ({
 	title,
 	action,
@@ -400,9 +413,9 @@ export const DashboardHomePage = () => {
 		<div className='space-y-6'>
 			{/* Encabezado */}
 			<div className='flex flex-col gap-1'>
-				<h1 className='text-2xl font-bold text-ink-900'>Resumen general</h1>
+				<h1 className='text-2xl font-bold text-ink-900'>Dashboard</h1>
 				<p className='text-sm text-ink-500'>
-					Métricas clave de tu tienda en el período seleccionado.
+					Qué está pasando en la tienda en el período seleccionado.
 				</p>
 			</div>
 
@@ -517,6 +530,12 @@ export const DashboardHomePage = () => {
 						<PaymentBreakdown items={o.payment_breakdown ?? []} />
 					</SectionCard>
 
+					{/* ===== VENTAS: el volumen y cómo viene contra el período anterior ===== */}
+					<GroupTitle
+						title='Ventas'
+						hint='Cuánto entró, cuántos pedidos y qué proporción se llegó a cobrar.'
+					/>
+
 					{/* ===== KPIs clave ===== */}
 					<div className='grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4'>
 						<StatCard
@@ -609,6 +628,19 @@ export const DashboardHomePage = () => {
 							)}
 						</SectionCard>
 					</div>
+
+					{/* ===== CLIENTES: quién se fue sin comprar y qué pasó después ===== */}
+					<GroupTitle
+						title='Clientes'
+						hint='El recorrido de la gente que llegó al pago, complete o no la compra.'
+					/>
+					<AbandonedCartsSection from={range.from} to={range.to} />
+
+					{/* ===== CATÁLOGO ===== */}
+					<GroupTitle
+						title='Catálogo'
+						hint='Qué se vende, qué no se mueve y cómo está compuesto el stock.'
+					/>
 
 					{/* Más / menos vendidos + marcas */}
 					<div className='grid grid-cols-1 gap-4 lg:grid-cols-3'>

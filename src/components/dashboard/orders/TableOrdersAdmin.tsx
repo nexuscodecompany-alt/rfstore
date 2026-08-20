@@ -31,9 +31,14 @@ interface Props {
 const didNotPay = (o: OrderWithCustomer): boolean =>
 	['expirado', 'Cancelado', 'cancelado', 'rechazado'].includes(o.status);
 
-/** Pago manual (transferencia/depósito) todavía sin confirmar por el admin. */
+/**
+ * Pago que espera la confirmación del admin: transferencia, depósito, y también
+ * el combinado (donde lo que confirma es la PARTE que vino por transferencia).
+ */
 export const needsPaymentConfirm = (o: OrderWithCustomer): boolean =>
-	(o.payment_method === 'transfer' || o.payment_method === 'deposit') &&
+	(o.payment_method === 'transfer' ||
+		o.payment_method === 'deposit' ||
+		o.payment_method === 'hybrid') &&
 	o.payment_status !== 'paid' &&
 	!didNotPay(o);
 
@@ -169,14 +174,16 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 	const handleStatusChange = (row: OrderRow, status: string) => {
 		const o = row.rep;
 		if (status === 'Concretado' && needsPaymentConfirm(o)) {
-			if (
-				!window.confirm(
-					`El pedido #${o.id} se pagó por ${
+			// En el pago combinado lo que se confirma es SÓLO la transferencia. Si
+			// la parte de MercadoPago todavía no entró, el pedido sigue Pendiente:
+			// hay que decirlo antes para que el admin no crea que lo está cerrando.
+			const esHibrido = o.payment_method === 'hybrid';
+			const mensaje = esHibrido
+				? `El pedido #${o.id} es de PAGO COMBINADO.\n\nAl confirmar se registra sólo la parte que vino por TRANSFERENCIA. Si la de MercadoPago todavía no se acreditó, el pedido queda en Pendiente y no se despacha.\n\n¿Ya recibiste la transferencia?`
+				: `El pedido #${o.id} se pagó por ${
 						o.payment_method === 'deposit' ? 'depósito' : 'transferencia'
-					} y el pago figura PENDIENTE.\n\nAl concretarlo queda como pagado y se le manda el mail de confirmación al cliente. ¿Ya recibiste la plata?`
-				)
-			)
-				return; // No tocamos nada: la orden sigue como estaba.
+				  } y el pago figura PENDIENTE.\n\nAl concretarlo queda como pagado y se le manda el mail de confirmación al cliente. ¿Ya recibiste la plata?`;
+			if (!window.confirm(mensaje)) return; // La orden sigue como estaba.
 			confirmPayment(row.ids);
 			return;
 		}

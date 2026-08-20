@@ -21,6 +21,15 @@ export interface ICartItem {
 	 */
 	onlinePayment?: boolean;
 	stock?: number;
+	/**
+	 * Entró como "extra del checkout" (venta cruzada), no porque el cliente lo
+	 * haya buscado. Es dato de atribución: viaja hasta order_items.is_extra para
+	 * poder medir cuánto factura el módulo. NO participa de ningún cálculo de
+	 * plata — el precio y el total los recalcula el servidor igual.
+	 */
+	isExtra?: boolean;
+	/** Qué regla lo trajo: los del producto o los de la categoría. */
+	extraSource?: 'product' | 'category';
 }
 
 interface Props {

@@ -15,7 +15,7 @@ export const DashboardProductsPage = () => {
 
 				<div className='flex flex-wrap gap-2'>
 					<Link
-						to='/dashboard/taxonomias'
+						to='/dashboard/productos/taxonomias'
 						className='inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 transition-all hover:bg-ink-50'
 					>
 						<HiOutlineRectangleGroup size={18} />

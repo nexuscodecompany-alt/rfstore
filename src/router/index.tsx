@@ -33,6 +33,8 @@ import {
     DashboardLegalPage,
     DashboardShippingPage,
     DashboardMercadoLibrePage,
+    DashboardExtrasPage,
+    RecoverCartPage,
     LegalPage,
 } from '../pages';
 import { ClientLayout } from '../layouts/ClientLayout';
@@ -120,6 +122,12 @@ export const router = createBrowserRouter([
         path: '/checkout/:id/thank-you',
         element: <ThankyouPage />,
     },
+    // Destino del botón "Retomar mi compra" del mail de carrito abandonado.
+    // Sin layout a propósito: restaura y redirige al checkout enseguida.
+    {
+        path: '/carrito/recuperar/:token',
+        element: <RecoverCartPage />,
+    },
     // --- Rutas del Panel de Administrador ---
     {
         path: '/dashboard',
@@ -141,6 +149,21 @@ export const router = createBrowserRouter([
                 path: 'productos/editar/:slug',
                 element: <DashboardProductSlugPage />,
             },
+            // Todo lo que define QUÉ se vende y a qué precio vive dentro de
+            // Productos. Las rutas viejas quedan como redirect para no romper
+            // links guardados ni botones internos.
+            {
+                path: 'productos/taxonomias',
+                element: <DashboardTaxonomiesPage />,
+            },
+            {
+                path: 'productos/margenes',
+                element: <DashboardMarginsPage />,
+            },
+            {
+                path: 'productos/extras',
+                element: <DashboardExtrasPage />,
+            },
             {
                 path: 'ordenes',
                 element: <DashboardOrdersPage />,
@@ -151,7 +174,7 @@ export const router = createBrowserRouter([
             },
             {
                 path: 'taxonomias',
-                element: <DashboardTaxonomiesPage />,
+                element: <Navigate to='/dashboard/productos/taxonomias' replace />,
             },
             // --- AÑADIMOS LAS RUTAS DEL BLOG DE ADMIN AQUÍ ---
             {
@@ -176,7 +199,7 @@ export const router = createBrowserRouter([
             },
             {
                 path: 'precios',
-                element: <DashboardMarginsPage />,
+                element: <Navigate to='/dashboard/productos/margenes' replace />,
             },
             {
                 path: 'cupones',

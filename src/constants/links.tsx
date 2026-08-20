@@ -4,19 +4,13 @@ import {
     FaInstagram,
     FaLinkedin,
     FaFacebookF,
-    FaPenToSquare,
     FaCloudArrowDown,
-    FaMoneyBillTransfer,
     FaChartLine,
-    FaTags,
-    FaPercent,
     FaUsers,
     FaTruckFast,
-    FaTicket,
-    FaScaleBalanced,
-    FaTruck,
     FaStore,
     FaHouse,
+    FaGear,
 } from 'react-icons/fa6';
 
 export const navbarLinks = [
@@ -63,18 +57,39 @@ export const socialLinks = [
     },
 ];
 
-export const dashboardLinks = [
+/**
+ * Menú del panel. Los ítems con `children` son GRUPOS: no navegan solos, se
+ * despliegan. La idea es que el lateral muestre pocas entradas y que todo lo que
+ * es de la misma familia viva junto — antes había 16 ítems sueltos y encontrar
+ * "Márgenes" o "Legales" era cuestión de barrer la lista con la vista.
+ */
+export interface DashboardLink {
+    id: number;
+    title: string;
+    href: string;
+    icon?: JSX.Element;
+    children?: { id: number; title: string; href: string; end?: boolean }[];
+}
+
+export const dashboardLinks: DashboardLink[] = [
     {
         id: 0,
-        title: 'Inicio',
+        title: 'Dashboard',
         href: '/dashboard',
         icon: <FaChartLine size={22} />,
     },
     {
+        // Todo lo que define QUÉ se vende y a qué precio.
         id: 1,
         title: 'Productos',
         href: '/dashboard/productos',
         icon: <FaBoxOpen size={22} />,
+        children: [
+            { id: 101, title: 'Catálogo', href: '/dashboard/productos', end: true },
+            { id: 102, title: 'Categorías y marcas', href: '/dashboard/productos/taxonomias' },
+            { id: 103, title: 'Márgenes', href: '/dashboard/productos/margenes' },
+            { id: 104, title: 'Extras del checkout', href: '/dashboard/productos/extras' },
+        ],
     },
     {
         id: 2,
@@ -95,40 +110,16 @@ export const dashboardLinks = [
         icon: <FaTruckFast size={22} />,
     },
     {
-        id: 3,
-        title: 'Taxonomías',
-        href: '/dashboard/taxonomias',
-        icon: <FaTags size={22} />,
-    },
-    {
-        id: 4,
-        title: 'Gestionar Blog',
-        href: '/dashboard/blog',
-        icon: <FaPenToSquare size={22} />,
-    },
-    {
         id: 5,
         title: 'CDR Sync',
         href: '/dashboard/cdr',
         icon: <FaCloudArrowDown size={22} />,
     },
     {
-        id: 6,
-        title: 'Pagos',
-        href: '/dashboard/pagos',
-        icon: <FaMoneyBillTransfer size={22} />,
-    },
-    {
-        id: 7,
-        title: 'Márgenes',
-        href: '/dashboard/precios',
-        icon: <FaPercent size={22} />,
-    },
-    {
-        id: 12,
-        title: 'Cupones',
-        href: '/dashboard/cupones',
-        icon: <FaTicket size={22} />,
+        id: 11,
+        title: 'Mercado Libre',
+        href: '/dashboard/mercadolibre',
+        icon: <FaStore size={22} />,
     },
     {
         id: 13,
@@ -137,21 +128,17 @@ export const dashboardLinks = [
         icon: <FaHouse size={22} />,
     },
     {
-        id: 9,
-        title: 'Legales',
-        href: '/dashboard/legales',
-        icon: <FaScaleBalanced size={22} />,
-    },
-    {
-        id: 10,
-        title: 'Envíos',
-        href: '/dashboard/envios',
-        icon: <FaTruck size={22} />,
-    },
-    {
-        id: 11,
-        title: 'Mercado Libre',
-        href: '/dashboard/mercadolibre',
-        icon: <FaStore size={22} />,
+        // El resto: cosas que se tocan una vez y se dejan andando.
+        id: 16,
+        title: 'Configuración',
+        href: '/dashboard/pagos',
+        icon: <FaGear size={22} />,
+        children: [
+            { id: 161, title: 'Pagos', href: '/dashboard/pagos' },
+            { id: 162, title: 'Envíos', href: '/dashboard/envios' },
+            { id: 163, title: 'Cupones', href: '/dashboard/cupones' },
+            { id: 164, title: 'Blog', href: '/dashboard/blog' },
+            { id: 165, title: 'Legales', href: '/dashboard/legales' },
+        ],
     },
 ];

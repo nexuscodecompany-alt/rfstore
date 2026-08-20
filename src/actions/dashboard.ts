@@ -97,6 +97,83 @@ const soloFecha = (v: string) => String(v).slice(0, 10);
 const desdeElInicioDelDia = (fecha: string) => `${soloFecha(fecha)}T00:00:00-03:00`;
 const hastaElFinalDelDia = (fecha: string) => `${soloFecha(fecha)}T23:59:59.999-03:00`;
 
+/* ------------------------------------------------------------------ */
+/*  CARRITOS ABANDONADOS                                              */
+/* ------------------------------------------------------------------ */
+
+/** Una fila del listado de mails enviados. */
+export interface AbandonedSendRow {
+	id: string;
+	email: string;
+	nombre: string | null;
+	reminder_no: number;
+	coupon_code: string | null;
+	total_usd: number;
+	sent_at: string;
+	clicked: boolean;
+	recovered_order_id: number | null;
+	recovered_total_usd: number | null;
+	status: 'sent' | 'failed' | 'skipped';
+	items: string[];
+}
+
+/** Un carrito abandonado que todavía no recibió ningún aviso. */
+export interface AbandonedPendingRow {
+	id: string;
+	email: string | null;
+	nombre: string | null;
+	total_usd: number;
+	items_count: number;
+	updated_at: string;
+	avisos: number;
+}
+
+export interface AbandonedCartMetrics {
+	abandonados: number;
+	abandonados_usd: number;
+	convertidos_solos: number;
+	mails_enviados: number;
+	mails_fallidos: number;
+	primer_aviso: number;
+	segundo_aviso: number;
+	clics: number;
+	recuperados: number;
+	recuperado_usd: number;
+	/** Lo que costaron en descuento las ventas recuperadas. */
+	descuento_usd: number;
+	ultimos: AbandonedSendRow[];
+	pendientes: AbandonedPendingRow[];
+}
+
+export const getAbandonedCartMetrics = async (
+	fromDate: string,
+	toDate: string
+): Promise<AbandonedCartMetrics> => {
+	const { data, error } = await rpc('abandoned_cart_metrics', {
+		p_from: desdeElInicioDelDia(fromDate),
+		p_to: hastaElFinalDelDia(toDate),
+	});
+	if (error) throw new Error(error.message);
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const d = (data ?? {}) as any;
+	const n = (v: unknown) => Number(v) || 0;
+	return {
+		abandonados: n(d.abandonados),
+		abandonados_usd: n(d.abandonados_usd),
+		convertidos_solos: n(d.convertidos_solos),
+		mails_enviados: n(d.mails_enviados),
+		mails_fallidos: n(d.mails_fallidos),
+		primer_aviso: n(d.primer_aviso),
+		segundo_aviso: n(d.segundo_aviso),
+		clics: n(d.clics),
+		recuperados: n(d.recuperados),
+		recuperado_usd: n(d.recuperado_usd),
+		descuento_usd: n(d.descuento_usd),
+		ultimos: (d.ultimos ?? []) as AbandonedSendRow[],
+		pendientes: (d.pendientes ?? []) as AbandonedPendingRow[],
+	};
+};
+
 export const getDashboardData = async (
 	fromDate: string,
 	toDate: string

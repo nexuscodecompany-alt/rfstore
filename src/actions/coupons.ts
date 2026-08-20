@@ -29,6 +29,9 @@ export interface CouponValidation {
 	type?: CouponType;
 	discount_usd?: number;
 	free_shipping?: boolean;
+	/** Con qué métodos vale. Si no están los tres, el cupón está restringido. */
+	payment_methods?: ('mercadopago' | 'transfer' | 'deposit')[];
+	allowed_methods?: ('mercadopago' | 'transfer' | 'deposit')[];
 }
 
 export interface CartLineForCoupon {
@@ -43,12 +46,20 @@ export const validateCoupon = async (params: {
 	items: CartLineForCoupon[];
 	subtotal: number;
 	shipping?: number;
+	/**
+	 * Método de pago elegido. NO es opcional en la práctica: los cupones pueden
+	 * estar restringidos (el de recuperación de carritos vale sólo por
+	 * transferencia) y sin declararlo el servidor rechaza. Esto es una preview:
+	 * el candado real vive en place_cdr_order y en mp-create-preference.
+	 */
+	paymentMethod?: 'mercadopago' | 'transfer' | 'deposit' | 'hybrid';
 }): Promise<CouponValidation> => {
 	const { data, error } = await (supabase.rpc as any)('apply_coupon', {
 		p_code: params.code,
 		p_items: params.items,
 		p_subtotal: params.subtotal,
 		p_shipping: params.shipping ?? 0,
+		p_payment_method: params.paymentMethod ?? null,
 	});
 	if (error) throw new Error(error.message);
 	return (data ?? { valid: false, reason: 'Error' }) as CouponValidation;

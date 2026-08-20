@@ -38,6 +38,54 @@ export interface ManualSale {
 	profit: number; // neta = venta - costo - comisión - envío - otros
 	// Productos del catálogo vinculados (los que descontaron stock).
 	items: ManualSaleItem[];
+	// Datos del comprador, si se cargaron. Con esto la venta se puede confirmar
+	// por mail igual que una compra web.
+	customer: { id: string; fullName: string; email: string; phone: string | null } | null;
+	address: {
+		line1: string;
+		line2: string | null;
+		city: string;
+		state: string;
+		postalCode: string | null;
+		country: string | null;
+	} | null;
+	invoice: {
+		rut: string;
+		businessName: string;
+		tradeName: string | null;
+		address: string;
+		city: string | null;
+		state: string | null;
+		email: string | null;
+	} | null;
+}
+
+/**
+ * Datos del comprador en una venta manual. Son los MISMOS que cargaría el
+ * cliente comprando por la web: con esto la venta deja de ser un asiento suelto
+ * y queda asociada a un cliente, con su historial y su mail de confirmación.
+ */
+export interface ManualSaleCustomer {
+	fullName: string;
+	email: string;
+	phone: string;
+}
+export interface ManualSaleAddress {
+	line1: string;
+	line2?: string;
+	city: string;
+	state: string;
+	postalCode?: string;
+	country?: string;
+}
+export interface ManualSaleInvoice {
+	rut: string;
+	businessName: string;
+	tradeName?: string;
+	address: string;
+	city?: string;
+	state?: string;
+	email?: string;
 }
 
 export interface ManualSaleInput {
@@ -53,7 +101,47 @@ export interface ManualSaleInput {
 	saleDate?: string | null; // ISO; si no viene, ahora
 	// Productos del catálogo a descontar de stock (opcional). Vacío = venta libre.
 	items: ManualSaleItem[];
+	// Opcionales: si se cargan, la venta queda igual que una compra web.
+	customer?: ManualSaleCustomer | null;
+	address?: ManualSaleAddress | null;
+	invoice?: ManualSaleInvoice | null;
 }
+
+/** Convierte los datos del formulario al formato que esperan las RPC. */
+const customerPayload = (input: ManualSaleInput) =>
+	input.customer && input.customer.email.trim()
+		? {
+				full_name: input.customer.fullName.trim(),
+				email: input.customer.email.trim(),
+				phone: input.customer.phone.trim(),
+		  }
+		: null;
+
+const addressPayload = (input: ManualSaleInput) =>
+	input.address && input.address.line1.trim()
+		? {
+				address_line1: input.address.line1.trim(),
+				address_line2: input.address.line2?.trim() || null,
+				city: input.address.city.trim(),
+				state: input.address.state.trim(),
+				postal_code: input.address.postalCode?.trim() || null,
+				country: input.address.country?.trim() || 'Uruguay',
+		  }
+		: null;
+
+const invoicePayload = (input: ManualSaleInput) =>
+	input.invoice && input.invoice.rut.trim()
+		? {
+				requested: true,
+				rut: input.invoice.rut.replace(/\D/g, ''),
+				business_name: input.invoice.businessName.trim(),
+				trade_name: input.invoice.tradeName?.trim() || null,
+				address: input.invoice.address.trim(),
+				city: input.invoice.city?.trim() || null,
+				state: input.invoice.state?.trim() || null,
+				email: input.invoice.email?.trim() || input.customer?.email?.trim() || null,
+		  }
+		: { requested: false };
 
 /* ------------------------------ Conceptos ------------------------------ */
 export const getSaleConcepts = async (): Promise<SaleConcept[]> => {
@@ -96,7 +184,11 @@ export const getManualSales = async (
 			`id, created_at, status, concept_id, manual_description,
 			 total_amount, total_original, ml_currency, fx_rate,
 			 manual_cost_usd, ml_commission_usd, ml_shipping_cost_usd, ml_other_costs_usd,
+			 invoice_requested, invoice_rut, invoice_business_name, invoice_trade_name,
+			 invoice_address, invoice_city, invoice_state, invoice_email,
 			 sale_concepts:concept_id(name, color),
+			 customers:customer_id(id, full_name, email, phone),
+			 addresses:address_id(address_line1, address_line2, city, state, postal_code, country),
 			 order_items:order_items(variant_id, quantity, variants(color_name, storage, products(name)))`
 		)
 		.eq('channel', 'manual')
@@ -137,6 +229,35 @@ export const getManualSales = async (
 			other,
 			grossProfit: saleAmount - cost,
 			profit: saleAmount - cost - commission - shipping - other,
+			customer: o.customers
+				? {
+						id: o.customers.id as string,
+						fullName: (o.customers.full_name as string) ?? '',
+						email: (o.customers.email as string) ?? '',
+						phone: (o.customers.phone as string | null) ?? null,
+				  }
+				: null,
+			address: o.addresses
+				? {
+						line1: (o.addresses.address_line1 as string) ?? '',
+						line2: (o.addresses.address_line2 as string | null) ?? null,
+						city: (o.addresses.city as string) ?? '',
+						state: (o.addresses.state as string) ?? '',
+						postalCode: (o.addresses.postal_code as string | null) ?? null,
+						country: (o.addresses.country as string | null) ?? null,
+				  }
+				: null,
+			invoice: o.invoice_requested
+				? {
+						rut: (o.invoice_rut as string) ?? '',
+						businessName: (o.invoice_business_name as string) ?? '',
+						tradeName: (o.invoice_trade_name as string | null) ?? null,
+						address: (o.invoice_address as string) ?? '',
+						city: (o.invoice_city as string | null) ?? null,
+						state: (o.invoice_state as string | null) ?? null,
+						email: (o.invoice_email as string | null) ?? null,
+				  }
+				: null,
 			items: ((o.order_items ?? []) as any[]).map(it => ({
 				variantId: it.variant_id as string,
 				label:
@@ -180,6 +301,9 @@ export const createManualSale = async (
 			variant_id: i.variantId,
 			quantity: i.quantity,
 		})),
+		p_customer: customerPayload(input),
+		p_address: addressPayload(input),
+		p_invoice: invoicePayload(input),
 	});
 	if (error) throw new Error(error.message);
 	return { id: data as number };
@@ -213,8 +337,31 @@ export const updateManualSale = async (
 			variant_id: i.variantId,
 			quantity: i.quantity,
 		})),
+		p_customer: customerPayload(input),
+		p_address: addressPayload(input),
+		p_invoice: invoicePayload(input),
 	});
 	if (error) throw new Error(error.message);
+};
+
+/**
+ * Le manda al comprador el mismo mail de confirmación que recibe cualquiera que
+ * compra por la web. Requiere que la venta tenga un cliente con mail cargado.
+ */
+export const sendManualSaleConfirmation = async (orderId: number): Promise<void> => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const { data, error } = await (supabase.functions as any).invoke(
+		'manual-payment-confirm',
+		{ body: { order_id: orderId, action: 'send_confirmation' } }
+	);
+	if (error) {
+		// La edge devuelve el motivo en el body; el error de invoke sólo trae el status.
+		const detalle = (data as { error?: string } | null)?.error;
+		throw new Error(detalle || error.message);
+	}
+	if ((data as { error?: string } | null)?.error) {
+		throw new Error((data as { error: string }).error);
+	}
 };
 
 export const deleteManualSale = async (id: number): Promise<void> => {

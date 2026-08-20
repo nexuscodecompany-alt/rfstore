@@ -46,11 +46,33 @@ async function sendConfirmationMail(orderId: number): Promise<void> {
 }
 
 async function processApproved(orderId: number, paymentId: string): Promise<void> {
-	const { data: existing } = await supabase.from('orders').select('id, payment_status').eq('id', orderId).single();
+	const { data: existing } = await supabase.from('orders').select('id, payment_status, payment_method, payment_split').eq('id', orderId).single();
 	if (!existing) return;
 	if (existing.payment_status === 'paid') {
 		console.log(`[mp-webhook] order ${orderId} already paid, skipping`);
 		return; // idempotente: no remand mail si ya estaba paid
+	}
+
+	// --- PAGO COMBINADO ---
+	// Este pago cubre SÓLO la parte de MercadoPago. El pedido no se concreta
+	// hasta que el admin confirme también la transferencia, así que acá se
+	// registra la parte y se deja que register_hybrid_payment decida.
+	if (existing.payment_method === 'hybrid') {
+		const montoMp = Number((existing.payment_split as any)?.mercadopago) || 0;
+		await supabase.from('orders').update({ mp_payment_id: paymentId }).eq('id', orderId);
+		const { data: completa, error } = await supabase.rpc('register_hybrid_payment', {
+			p_order_id: orderId,
+			p_method: 'mercadopago',
+			p_amount: montoMp,
+		});
+		if (error) { console.warn('[mp-webhook] register_hybrid_payment:', error.message); return; }
+		if (completa === true) {
+			// Las dos partes están cobradas: recién ahora es una venta cerrada.
+			await sendConfirmationMail(orderId);
+		} else {
+			console.log(`[mp-webhook] order ${orderId} (híbrida): parte MP cobrada, falta la transferencia`);
+		}
+		return;
 	}
 
 	await supabase.from('orders').update({

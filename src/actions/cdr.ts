@@ -114,6 +114,9 @@ export interface CartItemForMP {
 	quantity: number;
 	title: string;
 	unit_price_usd: number;
+	/** Entró como extra del checkout. Sólo atribución: no afecta el cobro. */
+	is_extra?: boolean;
+	extra_source?: 'product' | 'category' | null;
 }
 
 export interface CreatePreferenceResult {
@@ -127,24 +130,51 @@ export interface CreatePreferenceResult {
 	fx_source: string;
 }
 
-export const createMpPreference = (payload: {
-	items: CartItemForMP[];
-	address: {
-		line1: string;
-		line2?: string;
-		city: string;
-		state: string;
-		postal_code: string;
-		country: string;
-	};
-	customer_email?: string;
-	customer_name?: string;
-	shipping_zone?: 'montevideo' | 'metropolitana' | 'interior';
-	shipping_barrio?: string;
-	shipping_department?: string;
-	shipping_cost_usd?: number;
-	coupon_code?: string;
-}) => invokeFn<CreatePreferenceResult>('mp-create-preference', payload);
+/** Datos fiscales para factura con RUT. Null si el cliente no la pidió. */
+export interface InvoiceDataForOrder {
+	requested: true;
+	rut: string;
+	business_name: string;
+	trade_name: string | null;
+	address: string;
+	city: string | null;
+	state: string | null;
+	email: string | null;
+}
+
+/**
+ * Dos modos:
+ *
+ * 1. Compra normal por MercadoPago: se manda el carrito completo y la función
+ *    crea la orden, reserva el stock y devuelve el link de pago.
+ * 2. Pago combinado: la orden YA la creó place_cdr_order (con su stock
+ *    reservado), así que se manda `existing_order_id` + `amount_usd` y sólo se
+ *    pide el link por la parte que va con tarjeta.
+ */
+export type CreatePreferencePayload =
+	| {
+			items: CartItemForMP[];
+			address: {
+				line1: string;
+				line2?: string;
+				city: string;
+				state: string;
+				postal_code: string;
+				country: string;
+			};
+			customer_email?: string;
+			customer_name?: string;
+			shipping_zone?: 'montevideo' | 'metropolitana' | 'interior';
+			shipping_barrio?: string;
+			shipping_department?: string;
+			shipping_cost_usd?: number;
+			coupon_code?: string;
+			invoice?: InvoiceDataForOrder | null;
+	  }
+	| { existing_order_id: number; amount_usd: number };
+
+export const createMpPreference = (payload: CreatePreferencePayload) =>
+	invokeFn<CreatePreferenceResult>('mp-create-preference', payload);
 
 export const confirmManualPayment = (orderId: number, action: 'approve' | 'reject') =>
 	invokeFn<{ ok: boolean }>('manual-payment-confirm', {

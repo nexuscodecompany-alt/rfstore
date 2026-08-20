@@ -4,6 +4,12 @@
 // vendedor vía ML (0 en Flex/self_service — ese va manual; list_cost-cost en Mercado
 // Envíos a su cargo). Modos: normal; { reprocess }; { backfill_fees, max }; { inspect_order }.
 //
+// v14 (2026-08-19): las ventas que entraban por una publicación DE CATÁLOGO creaban
+// la orden SIN ÍTEMS — sin costo, sin ganancia y sin descontar stock (órdenes 249 y
+// 282). Esas publicaciones las crea ML colgadas de una ficha nuestra y no están en
+// ml_item_mapping. Ahora se resuelven por catalog_product_id, que es lo que ambas
+// comparten. Modo nuevo { backfill_catalog_ids: true } para completar el dato.
+//
 // v12 (2026-08-04): si ML vendió MÁS unidades de las que RF Store tenía en stock, el
 // descuento se clavaba en 0 en silencio. Ahora se avisa al admin: es la señal de que la
 // publicación y el producto están desalineados (típico: stock cargado a mano en ML sobre
@@ -62,6 +68,105 @@ async function mlShipping(order: any, token: string): Promise<number> {
   return Math.max(0, listCost - buyerCost);
 }
 
+/**
+ * Encuentra el producto de RF que corresponde a una publicación de ML.
+ *
+ * Camino normal: la publicación está en ml_item_mapping.
+ *
+ * Camino de CATÁLOGO: las publicaciones de catálogo las crea ML colgadas de una
+ * ficha nuestra y NO están en el mapeo, así que hasta ahora esas ventas entraban
+ * sin ítems — sin costo, sin ganancia y sin descontar stock (órdenes 249 y 282).
+ * El vínculo entre las dos es `catalog_product_id`: ambas apuntan al mismo
+ * producto de catálogo. Se resuelve por ahí y, de paso, se guarda el dato en la
+ * ficha padre para que la próxima venta salga por el camino normal.
+ */
+async function resolverMapeo(
+  mlItemId: string,
+  token: string
+): Promise<{ variant_id: string; product_id: string } | null> {
+  const { data: directo } = await supabase
+    .from('ml_item_mapping')
+    .select('variant_id, product_id')
+    .eq('ml_item_id', mlItemId)
+    .maybeSingle();
+  if (directo?.variant_id) return directo as any;
+
+  // No está mapeada: puede ser de catálogo.
+  const r = await mlGet(`/items/${mlItemId}`, token);
+  const catalogId = r.ok ? (r.data?.catalog_product_id ?? null) : null;
+  if (!catalogId) return null;
+
+  // 1) ¿Alguna ficha nuestra ya tiene guardado ese catalog_product_id?
+  const { data: porCatalogo } = await supabase
+    .from('ml_item_mapping')
+    .select('variant_id, product_id, ml_item_id, status')
+    .eq('catalog_product_id', catalogId)
+    .neq('ml_item_id', mlItemId)
+    // La activa manda; si no hay, sirve cualquiera: el producto de RF es el mismo.
+    .order('status', { ascending: true })
+    .limit(1);
+  if (porCatalogo && porCatalogo.length > 0 && porCatalogo[0].variant_id) {
+    console.log(`[ml-webhook] ${mlItemId} resuelta por catálogo ${catalogId} → ${porCatalogo[0].ml_item_id}`);
+    return porCatalogo[0] as any;
+  }
+
+  // 2) Todavía sin backfill: preguntamos a ML cuáles de nuestras publicaciones
+  //    comparten ese producto de catálogo. Es el caso raro y se autocorrige,
+  //    porque abajo guardamos el dato.
+  const s = await mlGet(`/sites/MLU/search?catalog_product_id=${catalogId}&seller_id=${r.data?.seller_id ?? ''}`, token);
+  const candidatas: string[] = (s.ok ? (s.data?.results ?? []) : [])
+    .map((x: any) => x?.id)
+    .filter((id: string) => id && id !== mlItemId);
+  if (candidatas.length === 0) return null;
+
+  const { data: porCandidata } = await supabase
+    .from('ml_item_mapping')
+    .select('variant_id, product_id, ml_item_id')
+    .in('ml_item_id', candidatas)
+    .limit(1);
+  if (!porCandidata || porCandidata.length === 0 || !porCandidata[0].variant_id) return null;
+
+  // Autocuración: la próxima venta de catálogo de este producto ya no necesita
+  // ninguna llamada a la API.
+  await supabase.from('ml_item_mapping')
+    .update({ catalog_product_id: catalogId })
+    .eq('ml_item_id', porCandidata[0].ml_item_id);
+
+  console.log(`[ml-webhook] ${mlItemId} resuelta vía búsqueda de catálogo ${catalogId}`);
+  return porCandidata[0] as any;
+}
+
+/**
+ * Completa catalog_product_id en el mapeo. Usa el multiget de ML (20 ids por
+ * llamada) para no hacer 1.548 requests sueltos.
+ * Modo: { backfill_catalog_ids: true, max: 400 }
+ */
+async function backfillCatalogIds(max: number, token: string): Promise<{ revisados: number; con_catalogo: number; errores: number }> {
+  const { data: filas } = await supabase
+    .from('ml_item_mapping')
+    .select('ml_item_id')
+    .is('catalog_product_id', null)
+    .neq('status', 'closed')
+    .limit(max);
+  const ids = (filas ?? []).map((f: any) => f.ml_item_id).filter(Boolean);
+  let conCatalogo = 0, errores = 0;
+
+  for (let i = 0; i < ids.length; i += 20) {
+    const lote = ids.slice(i, i + 20);
+    const r = await mlGet(`/items?ids=${lote.join(',')}&attributes=id,catalog_product_id`, token);
+    if (!r.ok) { errores += lote.length; continue; }
+    for (const entry of r.data ?? []) {
+      const body = entry?.body ?? entry;
+      const id = body?.id;
+      const cat = body?.catalog_product_id ?? null;
+      if (!id || !cat) continue;
+      await supabase.from('ml_item_mapping').update({ catalog_product_id: cat }).eq('ml_item_id', id);
+      conCatalogo++;
+    }
+  }
+  return { revisados: ids.length, con_catalogo: conCatalogo, errores };
+}
+
 async function notifyAdminOnce(type: string, mlOrderId: string, payload: Record<string, unknown>) {
   const { data: existing } = await supabase.from('admin_notifications').select('id').eq('type', type).is('read_at', null).filter('payload->>ml_order_id', 'eq', mlOrderId).limit(1).maybeSingle();
   if (existing) return;
@@ -95,7 +200,7 @@ async function processOrderV2(resource: string, token: string): Promise<{ ok: bo
     const unitPrice = toUsd(Number(oi?.unit_price) || 0, oi?.currency_id ?? order.currency_id);
     const title = oi?.item?.title ?? mlItemId ?? 'item';
     if (!mlItemId || !qty) continue;
-    const { data: mapping } = await supabase.from('ml_item_mapping').select('variant_id, product_id').eq('ml_item_id', mlItemId).maybeSingle();
+    const mapping = await resolverMapeo(mlItemId, token);
     if (!mapping?.variant_id) { unmapped.push({ ml_item_id: mlItemId, title, qty }); continue; }
     const { data: prod } = await supabase.from('products').select('price_usd').eq('id', mapping.product_id).maybeSingle();
     const cost = Number(prod?.price_usd) || 0;
@@ -224,6 +329,11 @@ Deno.serve(async (req: Request) => {
   if (body?.backfill_fees === true) {
     const token = await getToken();
     const res = await backfillFees(Number(body.max) || 50, token);
+    return new Response(JSON.stringify(res), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  }
+  if (body?.backfill_catalog_ids === true) {
+    const token = await getToken();
+    const res = await backfillCatalogIds(Number(body.max) || 400, token);
     return new Response(JSON.stringify(res), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
   if (body?.inspect_order) {

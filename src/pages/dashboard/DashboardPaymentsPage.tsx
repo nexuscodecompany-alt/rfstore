@@ -1,11 +1,5 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-	confirmManualPayment,
-	getPaymentProofSignedUrl,
-	getPendingPaymentOrders,
-	getAppSettings,
-	updateAppSetting,
-} from '../../actions';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { getAppSettings, updateAppSetting } from '../../actions';
 import toast from 'react-hot-toast';
 import { useEffect, useState } from 'react';
 
@@ -24,13 +18,11 @@ interface DepositInfo {
 	instrucciones: string;
 }
 
+// Esta pantalla configura CÓMO se cobra (datos bancarios y de las redes).
+// Los pagos pendientes de aprobar NO viven acá: se confirman desde la orden
+// misma, en Órdenes, que es donde está el contexto (cliente, ítems, comprobante).
+// Tenerlos en dos lugares hacía que el admin no supiera cuál era el bueno.
 export const DashboardPaymentsPage = () => {
-	const queryClient = useQueryClient();
-
-	const { data: orders = [] } = useQuery({
-		queryKey: ['pending_payments'],
-		queryFn: getPendingPaymentOrders,
-	});
 	const { data: settings } = useQuery({
 		queryKey: ['app_settings'],
 		queryFn: getAppSettings,
@@ -70,25 +62,6 @@ export const DashboardPaymentsPage = () => {
 		onSuccess: () => toast.success('Datos de depósito guardados'),
 		onError: (e: Error) => toast.error(e.message),
 	});
-
-	const { mutate: doConfirm } = useMutation({
-		mutationFn: ({ id, action }: { id: number; action: 'approve' | 'reject' }) =>
-			confirmManualPayment(id, action),
-		onSuccess: () => {
-			toast.success('Listo');
-			queryClient.invalidateQueries({ queryKey: ['pending_payments'] });
-		},
-		onError: (e: Error) => toast.error(e.message),
-	});
-
-	const openProof = async (path: string) => {
-		try {
-			const url = await getPaymentProofSignedUrl(path);
-			window.open(url, '_blank');
-		} catch (e) {
-			toast.error((e as Error).message);
-		}
-	};
 
 	return (
 		<div className='flex flex-col gap-8'>
@@ -206,73 +179,6 @@ export const DashboardPaymentsPage = () => {
 				</button>
 			</section>
 
-			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
-				<h2 className='font-semibold'>Órdenes con pago pendiente ({orders.length})</h2>
-				{orders.length === 0 ? (
-					<p className='text-sm text-gray-500'>No hay pagos pendientes.</p>
-				) : (
-					<div className='overflow-x-auto'>
-					<table className='min-w-full text-sm'>
-						<thead className='bg-gray-50 text-left'>
-							<tr>
-								<th className='p-2'>#</th>
-								<th className='p-2'>Cliente</th>
-								<th className='p-2'>Total</th>
-								<th className='p-2'>Método</th>
-								<th className='p-2'>Comprobante</th>
-								<th className='p-2'>Acciones</th>
-							</tr>
-						</thead>
-						<tbody>
-							{orders.map(o => (
-								<tr key={o.id} className='border-t'>
-									<td className='p-2'>#{o.id}</td>
-									<td className='p-2'>
-										{o.customers?.full_name ?? '—'}
-										<br />
-										<span className='text-xs text-gray-500'>
-											{o.customers?.email}
-										</span>
-									</td>
-									<td className='p-2'>USD {o.total_amount}</td>
-									<td className='p-2'>{o.payment_method}</td>
-									<td className='p-2'>
-										{o.payment_proof_url ? (
-											<button
-												className='text-blue-600 underline'
-												onClick={() => openProof(o.payment_proof_url!)}
-											>
-												Ver
-											</button>
-										) : (
-											<span className='text-gray-400'>—</span>
-										)}
-									</td>
-									<td className='p-2 space-x-2'>
-										<button
-											className='px-3 py-1 bg-green-600 text-white rounded text-xs'
-											onClick={() =>
-												doConfirm({ id: o.id, action: 'approve' })
-											}
-										>
-											Aprobar
-										</button>
-										<button
-											className='px-3 py-1 bg-red-600 text-white rounded text-xs'
-											onClick={() =>
-												doConfirm({ id: o.id, action: 'reject' })
-											}
-										>
-											Rechazar
-										</button>
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-					</div>
-				)}
-			</section>
 		</div>
 	);
 };

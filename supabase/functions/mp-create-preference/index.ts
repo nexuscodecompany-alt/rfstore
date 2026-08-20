@@ -46,7 +46,21 @@ async function fetchGetStock(email: string, token: string, codigos: string[]): P
 
 // external_code sólo lo tienen los productos CDR. Los manuales (source=local)
 // habilitados con products.online_payment lo mandan null/ausente.
-interface CartItem { external_code?: string | null; variant_id: string; quantity: number; title: string; unit_price_usd: number; }
+// is_extra / extra_source: marca de "entró como extra del checkout". Es SÓLO
+// atribución para medir el módulo — el precio y el total se recalculan acá igual,
+// así que un cliente que los falsifique no cambia un peso de lo que paga.
+interface CartItem { external_code?: string | null; variant_id: string; quantity: number; title: string; unit_price_usd: number; is_extra?: boolean; extra_source?: 'product' | 'category' | null; }
+// Datos fiscales para factura con RUT (opcional).
+interface InvoiceData {
+	requested?: boolean;
+	rut?: string;
+	business_name?: string;
+	trade_name?: string | null;
+	address?: string;
+	city?: string | null;
+	state?: string | null;
+	email?: string | null;
+}
 interface ReqBody {
 	items: CartItem[];
 	address: { line1: string; line2?: string; city: string; state: string; postal_code: string; country: string; };
@@ -57,6 +71,12 @@ interface ReqBody {
 	shipping_department?: string;
 	shipping_cost_usd?: number;
 	coupon_code?: string;
+	invoice?: InvoiceData | null;
+	// --- Modo pago combinado ---
+	// La orden ya existe (la creó place_cdr_order con su stock reservado): acá
+	// sólo se pide el link de pago por la parte que va con tarjeta.
+	existing_order_id?: number;
+	amount_usd?: number;
 }
 const FREE_SHIPPING_MIN_USD = 150;
 
@@ -67,6 +87,66 @@ Deno.serve(async req => {
 	const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
 	try {
 		const body: ReqBody = await req.json();
+
+		// ============ MODO PAGO COMBINADO ============
+		// La orden ya existe y el stock ya está reservado. Sólo hay que cobrar la
+		// parte de MercadoPago. NO se recalcula el carrito ni se toca el stock: eso
+		// ya lo hizo place_cdr_order.
+		if (body.existing_order_id) {
+			const { data: userData, error: userErr } = await supabaseUser.auth.getUser();
+			if (userErr || !userData.user) return new Response(JSON.stringify({ error: 'no autenticado' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			const { data: customer } = await supabaseAdmin.from('customers').select('id, full_name, email').eq('user_id', userData.user.id).single();
+			if (!customer) return new Response(JSON.stringify({ error: 'cliente no encontrado' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+			const { data: order } = await supabaseAdmin
+				.from('orders')
+				.select('id, customer_id, payment_method, payment_status, payment_split, total_amount, fx_rate, mp_preference_id')
+				.eq('id', body.existing_order_id)
+				.single();
+			if (!order) return new Response(JSON.stringify({ error: 'orden no encontrada' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			// La orden tiene que ser DE ESTE cliente: si no, cualquiera podría pedir
+			// un link de pago de un pedido ajeno.
+			if (order.customer_id !== customer.id) return new Response(JSON.stringify({ error: 'no autorizado' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			if (order.payment_method !== 'hybrid') return new Response(JSON.stringify({ error: 'la orden no es de pago combinado' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			if (order.payment_status === 'paid') return new Response(JSON.stringify({ error: 'la orden ya está paga' }), { status: 409, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+			// El monto NO se toma del cliente: sale del desglose guardado en la orden.
+			const montoMp = Number((order.payment_split as any)?.mercadopago) || 0;
+			if (montoMp <= 0) return new Response(JSON.stringify({ error: 'la orden no tiene monto de MercadoPago' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+
+			// Se usa la cotización CONGELADA en la orden: es la que vio el cliente al
+			// confirmar. Si acá tomáramos la del día, el monto no coincidiría.
+			const fxOrden = Number(order.fx_rate) || 0;
+			const enUyu = fxOrden > 0;
+			const moneda = enUyu ? 'UYU' : 'USD';
+			const importe = enUyu ? Math.round(montoMp * fxOrden) : Number(montoMp.toFixed(2));
+
+			const prefBody = {
+				items: [{ title: `Pedido #${order.id} — parte con MercadoPago`, quantity: 1, currency_id: moneda, unit_price: Math.max(enUyu ? 1 : 0.01, importe) }],
+				payer: { email: customer.email ?? userData.user.email, name: customer.full_name ?? undefined },
+				back_urls: {
+					success: `${SITE_URL}/checkout/${order.id}/thank-you?status=success`,
+					failure: `${SITE_URL}/checkout/${order.id}/thank-you?status=failure`,
+					pending: `${SITE_URL}/checkout/${order.id}/thank-you?status=pending`,
+				},
+				auto_return: 'approved',
+				external_reference: String(order.id),
+				notification_url: `${SUPABASE_URL}/functions/v1/mp-webhook`,
+				statement_descriptor: 'RFSTORE',
+			};
+			const prefResp = await fetch('https://api.mercadopago.com/checkout/preferences', { method: 'POST', headers: { Authorization: `Bearer ${MP_ACCESS_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify(prefBody) });
+			if (!prefResp.ok) {
+				const errText = await prefResp.text();
+				// NO se cancela la orden: el stock sigue reservado y el admin puede
+				// reintentar el cobro. Cancelarla acá perdería la venta entera por un
+				// error de la pasarela.
+				throw new Error(`MP API ${prefResp.status}: ${errText.slice(0, 500)}`);
+			}
+			const pref = await prefResp.json();
+			await supabaseAdmin.from('orders').update({ mp_preference_id: pref.id }).eq('id', order.id);
+			return new Response(JSON.stringify({ order_id: order.id, preference_id: pref.id, init_point: pref.init_point, sandbox_init_point: pref.sandbox_init_point, total_usd: montoMp, total_uyu: enUyu ? importe : 0, fx_rate: fxOrden, fx_source: 'orden' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+		}
+
 		if (!body.items?.length) return new Response(JSON.stringify({ error: 'items vacío' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
 		// Origen/precio/stock de cada item resueltos desde la DB por variant_id.
@@ -189,8 +269,16 @@ Deno.serve(async req => {
 		let couponDiscount = 0, couponFree = false, couponId: string | null = null, couponValid = false, couponCodeNorm: string | null = null;
 		if (body.coupon_code && body.coupon_code.trim()) {
 			const couponItems = lineTotals.map(l => ({ variant_id: l.variant_id, price: l.unit_final_usd, quantity: l.quantity }));
-			const { data: cres } = await supabaseAdmin.rpc('apply_coupon', { p_code: body.coupon_code, p_items: couponItems, p_subtotal: subtotal, p_shipping: shippingBase });
+			// Este camino SIEMPRE es MercadoPago: se lo declaramos a apply_coupon.
+			// Un cupón restringido a transferencia queda afuera acá, aunque alguien
+			// llame esta función directamente con curl.
+			const { data: cres } = await supabaseAdmin.rpc('apply_coupon', { p_code: body.coupon_code, p_items: couponItems, p_subtotal: subtotal, p_shipping: shippingBase, p_payment_method: 'mercadopago' });
 			if (cres && (cres as any).valid) { couponValid = true; couponDiscount = Number((cres as any).discount_usd) || 0; couponFree = (cres as any).free_shipping === true; couponId = (cres as any).coupon_id; couponCodeNorm = (cres as any).code ?? null; }
+			else if (cres && (cres as any).reason) {
+				// No se ignora en silencio: si el cliente puso un cupón que no aplica,
+				// tiene que enterarse ANTES de pagar y no cobrarle un total distinto.
+				return new Response(JSON.stringify({ error: (cres as any).reason, code: 'coupon_invalid' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			}
 		}
 		const shippingCharge = couponFree ? 0 : shippingBase;
 		const discountedProducts = Math.max(0, Number((subtotal - couponDiscount).toFixed(2)));
@@ -212,14 +300,35 @@ Deno.serve(async req => {
 		const { data: addressRow, error: addrErr } = await supabaseAdmin.from('addresses').insert({ address_line1: body.address.line1, address_line2: body.address.line2 ?? null, city: body.address.city, state: body.address.state, postal_code: body.address.postal_code, country: body.address.country, customer_id: customer.id }).select().single();
 		if (addrErr) throw new Error(`addresses: ${addrErr.message}`);
 
-		const { data: orderRow, error: orderErr } = await supabaseAdmin.from('orders').insert({ customer_id: customer.id, address_id: addressRow.id, total_amount: totalAmount, status: 'pago_pendiente', payment_method: 'mercadopago', payment_status: 'pending', shipping_zone: body.shipping_zone ?? null, shipping_barrio: body.shipping_barrio ?? null, shipping_department: body.shipping_department ?? null, shipping_cost_usd: shippingCharge, coupon_id: couponId, coupon_code: couponCodeNorm, discount_usd: couponDiscount, fx_rate: useUyu ? fxRate : null, fx_source: useUyu ? fxSource : null, total_original: useUyu ? Math.round(totalAmount * fxRate) : null }).select().single();
+		// Factura con RUT (opcional). Se normaliza el RUT a sólo dígitos y se exige
+		// lo mínimo que pide DGI; si falta algo, se corta acá con un mensaje claro
+		// en vez de dejar que reviente el check de la base.
+		const inv = body.invoice ?? null;
+		const quiereFactura = inv?.requested === true;
+		const rutDigits = quiereFactura ? String(inv?.rut ?? '').replace(/\D/g, '') : '';
+		if (quiereFactura) {
+			if (rutDigits.length !== 12) return new Response(JSON.stringify({ error: 'El RUT tiene que tener 12 dígitos' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			if (!String(inv?.business_name ?? '').trim()) return new Response(JSON.stringify({ error: 'Falta la razón social para la factura' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			if (!String(inv?.address ?? '').trim()) return new Response(JSON.stringify({ error: 'Falta el domicilio fiscal para la factura' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+		}
+
+		const { data: orderRow, error: orderErr } = await supabaseAdmin.from('orders').insert({ customer_id: customer.id, address_id: addressRow.id, total_amount: totalAmount, status: 'pago_pendiente', payment_method: 'mercadopago', payment_status: 'pending', shipping_zone: body.shipping_zone ?? null, shipping_barrio: body.shipping_barrio ?? null, shipping_department: body.shipping_department ?? null, shipping_cost_usd: shippingCharge, coupon_id: couponId, coupon_code: couponCodeNorm, discount_usd: couponDiscount, fx_rate: useUyu ? fxRate : null, fx_source: useUyu ? fxSource : null, total_original: useUyu ? Math.round(totalAmount * fxRate) : null,
+			invoice_requested: quiereFactura,
+			invoice_rut: quiereFactura ? rutDigits : null,
+			invoice_business_name: quiereFactura ? String(inv?.business_name ?? '').trim() : null,
+			invoice_trade_name: quiereFactura ? (String(inv?.trade_name ?? '').trim() || null) : null,
+			invoice_address: quiereFactura ? String(inv?.address ?? '').trim() : null,
+			invoice_city: quiereFactura ? (String(inv?.city ?? '').trim() || null) : null,
+			invoice_state: quiereFactura ? (String(inv?.state ?? '').trim() || null) : null,
+			invoice_email: quiereFactura ? (String(inv?.email ?? '').trim() || body.customer_email || null) : null,
+		}).select().single();
 		if (orderErr) throw new Error(`orders: ${orderErr.message}`);
 
 		// cost_usd: costo congelado al momento de la venta (CDR -> products.price_usd;
 		// propio -> costo cargado en la variante). Sin esto la venta figuraba con
 		// ganancia CERO en el panel: pasaba en TODAS las ventas web por Mercado Pago.
 		// (La base igual lo completa por trigger, esto lo deja explícito acá.)
-		const { error: itemsErr } = await supabaseAdmin.from('order_items').insert(lineTotals.map(l => ({ order_id: orderRow.id, variant_id: l.variant_id, price: l.unit_final_usd, quantity: l.quantity, cost_usd: costByVariant.get(l.variant_id) || null })));
+		const { error: itemsErr } = await supabaseAdmin.from('order_items').insert(lineTotals.map(l => ({ order_id: orderRow.id, variant_id: l.variant_id, price: l.unit_final_usd, quantity: l.quantity, cost_usd: costByVariant.get(l.variant_id) || null, is_extra: l.is_extra === true, extra_source: l.is_extra === true ? l.extra_source ?? null : null })));
 		if (itemsErr) throw new Error(`order_items: ${itemsErr.message}`);
 
 		for (const l of lineTotals) { const { data: v } = await supabaseAdmin.from('variants').select('stock').eq('id', l.variant_id).single(); if (!v) continue; await supabaseAdmin.from('variants').update({ stock: Math.max(0, Number(v.stock) - l.quantity) }).eq('id', l.variant_id); }

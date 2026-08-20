@@ -25,6 +25,7 @@ import {
 import { Loader } from '../../components/shared/Loader';
 import {
 	formatPriceCurrency,
+	formatMoney,
 	formatDateTime,
 	orderStatusBadge,
 	orderStatusLabel,
@@ -38,6 +39,7 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 	mercadopago: 'Mercado Pago',
 	transfer: 'Transferencia bancaria',
 	deposit: 'Depósito en redes (Abitab / Redpagos)',
+	hybrid: 'Pago combinado (MercadoPago + transferencia)',
 };
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
 	paid: 'Pagado',
@@ -188,9 +190,12 @@ export const DashboardOrderPage = () => {
 	// Inputs de costos ML están en moneda nativa; pasamos a USD para la ganancia real.
 	const mlCostsTotalUsd = (commission + shipping + other) / fx;
 	const realProfit = margin - mlCostsTotalUsd;
-	// Pago manual (transferencia / depósito): lo confirma el admin a mano.
+	// Pago que confirma el admin a mano: transferencia, depósito, y el combinado
+	// (donde lo que confirma es la PARTE que llegó por transferencia).
 	const isManualPayment =
-		order.paymentMethod === 'transfer' || order.paymentMethod === 'deposit';
+		order.paymentMethod === 'transfer' ||
+		order.paymentMethod === 'deposit' ||
+		order.paymentMethod === 'hybrid';
 	// Total que se muestra: para ML/UYU el monto exacto en pesos que pagó el comprador.
 	const displayTotal = isUyu && order.totalOriginal != null ? order.totalOriginal : order.totalAmount * fx;
 	// Chat de WhatsApp con el saludo y el número de pedido ya escritos (null si el
@@ -344,6 +349,11 @@ export const DashboardOrderPage = () => {
 												{item.productName}
 											</h3>
 										)}
+										{item.isExtra && (
+											<span className='mt-0.5 inline-flex items-center rounded-full bg-brand-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-brand-700'>
+												Extra del checkout
+											</span>
+										)}
 										<p className='text-xs text-ink-500'>
 											{[item.color_name, item.storage]
 												.filter(Boolean)
@@ -438,6 +448,41 @@ export const DashboardOrderPage = () => {
 						</div>
 					</div>
 
+					{/* Factura con RUT: los datos que hay que poner en el comprobante. */}
+					{order.invoice && (
+						<div className='rounded-2xl border-2 border-violet-300 bg-violet-50/60 p-5 shadow-soft'>
+							<h2 className='mb-3 flex items-center gap-2 font-bold text-violet-900'>
+								🧾 Pide factura con RUT
+							</h2>
+							<div className='space-y-1.5 text-sm'>
+								{(
+									[
+										['RUT', order.invoice.rut],
+										['Razón social', order.invoice.businessName],
+										['Nombre comercial', order.invoice.tradeName],
+										['Domicilio fiscal', order.invoice.address],
+										[
+											'Localidad',
+											[order.invoice.city, order.invoice.state]
+												.filter(Boolean)
+												.join(', ') || null,
+										],
+										['Enviar factura a', order.invoice.email],
+									] as [string, string | null][]
+								)
+									.filter(([, v]) => v)
+									.map(([label, value]) => (
+										<div key={label} className='flex justify-between gap-3'>
+											<span className='text-violet-700'>{label}</span>
+											<span className='text-right font-semibold text-ink-900'>
+												{value}
+											</span>
+										</div>
+									))}
+							</div>
+						</div>
+					)}
+
 					{/* Pago: método + estado. Antes no figuraba en ningún lado y había
 					    que adivinar si el pedido era por transferencia o depósito. */}
 					{order.channel !== 'ml' && (
@@ -471,6 +516,55 @@ export const DashboardOrderPage = () => {
 									<div className='flex items-center justify-between gap-3'>
 										<span className='text-ink-500'>Pagado el</span>
 										<span className='text-ink-700'>{formatDateTime(order.paidAt)}</span>
+									</div>
+								)}
+
+								{/* Pago combinado: qué parte entró y qué parte falta. Es lo
+								    primero que necesita saber quien va a despachar. */}
+								{order.paymentMethod === 'hybrid' && order.paymentSplit && (
+									<div className='mt-2 rounded-lg border border-ink-200 bg-ink-50/70 p-3'>
+										<p className='mb-2 text-xs font-bold uppercase tracking-wide text-ink-600'>
+											Pago en dos partes
+										</p>
+										{(
+											[
+												['MercadoPago', Number(order.paymentSplit.mercadopago) || 0, order.paidMpUsd > 0],
+												['Transferencia', Number(order.paymentSplit.transfer) || 0, order.paidTransferUsd > 0],
+											] as [string, number, boolean][]
+										).map(([label, monto, cobrado]) => (
+											<div
+												key={label}
+												className='flex items-center justify-between gap-3 py-1'
+											>
+												<span className='text-ink-600'>{label}</span>
+												<span className='flex items-center gap-2'>
+													<span className='tabular-nums text-ink-800'>
+														{formatMoney(monto)}
+													</span>
+													<span
+														className={`rounded-full px-2 py-0.5 text-[10px] font-bold uppercase ${
+															cobrado
+																? 'bg-emerald-100 text-emerald-700'
+																: 'bg-amber-100 text-amber-700'
+														}`}
+													>
+														{cobrado ? 'cobrado' : 'falta'}
+													</span>
+												</span>
+											</div>
+										))}
+										{order.paymentStatus !== 'paid' && (
+											<p className='mt-2 border-t border-ink-200 pt-2 text-[12px] font-semibold text-amber-700'>
+												No despachar: falta cobrar{' '}
+												{formatMoney(
+													Math.max(
+														0,
+														order.totalAmount - order.paidMpUsd - order.paidTransferUsd
+													)
+												)}
+												.
+											</p>
+										)}
 									</div>
 								)}
 								<div className='flex items-center justify-between gap-3'>

@@ -93,11 +93,43 @@ Deno.serve(async req => {
 			});
 		}
 
-		const body: { order_id: number; action: 'approve' | 'reject' } = await req.json();
-		if (!body.order_id || !['approve', 'reject'].includes(body.action)) {
+		const body: { order_id: number; action: 'approve' | 'reject' | 'send_confirmation' } = await req.json();
+		if (!body.order_id || !['approve', 'reject', 'send_confirmation'].includes(body.action)) {
 			return new Response(JSON.stringify({ error: 'parámetros inválidos' }), {
 				status: 400,
 				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+			});
+		}
+
+		// Reenviar el mail de confirmación sin tocar el estado de la orden. Lo usa
+		// la venta manual: el admin la carga con los datos del cliente y le manda
+		// la misma confirmación que recibiría comprando por la web.
+		// send-order-confirmation sólo acepta service_role, así que la llamada tiene
+		// que pasar por acá (que ya validó que quien pide es admin).
+		if (body.action === 'send_confirmation') {
+			const { data: ord } = await supabaseAdmin
+				.from('orders')
+				.select('id, customer_id, payment_status')
+				.eq('id', body.order_id)
+				.single();
+			if (!ord) {
+				return new Response(JSON.stringify({ error: 'orden no encontrada' }), {
+					status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				});
+			}
+			if (!ord.customer_id) {
+				return new Response(JSON.stringify({ error: 'La venta no tiene un cliente cargado: agregale el mail para poder enviarle la confirmación.' }), {
+					status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				});
+			}
+			const err = await sendConfirmationMail(body.order_id);
+			if (err) {
+				return new Response(JSON.stringify({ error: `No se pudo enviar el mail: ${err}` }), {
+					status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				});
+			}
+			return new Response(JSON.stringify({ ok: true, mail_sent: true }), {
+				status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 			});
 		}
 
@@ -109,10 +141,41 @@ Deno.serve(async req => {
 			// spamear al cliente).
 			const { data: before } = await supabaseAdmin
 				.from('orders')
-				.select('payment_status')
+				.select('payment_status, payment_method, payment_split, paid_mp_usd, paid_transfer_usd, total_amount')
 				.eq('id', body.order_id)
 				.single();
 			const wasPaid = before?.payment_status === 'paid';
+
+			// --- PAGO COMBINADO ---
+			// Lo que el admin está confirmando es SÓLO la parte que vino por
+			// transferencia. El pedido se concreta si con eso ya se cubre el total;
+			// si todavía falta la parte de MercadoPago, sigue Pendiente.
+			if (before?.payment_method === 'hybrid') {
+				const montoTr = Number((before.payment_split as any)?.transfer) || 0;
+				const { data: completa, error: hybErr } = await supabaseAdmin.rpc('register_hybrid_payment', {
+					p_order_id: body.order_id,
+					p_method: 'transfer',
+					p_amount: montoTr,
+				});
+				if (hybErr) throw new Error(hybErr.message);
+
+				if (completa === true) {
+					mailError = await sendConfirmationMail(body.order_id);
+					mailSent = mailError === null;
+				}
+				const faltaMp = !(Number(before.paid_mp_usd) > 0);
+				return new Response(
+					JSON.stringify({
+						ok: true,
+						hybrid: true,
+						completed: completa === true,
+						pending_part: completa === true ? null : faltaMp ? 'mercadopago' : null,
+						mail_sent: mailSent,
+						mail_error: mailError,
+					}),
+					{ status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+				);
+			}
 
 			// El stock ya se decrementó al crear la orden (place_cdr_order).
 			// Acá solo marcamos pagada.

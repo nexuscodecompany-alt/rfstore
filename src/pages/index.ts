@@ -38,3 +38,6 @@ export * from './dashboard/DashboardHomeConfigPage';
 export * from './dashboard/DashboardLegalPage';
 export * from './dashboard/DashboardShippingPage';
 export * from './dashboard/DashboardMercadoLibrePage';
+export * from './dashboard/DashboardExtrasPage';
+
+export * from './RecoverCartPage';

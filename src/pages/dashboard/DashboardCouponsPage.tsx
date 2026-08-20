@@ -16,6 +16,7 @@ import { useTaxonomiesAdmin } from '../../hooks';
 import { supabase } from '../../supabase/client';
 import { Loader } from '../../components/shared/Loader';
 import { NumInput } from '../../components/dashboard/NumInput';
+import { AbandonedCartConfigSection } from '../../components/dashboard/AbandonedCartConfigSection';
 
 const EMPTY: CouponInput = {
 	code: '',
@@ -36,7 +37,10 @@ const typeLabel: Record<CouponType, string> = {
 	free_shipping: 'Envío gratis',
 };
 
+type Tab = 'manual' | 'abandonos';
+
 export const DashboardCouponsPage = () => {
+	const [tab, setTab] = useState<Tab>('manual');
 	const queryClient = useQueryClient();
 	const { categories } = useTaxonomiesAdmin();
 	const { data: coupons = [], isLoading } = useQuery({ queryKey: ['coupons'], queryFn: getCoupons });
@@ -94,12 +98,40 @@ export const DashboardCouponsPage = () => {
 		<div className='max-w-5xl space-y-6'>
 			<div>
 				<h1 className='flex items-center gap-2 text-2xl font-bold text-ink-900'>
-					<HiOutlineTicket className='text-brand-600' /> Cupones de descuento
+					<HiOutlineTicket className='text-brand-600' /> Cupones y promociones
 				</h1>
 				<p className='text-sm text-ink-500'>
-					Creá códigos y compartilos con tus clientes. El cliente los ingresa en el checkout. No se muestran en la web.
+					Los códigos que creás a mano, y la campaña que los genera sola para
+					recuperar carritos abandonados.
 				</p>
 			</div>
+
+			{/* Dos cosas distintas que fabrican descuentos: se separan en pestañas
+			    para que nadie confunda un código de campaña con uno manual. */}
+			<div className='flex gap-1 border-b border-ink-200'>
+				{(
+					[
+						['manual', 'Cupones manuales'],
+						['abandonos', 'Carritos abandonados'],
+					] as [Tab, string][]
+				).map(([key, label]) => (
+					<button
+						key={key}
+						onClick={() => setTab(key)}
+						className={`-mb-px border-b-2 px-4 py-2.5 text-sm font-semibold transition-colors ${
+							tab === key
+								? 'border-brand-600 text-brand-700'
+								: 'border-transparent text-ink-500 hover:text-ink-800'
+						}`}
+					>
+						{label}
+					</button>
+				))}
+			</div>
+
+			{tab === 'abandonos' && <AbandonedCartConfigSection />}
+			{tab === 'manual' && (
+			<>
 
 			{/* Form */}
 			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft space-y-4'>
@@ -224,6 +256,9 @@ export const DashboardCouponsPage = () => {
 					</div>
 				)}
 			</div>
+
+			</>
+			)}
 
 			<style>{`.inp{width:100%;border:1px solid #d6d3d1;border-radius:0.5rem;padding:0.5rem 0.75rem;font-size:0.875rem;outline:none}.inp:focus{box-shadow:0 0 0 2px rgba(99,102,241,.3)}`}</style>
 		</div>

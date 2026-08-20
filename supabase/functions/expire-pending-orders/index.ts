@@ -2,6 +2,12 @@
 // Marca como 'expirado' las órdenes pago_pendiente más viejas que 6 horas
 // y libera su stock vía release_order_stock (idempotente).
 //
+// v2: también vence las órdenes de PAGO COMBINADO (estado 'Pendiente'), pero
+// con una ventana mucho más larga: ahí el cliente tiene que hacer una
+// transferencia bancaria, que puede demorar un día hábil o más. Y si ya entró
+// plata por alguno de los dos medios, release_order_stock se niega a liberarla:
+// eso lo resuelve una persona, no un cron.
+//
 // Está pensada para ejecutarse periódicamente (pg_cron cada hora).
 // Idempotente: release_order_stock devuelve false si la orden ya fue
 // finalizada, así que correrla múltiples veces es seguro.
@@ -13,6 +19,11 @@ import { corsHeaders } from '../_shared/cors.ts';
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const EXPIRE_HOURS = 6;
+// Pago combinado: 24 horas para completar los dos pagos (decisión del dueño).
+// Si se cambia, hay que cambiar también el plazo que se le anuncia al cliente en
+// el checkout (CdrCheckoutForm) y en el mail (send-transfer-email): si el pedido
+// vence sin que se lo hayan avisado, se pierde la venta y el cliente reclama.
+const EXPIRE_HYBRID_HOURS = 24;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, {
 	auth: { persistSession: false, autoRefreshToken: false },
@@ -23,6 +34,8 @@ Deno.serve(async req => {
 
 	try {
 		const cutoff = new Date(Date.now() - EXPIRE_HOURS * 60 * 60 * 1000).toISOString();
+		const cutoffHybrid = new Date(Date.now() - EXPIRE_HYBRID_HOURS * 60 * 60 * 1000).toISOString();
+
 		const { data: stale, error } = await supabase
 			.from('orders')
 			.select('id, payment_method, payment_status')
@@ -30,6 +43,19 @@ Deno.serve(async req => {
 			.lt('created_at', cutoff);
 
 		if (error) throw new Error(error.message);
+
+		// Órdenes de pago combinado que nunca se completaron. Las que ya tienen
+		// una parte cobrada las saltea release_order_stock.
+		const { data: staleHybrid, error: errHybrid } = await supabase
+			.from('orders')
+			.select('id, payment_method, payment_status')
+			.eq('status', 'Pendiente')
+			.eq('payment_method', 'hybrid')
+			.neq('payment_status', 'paid')
+			.lt('created_at', cutoffHybrid);
+
+		if (errHybrid) throw new Error(errHybrid.message);
+		(stale ?? []).push(...(staleHybrid ?? []));
 
 		const expired: number[] = [];
 		const skipped: { id: number; reason: string }[] = [];

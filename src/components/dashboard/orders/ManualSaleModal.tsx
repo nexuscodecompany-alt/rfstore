@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
 import {
 	HiOutlineTrash,
 	HiXMark,
@@ -17,6 +18,7 @@ import {
 	useUsdUyuRate,
 } from '../../../hooks';
 import { supabase } from '../../../supabase/client';
+import { sendManualSaleConfirmation } from '../../../actions';
 import type { ManualSale, ManualSaleItem } from '../../../actions';
 import { formatMoneyCur, formatDateLong } from '../../../helpers';
 
@@ -127,6 +129,14 @@ const ViewManualSale = ({
 	const deleteSale = useDeleteManualSale();
 	const sale = sales.find(s => s.id === saleId);
 
+	// Le manda al comprador la misma confirmación que recibe quien compra por la
+	// web. Requiere que la venta tenga cliente con mail.
+	const enviarConfirmacion = useMutation({
+		mutationFn: sendManualSaleConfirmation,
+		onSuccess: () => toast.success('Mail de confirmación enviado al cliente'),
+		onError: (e: Error) => toast.error(e.message),
+	});
+
 	if (!sale) return <p className='text-sm text-ink-500'>Cargando…</p>;
 
 	return (
@@ -136,6 +146,51 @@ const ViewManualSale = ({
 				<Info label='Concepto' value={sale.conceptName ?? '—'} />
 				<Info label='Descripción' value={sale.description || '—'} full />
 			</div>
+
+			{/* Cliente: sólo si la venta lo tiene cargado. Es lo que habilita el
+			    mail de confirmación. */}
+			{sale.customer ? (
+				<div className='space-y-2 rounded-xl border border-ink-200 bg-white p-3'>
+					<div className='grid grid-cols-2 gap-3 text-sm'>
+						<Info label='Cliente' value={sale.customer.fullName || '—'} />
+						<Info label='Email' value={sale.customer.email} />
+						{sale.customer.phone && (
+							<Info label='Teléfono' value={sale.customer.phone} />
+						)}
+						{sale.address && (
+							<Info
+								label='Entrega'
+								value={[sale.address.line1, sale.address.city, sale.address.state]
+									.filter(Boolean)
+									.join(', ')}
+								full
+							/>
+						)}
+						{sale.invoice && (
+							<Info
+								label='Factura con RUT'
+								value={`${sale.invoice.businessName} — ${sale.invoice.rut}`}
+								full
+							/>
+						)}
+					</div>
+					<button
+						type='button'
+						onClick={() => enviarConfirmacion.mutate(sale.id)}
+						disabled={enviarConfirmacion.isPending}
+						className='w-full rounded-lg border border-brand-300 bg-brand-50 py-2 text-sm font-semibold text-brand-700 transition-colors hover:bg-brand-100 disabled:opacity-60'
+					>
+						{enviarConfirmacion.isPending
+							? 'Enviando…'
+							: 'Enviar mail de confirmación al cliente'}
+					</button>
+				</div>
+			) : (
+				<p className='rounded-lg border border-dashed border-ink-300 bg-ink-50/60 px-3 py-2.5 text-[13px] text-ink-600'>
+					Esta venta no tiene cliente cargado. Editala y agregale el mail para
+					poder enviarle la confirmación de compra.
+				</p>
+			)}
 
 			{/* Desglose */}
 			<div className='space-y-1.5 rounded-xl border border-ink-100 bg-ink-50/40 p-3 text-sm'>
@@ -276,6 +331,33 @@ const ManualSaleForm = ({
 	const [showConcepts, setShowConcepts] = useState(false);
 	const [items, setItems] = useState<ManualSaleItem[]>(sale?.items ?? []);
 
+	// Datos del comprador: los mismos que cargaría él comprando por la web. Con
+	// el mail cargado, la venta queda asociada al cliente y se le puede mandar la
+	// confirmación.
+	const [cliente, setCliente] = useState({
+		fullName: sale?.customer?.fullName ?? '',
+		email: sale?.customer?.email ?? '',
+		phone: sale?.customer?.phone ?? '',
+	});
+	const [direccion, setDireccion] = useState({
+		line1: sale?.address?.line1 ?? '',
+		line2: sale?.address?.line2 ?? '',
+		city: sale?.address?.city ?? '',
+		state: sale?.address?.state ?? '',
+		postalCode: sale?.address?.postalCode ?? '',
+	});
+	const [quiereFactura, setQuiereFactura] = useState(!!sale?.invoice);
+	const [factura, setFactura] = useState({
+		rut: sale?.invoice?.rut ?? '',
+		businessName: sale?.invoice?.businessName ?? '',
+		tradeName: sale?.invoice?.tradeName ?? '',
+		address: sale?.invoice?.address ?? '',
+		city: sale?.invoice?.city ?? '',
+		state: sale?.invoice?.state ?? '',
+		email: sale?.invoice?.email ?? '',
+	});
+	const rutDigits = factura.rut.replace(/\D/g, '');
+
 	const n = (s: string) => Number(s) || 0;
 	const grossProfit = n(saleAmount) - n(cost);
 	const profit = grossProfit - n(commission) - n(shipping) - n(other);
@@ -291,6 +373,22 @@ const ManualSaleForm = ({
 			alert('Falta la cotización del dólar (pesos por USD).');
 			return;
 		}
+		// El mail es lo único que hace falta para asociar la venta a un cliente;
+		// si lo cargaron mal, mejor frenar acá que crear un cliente basura.
+		if (cliente.email.trim() && !/^.+@.+\..+$/.test(cliente.email.trim())) {
+			alert('El email del cliente no es válido.');
+			return;
+		}
+		if (quiereFactura) {
+			if (rutDigits.length !== 12) {
+				alert('El RUT tiene que tener 12 dígitos.');
+				return;
+			}
+			if (!factura.businessName.trim() || !factura.address.trim()) {
+				alert('Para la factura hacen falta razón social y domicilio fiscal.');
+				return;
+			}
+		}
 		const input = {
 			conceptId: conceptId || null,
 			description,
@@ -305,6 +403,15 @@ const ManualSaleForm = ({
 				? new Date(`${saleDate}T12:00:00`).toISOString()
 				: null,
 			items,
+			customer: cliente.email.trim()
+				? {
+						fullName: cliente.fullName,
+						email: cliente.email,
+						phone: cliente.phone ?? '',
+				  }
+				: null,
+			address: direccion.line1.trim() ? direccion : null,
+			invoice: quiereFactura ? factura : null,
 		};
 		if (sale) updateSale.mutate({ id: sale.id, input }, { onSuccess: onClose });
 		else createSale.mutate(input, { onSuccess: onClose });
@@ -427,6 +534,125 @@ const ManualSaleForm = ({
 					placeholder='Qué vendiste'
 				/>
 			</Field>
+
+			{/* Datos del comprador: los mismos que cargaría comprando por la web.
+			    Con el mail, la venta queda asociada al cliente (aparece en su
+			    historial) y se le puede mandar la confirmación de compra. */}
+			<div className='space-y-3 rounded-xl border border-ink-200 bg-ink-50/40 p-3'>
+				<p className='text-xs font-semibold uppercase tracking-wider text-ink-500'>
+					Datos del cliente (opcional — con el mail se le puede enviar la confirmación)
+				</p>
+				<div className='grid grid-cols-1 gap-3 sm:grid-cols-3'>
+					<Field label='Nombre y apellido'>
+						<input
+							className='inp'
+							value={cliente.fullName}
+							onChange={e => setCliente({ ...cliente, fullName: e.target.value })}
+							placeholder='Juan Pérez'
+						/>
+					</Field>
+					<Field label='Email'>
+						<input
+							type='email'
+							className='inp'
+							value={cliente.email}
+							onChange={e => setCliente({ ...cliente, email: e.target.value })}
+							placeholder='cliente@mail.com'
+						/>
+					</Field>
+					<Field label='Teléfono'>
+						<input
+							className='inp'
+							value={cliente.phone ?? ''}
+							onChange={e => setCliente({ ...cliente, phone: e.target.value })}
+							placeholder='099 123 456'
+						/>
+					</Field>
+				</div>
+
+				<div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+					<Field label='Dirección de entrega'>
+						<input
+							className='inp'
+							value={direccion.line1}
+							onChange={e => setDireccion({ ...direccion, line1: e.target.value })}
+							placeholder='Calle y número'
+						/>
+					</Field>
+					<Field label='Apartamento / referencias'>
+						<input
+							className='inp'
+							value={direccion.line2 ?? ''}
+							onChange={e => setDireccion({ ...direccion, line2: e.target.value })}
+						/>
+					</Field>
+					<Field label='Ciudad / localidad'>
+						<input
+							className='inp'
+							value={direccion.city}
+							onChange={e => setDireccion({ ...direccion, city: e.target.value })}
+						/>
+					</Field>
+					<Field label='Departamento'>
+						<input
+							className='inp'
+							value={direccion.state}
+							onChange={e => setDireccion({ ...direccion, state: e.target.value })}
+						/>
+					</Field>
+				</div>
+
+				<label className='flex items-center gap-2 pt-1 text-sm'>
+					<input
+						type='checkbox'
+						checked={quiereFactura}
+						onChange={e => setQuiereFactura(e.target.checked)}
+					/>
+					<span className='font-medium text-ink-700'>Pide factura con RUT</span>
+				</label>
+
+				{quiereFactura && (
+					<div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+						<Field label='RUT (12 dígitos)'>
+							<input
+								className='inp'
+								value={factura.rut}
+								onChange={e => setFactura({ ...factura, rut: e.target.value })}
+							/>
+							{factura.rut && rutDigits.length !== 12 && (
+								<span className='mt-1 block text-[11px] text-rose-600'>
+									Van {rutDigits.length} de 12.
+								</span>
+							)}
+						</Field>
+						<Field label='Razón social'>
+							<input
+								className='inp'
+								value={factura.businessName}
+								onChange={e =>
+									setFactura({ ...factura, businessName: e.target.value })
+								}
+							/>
+						</Field>
+						<Field label='Domicilio fiscal'>
+							<input
+								className='inp'
+								value={factura.address}
+								onChange={e => setFactura({ ...factura, address: e.target.value })}
+							/>
+						</Field>
+						<Field label='Mail para la factura'>
+							<input
+								type='email'
+								className='inp'
+								value={factura.email ?? ''}
+								onChange={e => setFactura({ ...factura, email: e.target.value })}
+								placeholder={cliente.email || 'Opcional'}
+							/>
+						</Field>
+					</div>
+				)}
+			</div>
 
 			{/* Productos del catálogo: opcional. Si agregás, descuentan stock (RF + ML). */}
 			<div className='space-y-2 rounded-xl border border-ink-200 bg-ink-50/40 p-3'>

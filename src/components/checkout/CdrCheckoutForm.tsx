@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useCartStore } from '../../store/cart.store';
 import { useCheckoutShippingStore } from '../../store/checkoutShipping.store';
 import {
@@ -8,9 +8,11 @@ import {
 	sendPaymentInstructionsEmail,
 	trackCheckoutLead,
 	type CartItemForMP,
+	type InvoiceDataForOrder,
 } from '../../actions';
 import { useUser, useUsdUyuRate } from '../../hooks';
 import { validateCoupon, type CouponValidation } from '../../actions/coupons';
+import { leerCuponRecuperado, guardarCuponRecuperado } from '../../actions/abandonedCart';
 import {
 	ShippingZoneSelector,
 	ShippingSelection,
@@ -30,7 +32,9 @@ import { useNavigate } from 'react-router-dom';
 import { ImSpinner2 } from 'react-icons/im';
 import { supabase } from '../../supabase/client';
 
-type Method = 'mercadopago' | 'transfer' | 'deposit';
+// 'hybrid' = una parte por MercadoPago y otra por transferencia. El pedido no se
+// concreta hasta que entren las dos.
+type Method = 'mercadopago' | 'transfer' | 'deposit' | 'hybrid';
 
 interface TransferInfo {
 	banco?: string;
@@ -96,17 +100,90 @@ export const CdrCheckoutForm = () => {
 	const grandTotalUsd = Math.max(0, totalAmount + effectiveShippingUsd - discountUsd);
 	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
 
-	const applyCoupon = async () => {
-		const code = couponInput.trim();
+	/* ---------------- Pago combinado (MercadoPago + transferencia) ------------ */
+	// Los montos se guardan como TEXTO mientras el cliente escribe: si se
+	// guardaran como número, borrar el último dígito lo convertiría en 0 y el
+	// campo pelearía con el teclado.
+	const [splitMp, setSplitMp] = useState('');
+	const [splitTr, setSplitTr] = useState('');
+	const esHibrido = method === 'hybrid';
+
+	const nMp = Number(splitMp.replace(',', '.')) || 0;
+	const nTr = Number(splitTr.replace(',', '.')) || 0;
+	const sumaSplit = Math.round((nMp + nTr) * 100) / 100;
+	const faltaSplit = Math.round((grandTotalUsd - sumaSplit) * 100) / 100;
+	// El total cambia si el cliente agrega un extra o toca el envío. El desglose
+	// se revalida solo contra el total del momento, así que un pedido con el
+	// reparto viejo no puede avanzar.
+	const splitOk =
+		esHibrido && nMp > 0 && nTr > 0 && Math.abs(faltaSplit) <= 0.01;
+	// El equivalente en pesos del monto que va por transferencia (todo el total
+	// si no es híbrido).
+	const montoTransferUyu = fx
+		? Math.round((esHibrido ? nTr : grandTotalUsd) * fx.rate)
+		: null;
+
+	// Al completar uno de los dos, el otro se autocompleta con el resto: es lo
+	// que la gente espera y evita el ida y vuelta con los centavos.
+	const completarResto = (campo: 'mp' | 'tr') => {
+		if (grandTotalUsd <= 0) return;
+		if (campo === 'mp') {
+			const resto = Math.round((grandTotalUsd - nMp) * 100) / 100;
+			if (nMp > 0 && resto > 0) setSplitTr(String(resto));
+		} else {
+			const resto = Math.round((grandTotalUsd - nTr) * 100) / 100;
+			if (nTr > 0 && resto > 0) setSplitMp(String(resto));
+		}
+	};
+
+	/* ---------------- Factura con RUT ---------------------------------------- */
+	const [wantsInvoice, setWantsInvoice] = useState(false);
+	const [invoice, setInvoice] = useState({
+		rut: '',
+		businessName: '',
+		tradeName: '',
+		address: '',
+		city: '',
+		state: '',
+		email: '',
+	});
+	// El RUT uruguayo son 12 dígitos; el cliente lo escribe con puntos o guiones.
+	const rutDigits = invoice.rut.replace(/\D/g, '');
+	const rutOk = rutDigits.length === 12;
+	const invoiceOk =
+		!wantsInvoice ||
+		(rutOk && invoice.businessName.trim() !== '' && invoice.address.trim() !== '');
+
+	/** Los datos fiscales tal como los espera el servidor, o null si no pidió factura. */
+	const datosFactura = (): InvoiceDataForOrder | null =>
+		wantsInvoice
+			? {
+					requested: true as const,
+					rut: rutDigits,
+					business_name: invoice.businessName.trim(),
+					trade_name: invoice.tradeName.trim() || null,
+					address: invoice.address.trim(),
+					city: invoice.city.trim() || null,
+					state: invoice.state.trim() || null,
+					// Si no puso uno aparte, la factura va al mail de la compra.
+					email: invoice.email.trim() || form.email.trim() || null,
+			  }
+			: null;
+
+	const applyCoupon = async (codeOverride?: string, silent = false) => {
+		const code = (codeOverride ?? couponInput).trim();
 		if (!code) return;
 		setApplyingCoupon(true);
-		setCouponMsg(null);
+		if (!silent) setCouponMsg(null);
 		try {
 			const res = await validateCoupon({
 				code,
 				items: cartItems.map(i => ({ variant_id: i.variantId, price: i.price, quantity: i.quantity })),
 				subtotal: totalAmount,
 				shipping: shippingCostUsd,
+				// El servidor necesita el método para decidir: hay cupones que sólo
+				// valen por transferencia.
+				paymentMethod: method,
 			});
 			if (res.valid) {
 				setCoupon(res);
@@ -123,6 +200,39 @@ export const CdrCheckoutForm = () => {
 		}
 	};
 	const removeCoupon = () => { setCoupon(null); setCouponInput(''); setCouponMsg(null); };
+
+	// Cambiar el método de pago revalida el cupón. Es lo que hace visible la
+	// regla: si tenés un cupón de sólo-transferencia y pasás a MercadoPago, se
+	// desaplica en el momento con el motivo, y el total vuelve a su valor. Sin
+	// esto el cliente vería un descuento que el servidor después le va a negar.
+	const codigoAplicado = coupon?.valid ? coupon.code ?? null : null;
+	useEffect(() => {
+		if (!codigoAplicado) return;
+		applyCoupon(codigoAplicado, true);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [method]);
+
+	// --- Vuelta desde el mail de carrito abandonado ---
+	// El cupón viene preparado por la página de recuperación. Se preselecciona
+	// transferencia (es el único método con el que vale) y se aplica solo: el
+	// cliente recién acá se entera de cuánto es el descuento.
+	const [recuperado, setRecuperado] = useState<{ percent: number; expiresAt: string | null } | null>(null);
+	const cuponPrecargado = useRef(false);
+	useEffect(() => {
+		if (cuponPrecargado.current || cartItems.length === 0) return;
+		const c = leerCuponRecuperado();
+		if (!c) return;
+		cuponPrecargado.current = true;
+		const soloTransferencia =
+			c.payment_methods.length > 0 && !c.payment_methods.includes('mercadopago');
+		if (soloTransferencia) setMethod('transfer');
+		setCouponInput(c.code);
+		setRecuperado({ percent: c.percent, expiresAt: c.expires_at });
+		// Un respiro para que el método ya esté seteado cuando se valide.
+		const t = setTimeout(() => applyCoupon(c.code, true), 250);
+		return () => clearTimeout(t);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [cartItems.length]);
 
 	// Sincronizamos el label con el resumen lateral.
 	const setShippingLabel = useCheckoutShippingStore(s => s.setShippingLabel);
@@ -281,6 +391,27 @@ export const CdrCheckoutForm = () => {
 			toast.error('Completá la dirección de envío');
 			return;
 		}
+		// Factura con RUT: si la pidió, los datos fiscales tienen que estar. El
+		// servidor lo vuelve a validar; esto es para no hacerle esperar el viaje.
+		if (wantsInvoice && !invoiceOk) {
+			toast.error(
+				!rutOk
+					? 'El RUT tiene que tener 12 dígitos'
+					: 'Completá razón social y domicilio fiscal para la factura'
+			);
+			return;
+		}
+		// Pago combinado: el reparto tiene que cubrir el total EXACTO del momento.
+		if (esHibrido && !splitOk) {
+			toast.error(
+				nMp <= 0 || nTr <= 0
+					? 'Cargá un monto en los dos medios de pago'
+					: faltaSplit > 0
+					? `Faltan ${formatPrice(faltaSplit)} para cubrir el total`
+					: `Los montos se pasan por ${formatPrice(Math.abs(faltaSplit))}`
+			);
+			return;
+		}
 
 		// Validación de envío
 		if (shipping.zone === 'montevideo' && !shipping.barrio) {
@@ -367,6 +498,8 @@ export const CdrCheckoutForm = () => {
 					quantity: i.quantity,
 					title: i.name,
 					unit_price_usd: i.price,
+					is_extra: i.isExtra === true,
+					extra_source: i.isExtra ? i.extraSource ?? null : null,
 				}));
 				const res = await createMpPreference({
 					items,
@@ -385,6 +518,7 @@ export const CdrCheckoutForm = () => {
 					shipping_department: shipping.department ?? undefined,
 					shipping_cost_usd: shippingCostUsd,
 					coupon_code: coupon?.valid ? coupon.code : undefined,
+					invoice: datosFactura(),
 				});
 				// NO limpiamos el carrito acá. Si limpiáramos antes del redirect,
 				// la CheckoutPage re-renderizaría mostrando "carrito vacío" por una
@@ -402,6 +536,9 @@ export const CdrCheckoutForm = () => {
 					variant_id: i.variantId,
 					quantity: i.quantity,
 					price: i.price,
+					// Atribución del módulo de extras (no afecta el cobro).
+					is_extra: i.isExtra === true,
+					extra_source: i.isExtra ? i.extraSource ?? null : null,
 				})),
 				p_total: grandTotalUsd,
 				p_address: {
@@ -418,6 +555,10 @@ export const CdrCheckoutForm = () => {
 				p_shipping_department: shipping.department,
 				p_shipping_cost_usd: shippingCostUsd,
 					p_coupon_code: coupon?.valid ? coupon.code : null,
+				p_invoice: datosFactura(),
+				// El servidor revalida que el reparto cubra el total que ÉL calcula:
+				// si el cliente sumó un extra y no se recalculó, la orden no entra.
+				p_payment_split: esHibrido ? { mercadopago: nMp, transfer: nTr } : null,
 			});
 			if (rpcErr) throw new Error(rpcErr.message);
 			const orderId = orderIdData as number;
@@ -427,7 +568,7 @@ export const CdrCheckoutForm = () => {
 			// 'transfer', así que quien elegía depósito no recibía ningún mail.
 			// No bloqueamos el checkout si el mail falla — el cliente igual ve los
 			// datos en /thank-you.
-			if (method === 'transfer' || method === 'deposit') {
+			if (method === 'transfer' || method === 'deposit' || esHibrido) {
 				try {
 					await sendPaymentInstructionsEmail(orderId);
 				} catch (mailErr) {
@@ -435,8 +576,36 @@ export const CdrCheckoutForm = () => {
 				}
 			}
 
+			// --- Pago combinado: falta cobrar la parte de MercadoPago ---
+			// La orden ya existe y reservó el stock; acá sólo se pide la preferencia
+			// por el monto de esa parte y se manda al cliente a pagarla. El mail con
+			// los datos de la transferencia ya salió arriba.
+			if (esHibrido) {
+				guardarCuponRecuperado(null);
+				try {
+					const pref = await createMpPreference({
+						existing_order_id: orderId,
+						amount_usd: nMp,
+					});
+					window.location.href = pref.init_point;
+					return;
+				} catch (mpErr) {
+					// La orden quedó creada y con el stock reservado: no se pierde nada.
+					console.warn('preferencia MP del pago combinado:', mpErr);
+					toast.error(
+						'Registramos tu pedido, pero no pudimos abrir MercadoPago. Te contactamos para completarlo.'
+					);
+					navigate(`/checkout/${orderId}/thank-you?status=pending`);
+					return;
+				}
+			}
+
 			// El cleanCart sucede en ThankyouPage al montar; así evitamos el
 			// flash de "carrito vacío" durante el navigate.
+			// El cupón de recuperación ya se consumió: se limpia para que no se
+			// vuelva a preaplicar en la próxima compra.
+			guardarCuponRecuperado(null);
+
 			toast.success('Pedido registrado. Te avisamos cuando confirmemos el pago.');
 			navigate(`/checkout/${orderId}/thank-you?status=pending`);
 		} catch (err) {
@@ -450,6 +619,44 @@ export const CdrCheckoutForm = () => {
 		<>
 			{submitting && <CheckoutSubmittingOverlay method={method} />}
 			<form className='flex flex-col gap-6' onSubmit={onSubmit}>
+				{/* Vuelta desde el mail de recuperación: acá se revela el descuento. */}
+				{recuperado && (
+					<div
+						className={`rounded-xl border p-4 ${
+							coupon?.valid
+								? 'border-emerald-300 bg-emerald-50'
+								: 'border-amber-300 bg-amber-50'
+						}`}
+					>
+						<p className='text-sm font-bold text-ink-900'>
+							{coupon?.valid
+								? `¡Listo! Tenés ${recuperado.percent}% de descuento en esta compra`
+								: `Tu descuento del ${recuperado.percent}% está reservado`}
+						</p>
+						<p className='mt-1 text-[13px] leading-relaxed text-ink-700'>
+							Es de <b>un solo uso</b> y sólo para tu cuenta. Se aplica{' '}
+							<b>únicamente pagando por transferencia bancaria</b>: si elegís otro
+							medio de pago, el pedido se toma sin descuento.
+						</p>
+						{discountUsd > 0 && (
+							<p className='mt-2 text-sm font-semibold text-emerald-800'>
+								Ahorrás {formatPrice(discountUsd)} — pagás{' '}
+								{formatPrice(grandTotalUsd)} en vez de{' '}
+								{formatPrice(totalAmount + effectiveShippingUsd)}
+							</p>
+						)}
+						{recuperado.expiresAt && (
+							<p className='mt-1 text-[11px] text-ink-500'>
+								Válido hasta el{' '}
+								{new Date(recuperado.expiresAt).toLocaleString('es-UY', {
+									day: '2-digit', month: 'long', hour: '2-digit', minute: '2-digit',
+								})}
+								.
+							</p>
+						)}
+					</div>
+				)}
+
 				<section className='space-y-3'>
 					<h3 className='text-lg font-semibold'>Datos de contacto</h3>
 				<input
@@ -555,6 +762,124 @@ export const CdrCheckoutForm = () => {
 				</div>
 			</section>
 
+			{/* Factura con RUT. Los campos son los que pide DGI para una e-Factura:
+			    sin RUT, razón social y domicilio fiscal el comprobante no se puede
+			    emitir, así que son obligatorios apenas se tilda la casilla. */}
+			<section className='space-y-3'>
+				<label className='flex items-start gap-2 cursor-pointer'>
+					<input
+						type='checkbox'
+						checked={wantsInvoice}
+						onChange={e => setWantsInvoice(e.target.checked)}
+						className='mt-1'
+					/>
+					<span>
+						<span className='block font-medium'>Necesito factura con RUT</span>
+						<span className='block text-xs text-ink-500'>
+							Para empresas. Si no la pedís, te emitimos un ticket a consumidor final.
+						</span>
+					</span>
+				</label>
+
+				{wantsInvoice && (
+					<div className='space-y-3 rounded-lg border border-ink-200 bg-ink-50/60 p-4'>
+						<div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									RUT *
+								</span>
+								<input
+									className={`w-full rounded border p-2 ${
+										invoice.rut && !rutOk ? 'border-rose-400' : ''
+									}`}
+									placeholder='12 dígitos'
+									inputMode='numeric'
+									value={invoice.rut}
+									onChange={e => setInvoice({ ...invoice, rut: e.target.value })}
+								/>
+								{invoice.rut && !rutOk && (
+									<span className='mt-1 block text-[11px] text-rose-600'>
+										El RUT tiene 12 dígitos (van {rutDigits.length}).
+									</span>
+								)}
+							</label>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Razón social *
+								</span>
+								<input
+									className='w-full rounded border p-2'
+									placeholder='Como figura en DGI'
+									value={invoice.businessName}
+									onChange={e =>
+										setInvoice({ ...invoice, businessName: e.target.value })
+									}
+								/>
+							</label>
+							<label className='block sm:col-span-2'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Domicilio fiscal *
+								</span>
+								<input
+									className='w-full rounded border p-2'
+									placeholder='Calle y número'
+									value={invoice.address}
+									onChange={e => setInvoice({ ...invoice, address: e.target.value })}
+								/>
+							</label>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Localidad
+								</span>
+								<input
+									className='w-full rounded border p-2'
+									value={invoice.city}
+									onChange={e => setInvoice({ ...invoice, city: e.target.value })}
+								/>
+							</label>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Departamento
+								</span>
+								<input
+									className='w-full rounded border p-2'
+									value={invoice.state}
+									onChange={e => setInvoice({ ...invoice, state: e.target.value })}
+								/>
+							</label>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Nombre comercial
+								</span>
+								<input
+									className='w-full rounded border p-2'
+									placeholder='Opcional'
+									value={invoice.tradeName}
+									onChange={e =>
+										setInvoice({ ...invoice, tradeName: e.target.value })
+									}
+								/>
+							</label>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Mail para la factura
+								</span>
+								<input
+									type='email'
+									className='w-full rounded border p-2'
+									placeholder={form.email || 'Opcional'}
+									value={invoice.email}
+									onChange={e => setInvoice({ ...invoice, email: e.target.value })}
+								/>
+							</label>
+						</div>
+						<p className='text-[11px] text-ink-500'>
+							* Obligatorios. Sin estos datos no podemos emitir la factura.
+						</p>
+					</div>
+				)}
+			</section>
+
 			<section className='space-y-3'>
 				<h3 className='text-lg font-semibold'>Método de pago</h3>
 				<div className='space-y-2'>
@@ -588,17 +913,109 @@ export const CdrCheckoutForm = () => {
 						/>
 						<span className='font-medium'>Depósito en redes (Abitab / Redpagos)</span>
 					</label>
+
+					{/* Pago combinado: para cuando la tarjeta no cubre todo el pedido. */}
+					<label
+						className={`flex items-start gap-2 rounded border p-3 cursor-pointer ${
+							esHibrido ? 'border-brand-400 bg-brand-50/50' : ''
+						}`}
+					>
+						<input
+							type='checkbox'
+							checked={esHibrido}
+							onChange={e => {
+								setMethod(e.target.checked ? 'hybrid' : 'mercadopago');
+								setSplitMp('');
+								setSplitTr('');
+							}}
+							className='mt-1'
+						/>
+						<span>
+							<span className='block font-medium'>
+								Pago combinado: MercadoPago + transferencia
+							</span>
+							<span className='block text-xs text-ink-500'>
+								Pagás una parte con tarjeta y el resto por transferencia.
+							</span>
+						</span>
+					</label>
 				</div>
 
-				{method === 'transfer' && (
+				{esHibrido && (
+					<div className='space-y-3 rounded-lg border border-brand-200 bg-brand-50/40 p-4'>
+						<p className='text-sm text-ink-700'>
+							Repartí el total de <b>{formatPrice(grandTotalUsd)}</b> entre los dos
+							medios. Completá uno y el otro se calcula solo.
+						</p>
+
+						<div className='grid grid-cols-1 gap-3 sm:grid-cols-2'>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Con MercadoPago (USD)
+								</span>
+								<input
+									type='text'
+									inputMode='decimal'
+									className='w-full rounded border p-2'
+									placeholder='0,00'
+									value={splitMp}
+									onChange={e => setSplitMp(e.target.value.replace(/[^\d.,]/g, ''))}
+									onBlur={() => completarResto('mp')}
+								/>
+							</label>
+							<label className='block'>
+								<span className='mb-1 block text-xs font-semibold text-ink-700'>
+									Por transferencia (USD)
+								</span>
+								<input
+									type='text'
+									inputMode='decimal'
+									className='w-full rounded border p-2'
+									placeholder='0,00'
+									value={splitTr}
+									onChange={e => setSplitTr(e.target.value.replace(/[^\d.,]/g, ''))}
+									onBlur={() => completarResto('tr')}
+								/>
+							</label>
+						</div>
+
+						{/* Estado del reparto, siempre a la vista. */}
+						{splitOk ? (
+							<p className='rounded-md bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800'>
+								✓ El reparto cubre el total: {formatPrice(nMp)} con MercadoPago y{' '}
+								{formatPrice(nTr)} por transferencia.
+							</p>
+						) : (
+							<p className='rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800'>
+								{nMp <= 0 || nTr <= 0
+									? 'Cargá un monto en los dos medios para continuar.'
+									: faltaSplit > 0
+									? `Faltan ${formatPrice(faltaSplit)} para llegar al total.`
+									: `Te estás pasando por ${formatPrice(Math.abs(faltaSplit))}.`}
+							</p>
+						)}
+
+						<p className='text-xs text-ink-600'>
+							Tu pedido queda <b>reservado 24 horas</b> y se procesa cuando estén
+							acreditados los dos pagos. Después de confirmar te mostramos los datos
+							para la transferencia y te llevamos a MercadoPago.
+						</p>
+					</div>
+				)}
+
+				{(method === 'transfer' || esHibrido) && (
 					<div className='bg-gray-50 p-3 rounded text-sm space-y-2'>
 						<div className='flex items-center justify-between rounded-md bg-emerald-50 border border-emerald-200 px-3 py-2'>
-							<span className='font-semibold text-emerald-800'>Monto a transferir</span>
+							<span className='font-semibold text-emerald-800'>
+								{esHibrido ? 'A transferir (parte del pago)' : 'Monto a transferir'}
+							</span>
 							<span className='text-right'>
-								<span className='block font-bold text-base text-ink-900'>{formatPrice(grandTotalUsd)}</span>
-								{totalUyu !== null && (
+								<span className='block font-bold text-base text-ink-900'>
+									{formatPrice(esHibrido ? nTr : grandTotalUsd)}
+								</span>
+								{montoTransferUyu !== null && (
 									<span className='block text-[11px] text-emerald-700'>
-										≈ UYU {totalUyu.toLocaleString('es-UY')} (al dólar BROU de hoy)
+										≈ UYU {montoTransferUyu.toLocaleString('es-UY')} (al dólar BROU de hoy)
 									</span>
 								)}
 							</span>
@@ -680,7 +1097,7 @@ export const CdrCheckoutForm = () => {
 								/>
 								<button
 									type='button'
-									onClick={applyCoupon}
+									onClick={() => applyCoupon()}
 									disabled={applyingCoupon || !couponInput.trim()}
 									className='px-4 py-2 bg-stone-800 text-white rounded-md text-sm disabled:opacity-50'
 								>
