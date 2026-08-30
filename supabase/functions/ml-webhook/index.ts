@@ -4,6 +4,12 @@
 // vendedor vía ML (0 en Flex/self_service — ese va manual; list_cost-cost en Mercado
 // Envíos a su cargo). Modos: normal; { reprocess }; { backfill_fees, max }; { inspect_order }.
 //
+// v15 (2026-08-26): el fix de v14 estaba puesto y ASI Y TODO la orden 311 entró sin ítems.
+// Dos motivos, los dos silenciosos: (a) el backfill de catalog_product_id no avanzaba nunca
+// por falta de cursor y 728 fichas seguían sin revisar — entre ellas la hermana de la venta;
+// (b) el plan B usaba `/sites/MLU/search?...&seller_id=`, que ML cerró y hoy da 403.
+// Ver backfillCatalogIds y resolverMapeo.
+//
 // v14 (2026-08-19): las ventas que entraban por una publicación DE CATÁLOGO creaban
 // la orden SIN ÍTEMS — sin costo, sin ganancia y sin descontar stock (órdenes 249 y
 // 282). Esas publicaciones las crea ML colgadas de una ficha nuestra y no están en
@@ -110,46 +116,54 @@ async function resolverMapeo(
     return porCatalogo[0] as any;
   }
 
-  // 2) Todavía sin backfill: preguntamos a ML cuáles de nuestras publicaciones
-  //    comparten ese producto de catálogo. Es el caso raro y se autocorrige,
-  //    porque abajo guardamos el dato.
-  const s = await mlGet(`/sites/MLU/search?catalog_product_id=${catalogId}&seller_id=${r.data?.seller_id ?? ''}`, token);
-  const candidatas: string[] = (s.ok ? (s.data?.results ?? []) : [])
-    .map((x: any) => x?.id)
-    .filter((id: string) => id && id !== mlItemId);
-  if (candidatas.length === 0) return null;
+  // 2) Rescate. El camino original preguntaba por `/sites/MLU/search?catalog_product_id=
+  //    ...&seller_id=...`, pero ML CERRO ese endpoint: hoy responde 403 forbidden. Era el
+  //    unico plan B y fallaba mudo, asi que la venta entraba sin items igual (orden 311).
+  //    Reemplazo: la ficha hermana SIEMPRE esta en nuestro mapeo (si no, no hay nada que
+  //    resolver); lo unico que puede faltar es su catalog_product_id. Se completan las que
+  //    nunca se revisaron y se reintenta el paso 1. Cuesta caro una sola vez y deja el dato
+  //    guardado, asi que la proxima venta sale por el camino rapido.
+  await backfillCatalogIds(800, token);
 
-  const { data: porCandidata } = await supabase
+  const { data: reintento } = await supabase
     .from('ml_item_mapping')
     .select('variant_id, product_id, ml_item_id')
-    .in('ml_item_id', candidatas)
+    .eq('catalog_product_id', catalogId)
+    .neq('ml_item_id', mlItemId)
+    .order('status', { ascending: true })
     .limit(1);
-  if (!porCandidata || porCandidata.length === 0 || !porCandidata[0].variant_id) return null;
+  if (!reintento || reintento.length === 0 || !reintento[0].variant_id) {
+    console.log(`[ml-webhook] ${mlItemId}: catálogo ${catalogId} sin ficha hermana en el mapeo`);
+    return null;
+  }
 
-  // Autocuración: la próxima venta de catálogo de este producto ya no necesita
-  // ninguna llamada a la API.
-  await supabase.from('ml_item_mapping')
-    .update({ catalog_product_id: catalogId })
-    .eq('ml_item_id', porCandidata[0].ml_item_id);
-
-  console.log(`[ml-webhook] ${mlItemId} resuelta vía búsqueda de catálogo ${catalogId}`);
-  return porCandidata[0] as any;
+  console.log(`[ml-webhook] ${mlItemId} resuelta tras backfill de catálogo ${catalogId} → ${reintento[0].ml_item_id}`);
+  return reintento[0] as any;
 }
 
 /**
  * Completa catalog_product_id en el mapeo. Usa el multiget de ML (20 ids por
  * llamada) para no hacer 1.548 requests sueltos.
  * Modo: { backfill_catalog_ids: true, max: 400 }
+ *
+ * v15 (2026-08-26): antes seleccionaba `catalog_product_id is null` SIN CURSOR. Como la
+ * mayoria de las publicaciones no son de catalogo, esas filas quedan en null para siempre
+ * y cada corrida volvia a revisar EXACTAMENTE LAS MISMAS: el backfill no avanzaba nunca y
+ * 728 fichas quedaron sin revisar. Por eso la venta de la orden 311 (AUR187) no se pudo
+ * resolver aunque el fix de v14 estaba puesto.
+ * Ahora ordena por `catalog_checked_at` (nulls primero) y estampa SIEMPRE la fecha, tenga
+ * o no catalogo: asi "no lo revise" y "lo revise y no tiene" dejan de ser el mismo estado.
  */
-async function backfillCatalogIds(max: number, token: string): Promise<{ revisados: number; con_catalogo: number; errores: number }> {
+async function backfillCatalogIds(max: number, token: string): Promise<{ revisados: number; con_catalogo: number; errores: number; pendientes: number }> {
   const { data: filas } = await supabase
     .from('ml_item_mapping')
     .select('ml_item_id')
-    .is('catalog_product_id', null)
     .neq('status', 'closed')
+    .order('catalog_checked_at', { ascending: true, nullsFirst: true })
     .limit(max);
   const ids = (filas ?? []).map((f: any) => f.ml_item_id).filter(Boolean);
   let conCatalogo = 0, errores = 0;
+  const ahora = new Date().toISOString();
 
   for (let i = 0; i < ids.length; i += 20) {
     const lote = ids.slice(i, i + 20);
@@ -158,13 +172,20 @@ async function backfillCatalogIds(max: number, token: string): Promise<{ revisad
     for (const entry of r.data ?? []) {
       const body = entry?.body ?? entry;
       const id = body?.id;
+      if (!id) continue;
       const cat = body?.catalog_product_id ?? null;
-      if (!id || !cat) continue;
-      await supabase.from('ml_item_mapping').update({ catalog_product_id: cat }).eq('ml_item_id', id);
-      conCatalogo++;
+      // Se estampa la revision aunque no tenga catalogo: eso es lo que hace avanzar el cursor.
+      await supabase.from('ml_item_mapping')
+        .update(cat ? { catalog_product_id: cat, catalog_checked_at: ahora } : { catalog_checked_at: ahora })
+        .eq('ml_item_id', id);
+      if (cat) conCatalogo++;
     }
   }
-  return { revisados: ids.length, con_catalogo: conCatalogo, errores };
+  const { count } = await supabase.from('ml_item_mapping')
+    .select('id', { count: 'exact', head: true })
+    .neq('status', 'closed')
+    .is('catalog_checked_at', null);
+  return { revisados: ids.length, con_catalogo: conCatalogo, errores, pendientes: count ?? 0 };
 }
 
 async function notifyAdminOnce(type: string, mlOrderId: string, payload: Record<string, unknown>) {

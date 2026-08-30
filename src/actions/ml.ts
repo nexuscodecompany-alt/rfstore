@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import { fetchAllRows } from '../supabase/fetchAll';
 
 // --------- OAuth ---------
 // El user-flow es: redirigimos al admin a https://auth.mercadolibre.com.uy/authorization?...
@@ -412,15 +413,25 @@ export interface QueueStats {
 }
 
 export const getQueueStats = async (): Promise<QueueStats> => {
-	const { data: rows } = await supabase.from('ml_sync_queue').select('status, operation');
-	const stats: QueueStats = { pending: 0, processing: 0, done: 0, error: 0 };
-	for (const r of rows ?? []) {
-		const s = (r as { status: string; operation: string }).status;
-		if (s === 'pending') stats.pending++;
-		else if (s === 'processing') stats.processing++;
-		else if (s === 'done') stats.done++;
-		else if (s === 'error') stats.error++;
-	}
+	// Contamos con count exacto en vez de traer las filas: la cola tiene decenas de
+	// miles de registros y Supabase corta en `max_rows` (1000) sin avisar, así que
+	// contarlas en el navegador daba números tapados en 1000.
+	const countByStatus = async (status: string) => {
+		const { count, error } = await supabase
+			.from('ml_sync_queue')
+			.select('id', { count: 'exact', head: true })
+			.eq('status', status);
+		if (error) throw new Error(error.message);
+		return count ?? 0;
+	};
+
+	const [pending, processing, done, errored] = await Promise.all([
+		countByStatus('pending'),
+		countByStatus('processing'),
+		countByStatus('done'),
+		countByStatus('error'),
+	]);
+	const stats: QueueStats = { pending, processing, done, error: errored };
 	const { data: settings } = await supabase
 		.from('app_settings')
 		.select('key, value')
@@ -450,11 +461,17 @@ export const triggerPublishQueueNow = async (): Promise<void> => {
 };
 
 export const getMlPublishedItems = async (): Promise<MlPublishedItem[]> => {
-	const { data, error } = await supabase
-		.from('ml_item_mapping')
-		.select('id, ml_item_id, ml_category_id, ml_listing_type, status, last_known_stock, last_known_price_uyu, last_synced_at, last_error, permalink, created_at, product_id, products(name, slug, external_code, images)')
-		.order('created_at', { ascending: false });
-	if (error) throw new Error(error.message);
+	// Paginado: hay más de 1.500 publicaciones y una consulta suelta se cortaba en
+	// las primeras 1000.
+	const data = await fetchAllRows<any>(
+		(from, to) =>
+			supabase
+				.from('ml_item_mapping')
+				.select('id, ml_item_id, ml_category_id, ml_listing_type, status, last_known_stock, last_known_price_uyu, last_synced_at, last_error, permalink, created_at, product_id, products(name, slug, external_code, images)')
+				.order('created_at', { ascending: false })
+				.range(from, to),
+		{ label: 'getMlPublishedItems' }
+	);
 	return (data ?? []).map((row: any) => ({
 		id: row.id,
 		ml_item_id: row.ml_item_id,
@@ -489,18 +506,28 @@ export const getMlStats = async (): Promise<MlStats> => {
 	const threshold = settings.stock_threshold;
 	const catId = settings.celulares_category_id;
 
-	const { data: itemRows } = await supabase
-		.from('ml_item_mapping')
-		.select('status');
+	// Count exacto por estado: traer las filas y contarlas en JS quedaba tapado en
+	// el `max_rows` de Supabase (1000) y el panel mostraba menos publicaciones de
+	// las que hay. `total` se cuenta aparte porque puede haber estados nuevos que
+	// no caen en ninguno de los cuatro de abajo.
+	const countMappings = async (status?: string) => {
+		let q = supabase
+			.from('ml_item_mapping')
+			.select('id', { count: 'exact', head: true });
+		if (status) q = q.eq('status', status);
+		const { count, error } = await q;
+		if (error) throw new Error(error.message);
+		return count ?? 0;
+	};
 
-	const counts = { published: 0, paused: 0, closed: 0, error: 0 };
-	for (const r of itemRows ?? []) {
-		const s = (r as { status: string }).status;
-		if (s === 'active') counts.published++;
-		else if (s === 'paused') counts.paused++;
-		else if (s === 'closed') counts.closed++;
-		else if (s === 'error') counts.error++;
-	}
+	const [published, paused, closed, errored, totalItems] = await Promise.all([
+		countMappings('active'),
+		countMappings('paused'),
+		countMappings('closed'),
+		countMappings('error'),
+		countMappings(),
+	]);
+	const counts = { published, paused, closed, error: errored };
 
 	// Cuántos celulares cumplen el umbral y todavía no están publicados
 	let publishable = 0;
@@ -517,7 +544,7 @@ export const getMlStats = async (): Promise<MlStats> => {
 
 	return {
 		...counts,
-		total: (itemRows ?? []).length,
+		total: totalItems,
 		publishable_celulares: publishable,
 	};
 };

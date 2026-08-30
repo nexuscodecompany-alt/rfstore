@@ -1,4 +1,5 @@
 import { supabase } from '../supabase/client';
+import { fetchAllRows } from '../supabase/fetchAll';
 
 const SUPABASE_URL = import.meta.env.VITE_PROJECT_URL_SUPABASE;
 const SUPABASE_ANON = import.meta.env.VITE_SUPABASE_API_KEY;
@@ -270,20 +271,27 @@ export const getUnclassifiedCdrProducts = async () => {
 	const defaultCatId = settings.get('cdr_default_category_id') as string | undefined;
 	const defaultBrandId = settings.get('cdr_default_brand_id') as string | undefined;
 
-	const { data, error } = await supabase
-		.from('products')
-		.select('id, name, external_code, brand_id, category_id, price_usd, images')
-		.eq('source', 'cdr')
-		.or(
-			[
-				defaultCatId ? `category_id.eq.${defaultCatId}` : '',
-				defaultBrandId ? `brand_id.eq.${defaultBrandId}` : '',
-			]
-				.filter(Boolean)
-				.join(',')
-		);
+	const orFilter = [
+		defaultCatId ? `category_id.eq.${defaultCatId}` : '',
+		defaultBrandId ? `brand_id.eq.${defaultBrandId}` : '',
+	]
+		.filter(Boolean)
+		.join(',');
 
-	if (error) throw new Error(error.message);
+	// Paginado: los backlogs de altas de CDR dejan cientos de productos sin
+	// clasificar de una, y el catálogo ya pasa los 5000 registros.
+	const data = await fetchAllRows(
+		(from, to) =>
+			supabase
+				.from('products')
+				.select('id, name, external_code, brand_id, category_id, price_usd, images')
+				.eq('source', 'cdr')
+				.or(orFilter)
+				.order('id', { ascending: true })
+				.range(from, to),
+		{ label: 'getUnclassifiedCdrProducts' }
+	);
+
 	return data;
 };
 

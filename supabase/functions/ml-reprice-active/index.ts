@@ -4,6 +4,11 @@
 // por cada una en ml_sync_queue. El cron ml-process-sync-queue las empuja a ML (20/min).
 // Disparo manual desde el panel ('Repreciar publicaciones activas').
 //
+// v5 (2026-08-29): PAGINADO. La consulta de mappings no tenia .range() y PostgREST
+// corta en 1000 filas sin dar error: con 1205 publicaciones vivas (676 activas + 529
+// pausadas) el repricing dejaba ~205 con el precio viejo, y cuales quedaban afuera no
+// era ni determinista. Idem la lectura de pendientes de la cola (deduplicacion).
+//
 // v4 (2026-08-13): el margen manual de ML vive en products.ml_margin_override_percent,
 // separado del de la web (margin_override_percent): en ML se vende mas caro para cubrir
 // la comision, asi que cada canal se ajusta por su lado.
@@ -56,6 +61,19 @@ function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: 
   return { price: Math.ceil(withIva * fx), currency_id: 'UYU' };
 }
 
+// PostgREST corta toda consulta en max_rows (1000) SIN error: hay que paginar a mano.
+async function fetchAllPages<T>(makeQuery: (from: number, to: number) => any): Promise<T[]> {
+  const out: T[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await makeQuery(from, from + PAGE - 1);
+    if (error) throw error;
+    const rows = (data ?? []) as T[];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
+}
+
 async function getFxRate(): Promise<number> {
   const resp = await fetch(`${SUPABASE_URL}/functions/v1/get-fx-rate`, { headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` } });
   if (!resp.ok) throw new Error(`fx_rate_fetch_failed: ${resp.status}`);
@@ -92,16 +110,29 @@ Deno.serve(async (req: Request) => {
 
     // Publicaciones vivas (activas + pausadas) con costo/categoria del producto. Las
     // pausadas entran para que no vuelvan a la venta con el margen viejo.
-    let mapQuery = supabase
-      .from('ml_item_mapping')
-      .select('id, variant_id, product_id, status, last_known_price_uyu, products(price_usd, category_id, subcategory_id, ml_margin_override_percent)')
-      .in('status', ['active', 'paused']);
-    if (productIds.length > 0) mapQuery = mapQuery.in('product_id', productIds);
-    const { data: maps, error: mErr } = await mapQuery;
-    if (mErr) throw new Error(`load_mappings: ${mErr.message}`);
+    // .order('id') fija un orden estable: sin el, paginar sobre un orden indefinido
+    // puede repetir o saltear filas entre paginas.
+    let maps: any[];
+    try {
+      maps = await fetchAllPages<any>((from, to) => {
+        let q = supabase
+          .from('ml_item_mapping')
+          .select('id, variant_id, product_id, status, last_known_price_uyu, products(price_usd, category_id, subcategory_id, ml_margin_override_percent)')
+          .in('status', ['active', 'paused']);
+        if (productIds.length > 0) q = q.in('product_id', productIds);
+        return q.order('id', { ascending: true }).range(from, to);
+      });
+    } catch (e: any) {
+      throw new Error(`load_mappings: ${e?.message ?? e}`);
+    }
 
-    // No duplicar: variantes que ya tienen un update_price pendiente.
-    const { data: pend } = await supabase.from('ml_sync_queue').select('id, variant_id').eq('operation', 'update_price').eq('status', 'pending');
+    // No duplicar: variantes que ya tienen un update_price pendiente. Tambien paginado:
+    // si quedan mas de 1000 pendientes, la deduplicacion encolaba precios repetidos.
+    const pend = await fetchAllPages<any>((from, to) =>
+      supabase.from('ml_sync_queue').select('id, variant_id')
+        .eq('operation', 'update_price').eq('status', 'pending')
+        .order('id', { ascending: true }).range(from, to)
+    );
     const pendingById = new Map<string, number>();
     for (const p of pend ?? []) pendingById.set((p as any).variant_id, (p as any).id);
 

@@ -1,5 +1,6 @@
 import { OrderInput, OrderWithCustomer } from '../interfaces';
 import { supabase } from '../supabase/client';
+import { fetchAllRows } from '../supabase/fetchAll';
 
 export const createOrder = async (order: OrderInput) => {
 	// La creación de la orden (validación de stock, dirección, items y descuento
@@ -177,14 +178,20 @@ export const getOrderById = async (orderId: number) => {
 export const getAllOrders = async () => {
 	// Casteo a any: las columnas nuevas (manual_description, concept_id) aún no están
 	// en los tipos generados de Supabase.
-	const { data, error } = await (supabase as any)
-		.from('orders')
-		.select(
-			'id, customer_id, total_amount, total_original, ml_currency, fx_rate, status, created_at, channel, ml_order_id, ml_pack_id, payment_method, payment_status, paid_mp_usd, paid_transfer_usd, concept_id, manual_description, customers(full_name, email), sale_concepts:concept_id(name)'
-		)
-		.order('created_at', { ascending: false });
-
-	if (error) throw new Error(error.message);
+	// Paginado obligatorio: el panel suma totales y cuenta órdenes sobre esta lista,
+	// y Supabase corta cualquier consulta en `max_rows` (1000) sin dar error. Al
+	// pasar las 1000 ventas, una consulta suelta dejaría las cifras mal en silencio.
+	const data = await fetchAllRows<OrderWithCustomer>(
+		(from, to) =>
+			(supabase as any)
+				.from('orders')
+				.select(
+					'id, customer_id, total_amount, total_original, ml_currency, fx_rate, status, created_at, channel, ml_order_id, ml_pack_id, payment_method, payment_status, paid_mp_usd, paid_transfer_usd, concept_id, manual_description, customers(full_name, email), sale_concepts:concept_id(name)'
+				)
+				.order('created_at', { ascending: false })
+				.range(from, to),
+		{ label: 'getAllOrders' }
+	);
 
 	return data as OrderWithCustomer[];
 };
