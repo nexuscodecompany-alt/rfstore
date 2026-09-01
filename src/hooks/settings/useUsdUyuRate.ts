@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 
-// Cotización USD→UYU (dólar BROU eBROU venta) servida por nuestra edge function.
+// Cotización USD→UYU (dólar BROU mostrador venta, la fila "Dólar" de la pizarra)
+// servida por nuestra edge function get-fx-rate.
 // Usar la edge function evita problemas de DNS/bloqueo de dolarapi.com en
 // algunas redes del cliente (ISP, antivirus, firewall corporativo).
 export interface UsdUyuRate {

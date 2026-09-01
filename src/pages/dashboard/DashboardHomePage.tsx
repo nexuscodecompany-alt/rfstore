@@ -15,13 +15,26 @@ import type { TopProduct, DashboardOverview } from '../../actions/dashboard';
 import { AbandonedCartsSection } from '../../components/dashboard/AbandonedCartsSection';
 
 /* ---------- helpers de fecha ---------- */
-const toISODate = (d: Date) => d.toISOString().slice(0, 10);
+// Fecha local, NO UTC: con toISOString() a partir de las 21:00 de Uruguay el día
+// ya salta al siguiente, y eso corría el 1º de mes un día antes de tiempo.
+const toISODate = (d: Date) =>
+	`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
 const presetRange = (days: number) => {
 	const to = new Date();
 	const from = new Date();
 	from.setDate(from.getDate() - (days - 1));
 	return { from: toISODate(from), to: toISODate(to) };
+};
+
+// Mes en curso: del 1º al día de hoy. Es el filtro por DEFECTO del dashboard, así
+// cuando arranca un mes nuevo ya se ve el panorama del mes sin tocar el filtro.
+const monthRange = () => {
+	const now = new Date();
+	return {
+		from: toISODate(new Date(now.getFullYear(), now.getMonth(), 1)),
+		to: toISODate(now),
+	};
 };
 
 const num = (n: number) => Number(n || 0).toLocaleString('es-UY');
@@ -374,8 +387,8 @@ const SalesChart = ({
 
 /* ---------- página ---------- */
 export const DashboardHomePage = () => {
-	const [range, setRange] = useState(() => presetRange(30));
-	const [activePreset, setActivePreset] = useState<number | null>(30);
+	const [range, setRange] = useState(() => monthRange());
+	const [activePreset, setActivePreset] = useState<string | null>('month');
 
 	// Las fechas van como "YYYY-MM-DD": los bordes del día (y la zona horaria de
 	// Uruguay) los resuelve getDashboardData, así queda en un solo lugar.
@@ -397,17 +410,18 @@ export const DashboardHomePage = () => {
 		return (o.paid_orders_in_period / o.orders_in_period) * 100;
 	}, [o]);
 
-	const applyPreset = (days: number) => {
-		setActivePreset(days);
-		setRange(presetRange(days));
-	};
-
 	const presets = [
-		{ days: 7, label: '7 días' },
-		{ days: 30, label: '30 días' },
-		{ days: 90, label: '90 días' },
-		{ days: 365, label: '1 año' },
+		{ id: 'month', label: 'Este mes', range: monthRange },
+		{ id: '7', label: '7 días', range: () => presetRange(7) },
+		{ id: '30', label: '30 días', range: () => presetRange(30) },
+		{ id: '90', label: '90 días', range: () => presetRange(90) },
+		{ id: '365', label: '1 año', range: () => presetRange(365) },
 	];
+
+	const applyPreset = (preset: (typeof presets)[number]) => {
+		setActivePreset(preset.id);
+		setRange(preset.range());
+	};
 
 	return (
 		<div className='space-y-6'>
@@ -424,10 +438,10 @@ export const DashboardHomePage = () => {
 				<div className='flex flex-wrap items-center gap-2'>
 					{presets.map(p => (
 						<button
-							key={p.days}
-							onClick={() => applyPreset(p.days)}
+							key={p.id}
+							onClick={() => applyPreset(p)}
 							className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
-								activePreset === p.days
+								activePreset === p.id
 									? 'bg-brand-600 text-white shadow-soft'
 									: 'bg-ink-100 text-ink-600 hover:bg-ink-200'
 							}`}
