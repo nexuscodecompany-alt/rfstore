@@ -698,6 +698,24 @@ export type Database = {
           category_id: string | null
           created_at: string
           cdr_content_changed_at: string | null
+          cdr_marca: string | null
+          cdr_marca_url: string | null
+          cdr_fabricante_url: string | null
+          cdr_categoria: string | null
+          cdr_garantia: string | null
+          cdr_garantia_url: string | null
+          cdr_descripcion_comercial: string | null
+          cdr_gtin: string | null
+          cdr_modelo: string | null
+          cdr_nro_parte: string | null
+          cdr_pvp_usd: number | null
+          cdr_pvpml_usd: number | null
+          cdr_peso_gramos: number | null
+          cdr_ancho_cm: number | null
+          cdr_alto_cm: number | null
+          cdr_profundidad_cm: number | null
+          cdr_habilitado: boolean | null
+          cdr_fields_updated_at: string | null
           cdr_content_hash: string | null
           content_locked: boolean
           ml_content_dirty: boolean
@@ -724,6 +742,24 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           cdr_content_changed_at?: string | null
+          cdr_marca?: string | null
+          cdr_marca_url?: string | null
+          cdr_fabricante_url?: string | null
+          cdr_categoria?: string | null
+          cdr_garantia?: string | null
+          cdr_garantia_url?: string | null
+          cdr_descripcion_comercial?: string | null
+          cdr_gtin?: string | null
+          cdr_modelo?: string | null
+          cdr_nro_parte?: string | null
+          cdr_pvp_usd?: number | null
+          cdr_pvpml_usd?: number | null
+          cdr_peso_gramos?: number | null
+          cdr_ancho_cm?: number | null
+          cdr_alto_cm?: number | null
+          cdr_profundidad_cm?: number | null
+          cdr_habilitado?: boolean | null
+          cdr_fields_updated_at?: string | null
           cdr_content_hash?: string | null
           content_locked?: boolean
           ml_content_dirty?: boolean
@@ -750,6 +786,24 @@ export type Database = {
           category_id?: string | null
           created_at?: string
           cdr_content_changed_at?: string | null
+          cdr_marca?: string | null
+          cdr_marca_url?: string | null
+          cdr_fabricante_url?: string | null
+          cdr_categoria?: string | null
+          cdr_garantia?: string | null
+          cdr_garantia_url?: string | null
+          cdr_descripcion_comercial?: string | null
+          cdr_gtin?: string | null
+          cdr_modelo?: string | null
+          cdr_nro_parte?: string | null
+          cdr_pvp_usd?: number | null
+          cdr_pvpml_usd?: number | null
+          cdr_peso_gramos?: number | null
+          cdr_ancho_cm?: number | null
+          cdr_alto_cm?: number | null
+          cdr_profundidad_cm?: number | null
+          cdr_habilitado?: boolean | null
+          cdr_fields_updated_at?: string | null
           cdr_content_hash?: string | null
           content_locked?: boolean
           ml_content_dirty?: boolean
@@ -980,6 +1034,15 @@ export type Database = {
       }
     }
     Functions: {
+      cdr_pending_brands: {
+        Args: Record<string, never>
+        Returns: {
+          marca: string
+          productos: number
+          productos_activos: number
+          ejemplos: string[]
+        }[]
+      }
       cdr_sync_newonly_tick: { Args: Record<string, never>; Returns: undefined }
       cdr_sync_tick: { Args: Record<string, never>; Returns: undefined }
       dashboard_overview: {

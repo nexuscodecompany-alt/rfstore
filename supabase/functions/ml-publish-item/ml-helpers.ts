@@ -46,7 +46,13 @@ export function descriptionToText(description: any): string {
   }
   return '';
 }
-export interface WarrantyResult { months: number; type: 'seller' | 'manufacturer'; source: 'parsed' | 'default'; }
+// `source` dice DE DONDE salio el plazo, que es lo que permite auditar despues por que
+// una publicacion quedo con la garantia que quedo:
+//   cdr           = campo dedicado de CDR (el bueno, 96,7 % del catalogo)
+//   cdr_sin_plazo = CDR manda garantia pero sin numero ("Funcional") -> default del admin
+//   parsed        = sacado del texto libre de la ficha
+//   default       = no habia nada, default del admin
+export interface WarrantyResult { months: number; type: 'seller' | 'manufacturer'; source: 'parsed' | 'default' | 'cdr' | 'cdr_sin_plazo'; }
 export function parseWarranty(text: string, defaultMonths = 6): WarrantyResult {
   const lower = text.toLowerCase();
   const isOfficial = /garant[ií]a\s+(oficial|de\s+f[aá]brica|del\s+fabricante)/i.test(text) || /fabricante/i.test(lower);
@@ -59,6 +65,67 @@ export function parseWarranty(text: string, defaultMonths = 6): WarrantyResult {
   if (months && months > 0 && months <= 60) return { months, type, source: 'parsed' };
   return { months: defaultMonths, type: 'seller', source: 'default' };
 }
+/**
+ * Garantia desde el campo dedicado de CDR (doc v2.0). Reemplaza al parseo del texto
+ * libre de la ficha para el 96,7 % del catalogo, que es donde CDR la manda.
+ *
+ * Valores REALES medidos sobre el catalogo (1857 productos), que es por lo que esta
+ * funcion existe en vez de reusar parseWarranty:
+ *   "1 año" 636 · "Funcional" 514 · "6 meses" 166 · "3 años" 155
+ *   "Oficial tercerizada 1 año" 115 · "90 dias contra defecto de fabricacion" 69
+ *   "2 años" 49 · "5 años" 33 · "6 años" 14 · "10 años" 6 · "Sin garantia" 2
+ *
+ * parseWarranty fallaba en cuatro de esos casos: no entiende dias (79 productos),
+ * corta en 60 meses (los de 5/6/10 años caian al default de 6), no reconoce
+ * "Oficial tercerizada" como garantia de fabrica, y "Funcional" no tiene numero.
+ *
+ * Devuelve null si CDR no manda nada, para que el caller caiga al parseo del texto.
+ */
+export function parseCdrWarranty(raw: string | null | undefined, defaultMonths = 6): WarrantyResult | null {
+  const t = (raw ?? '').trim();
+  if (!t) return null;
+  const lower = t.toLowerCase();
+
+  // "Sin garantia": 0 meses. El caller decide como declararlo en ML.
+  if (/sin\s+garant[ií]a/.test(lower)) return { months: 0, type: 'seller', source: 'cdr' };
+
+  // "Oficial tercerizada" es garantia de fabrica atendida por un service externo:
+  // para ML sigue siendo garantia de fabrica, no del vendedor.
+  // Limites de palabra a proposito: sin ellos "90 dias contra defecto de FABRICAcion"
+  // (79 productos) matchea "fabrica" y se declara como garantia de fabrica cuando en
+  // realidad la da el vendedor. El comprador ve ese atributo en ML.
+  const type: 'seller' | 'manufacturer' =
+    /oficial|f[aá]brica|fabricante|tercerizada/.test(lower) ? 'manufacturer' : 'seller';
+
+  const anios = lower.match(/(\d{1,2})\s*a[ñn]os?/);
+  if (anios) return { months: parseInt(anios[1], 10) * 12, type, source: 'cdr' };
+
+  const meses = lower.match(/(\d{1,3})\s*(?:meses|mes)\b/);
+  if (meses) return { months: parseInt(meses[1], 10), type, source: 'cdr' };
+
+  // "90 dias contra defecto de fabricacion" -> 3 meses. Minimo 1 mes: ML no acepta 0
+  // salvo que se declare explicitamente sin garantia.
+  const dias = lower.match(/(\d{1,3})\s*d[ií]as?/);
+  if (dias) return { months: Math.max(1, Math.round(parseInt(dias[1], 10) / 30)), type, source: 'cdr' };
+
+  // "Funcional" y cualquier otro texto sin plazo: HAY garantia pero CDR no dice cuanta.
+  // Se usa el default del admin y se marca el origen para poder auditarlo despues.
+  return { months: defaultMonths, type, source: 'cdr_sin_plazo' };
+}
+
+/**
+ * WARRANTY_TIME para ML. El formato "N meses" no sirve para plazos largos: 120 meses
+ * es lo mismo que 10 años y ML espera lo segundo. Se pasa a años cuando es multiplo
+ * exacto de 12, que es como vienen casi todos los de CDR.
+ */
+export function warrantyTimeLabel(months: number): string {
+  if (months >= 12 && months % 12 === 0) {
+    const y = months / 12;
+    return y === 1 ? '1 año' : `${y} años`;
+  }
+  return months === 1 ? '1 mes' : `${months} meses`;
+}
+
 export function extractFromFeatures(features: string[] | null | undefined): { gtin?: string; model?: string; nro_parte?: string } {
   const result: { gtin?: string; model?: string; nro_parte?: string } = {};
   if (!features) return result;
@@ -72,7 +139,7 @@ export function extractFromFeatures(features: string[] | null | undefined): { gt
 // ¿El nombre ya trae la marca, en CUALQUIER posicion? Normalizado (sin acentos, sin
 // signos, minusculas) porque hay marcas que rompen regex/limites de palabra: "be quiet!".
 function nameHasBrand(name: string, brand: string): boolean {
-  const norm = (s: string) => ` ${s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
+  const norm = (s: string) => ` ${s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()} `;
   const b = norm(brand).trim();
   return b.length > 0 && norm(name).includes(` ${b} `);
 }
@@ -154,7 +221,8 @@ export function buildMlDescription(i: BuildDescInput): string {
   if (specsLines.length) parts.push(specsLines.join('\n'));
   if (i.cleanDesc) { parts.push(''); parts.push(sep); parts.push('DESCRIPCIÓN DETALLADA'); parts.push(sep); parts.push(i.cleanDesc); }
   parts.push(''); parts.push(sep); parts.push('GARANTÍA'); parts.push(sep);
-  parts.push(`* ${warrantyLabel}: ${i.warrantyMonths} meses`);
+  // "10 años" y no "120 meses", igual que en el atributo WARRANTY_TIME.
+  parts.push(`* ${warrantyLabel}: ${warrantyTimeLabel(i.warrantyMonths)}`);
   parts.push('* Producto nuevo, sin uso y sellado');
   parts.push('* Facturación con IVA disponible (RUT empresa o consumidor final)');
   parts.push(''); parts.push(sep); parts.push('ENVÍOS'); parts.push(sep);

@@ -12,7 +12,7 @@
 // NO toca precio / stock / atributos: solo titulo + descripcion (con filtro anti-spam).
 // Al terminar OK apaga products.ml_content_dirty.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import { getValidAccessToken, mlFetch, descriptionToText, parseWarranty, extractFromFeatures, buildTitle, extractAttributesFromText, sanitizeDescription, buildMlDescription } from './ml-helpers.ts';
+import { getValidAccessToken, mlFetch, descriptionToText, parseWarranty, parseCdrWarranty, extractFromFeatures, buildTitle, extractAttributesFromText, sanitizeDescription, buildMlDescription } from './ml-helpers.ts';
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -51,7 +51,7 @@ Deno.serve(async (req: Request) => {
   if (!product_id) return json({ ok: false, error: 'missing_product_id' }, 400);
 
   try {
-    const { data: product, error: pErr } = await supabase.from('products').select('id, name, external_code, features, description, brand_id, active').eq('id', product_id).single();
+    const { data: product, error: pErr } = await supabase.from('products').select('id, name, external_code, features, description, brand_id, active, cdr_garantia, cdr_modelo, cdr_gtin, cdr_nro_parte').eq('id', product_id).single();
     if (pErr || !product) throw new Error(`product_not_found: ${pErr?.message ?? 'null'}`);
 
     let brandName: string | null = null;
@@ -97,8 +97,17 @@ Deno.serve(async (req: Request) => {
     const rawDescText = descriptionToText(product.description);
     const cleanDesc = sanitizeDescription(rawDescText);
     const fullText = `${rawDescText}\n${(product.features ?? []).join('\n')}\n${product.name}`;
-    const warranty = parseWarranty(fullText, warrantyDefault);
-    const featuresExtracted = extractFromFeatures(product.features);
+    // Misma fuente que ml-publish-item: el campo dedicado de CDR primero, el parseo del
+    // texto libre solo como respaldo. Asi la descripcion publicada en ML dice la garantia
+    // real y no una adivinada.
+    const warranty = parseCdrWarranty((product as any).cdr_garantia, warrantyDefault)
+      ?? parseWarranty(fullText, warrantyDefault);
+    const fromFeatures = extractFromFeatures(product.features);
+    const featuresExtracted = {
+      gtin: (product as any).cdr_gtin || fromFeatures.gtin,
+      model: (product as any).cdr_modelo || fromFeatures.model,
+      nro_parte: (product as any).cdr_nro_parte || fromFeatures.nro_parte,
+    };
     const attrsFromText = extractAttributesFromText(product.name, rawDescText);
     const color = attrsFromText.color || (variantColorName && variantColorName !== 'Unico' ? variantColorName : null);
     const internalMemory = attrsFromText.internal_memory || (variantStorage && variantStorage !== '-' ? variantStorage : null);

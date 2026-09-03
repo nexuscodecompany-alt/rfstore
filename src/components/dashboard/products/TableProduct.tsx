@@ -9,6 +9,7 @@ import {
   useDeleteProduct,
   useMarkProductsSeen,
   useNewProductsCount,
+  usePendingBrandCount,
   useContentDirtyCount,
   usePricingConfig,
   usePublishMlItem,
@@ -88,6 +89,8 @@ export const TableProduct = () => {
   const sourceFilter = (get('source') as '' | 'local' | 'cdr') || '';
   const activeFilter = (get('estado') as '' | 'active' | 'inactive') || '';
   const newOnly = getBool('nuevos');
+  // Productos que llegaron con una marca que todavia no existe en la tienda.
+  const pendingBrandOnly = getBool('sinmarca');
   const contentDirtyOnly = getBool('mlcambios');
   const mlFilter = (get('ml') as '' | 'in' | 'out') || '';
   const minReadiness = getNumber('listo') ?? 0;
@@ -123,6 +126,7 @@ export const TableProduct = () => {
   });
   const mlCfg = mlPricingCfg ?? DEFAULT_ML_PRICING;
   const newCount = useNewProductsCount();
+  const pendingBrandCount = usePendingBrandCount();
   const dirtyCount = useContentDirtyCount();
   const { mutate: markSeen, isPending: markingSeen } = useMarkProductsSeen();
 
@@ -152,7 +156,8 @@ export const TableProduct = () => {
     minReadiness,
     contentDirtyOnly,
     sortBy,
-    sortDir
+    sortDir,
+    pendingBrandOnly
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -343,7 +348,7 @@ export const TableProduct = () => {
 
           {/* El orden ahora se maneja clickeando el encabezado de cada columna. */}
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || sortBy !== 'created_at' || sortDir !== 'desc') && (
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || pendingBrandOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || sortBy !== 'created_at' || sortDir !== 'desc') && (
             <button
               type="button"
               onClick={() =>
@@ -353,6 +358,7 @@ export const TableProduct = () => {
                   source: undefined,
                   estado: undefined,
                   nuevos: undefined,
+                  sinmarca: undefined,
                   ml: undefined,
                   listo: undefined,
                   mlcambios: undefined,
@@ -368,6 +374,29 @@ export const TableProduct = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Marcas recien llegadas: mismo espiritu que "Nuevos desde CDR", pero para el
+              paso previo. Aparece solo si hay alguna esperando; si esta todo al dia no
+              agrega un boton que nunca hace nada. */}
+          {(pendingBrandCount > 0 || pendingBrandOnly) && (
+            <button
+              type="button"
+              onClick={() => setFilter({ sinmarca: pendingBrandOnly ? undefined : '1' })}
+              title="Productos que CDR mando con una marca que todavia no existe. Creala en Categorias y Marcas y se les asigna sola."
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+                pendingBrandOnly
+                  ? 'border-amber-300 bg-amber-50 text-amber-800'
+                  : 'border-ink-200 bg-white text-ink-700 hover:bg-ink-50'
+              }`}
+            >
+              <span className={`h-2 w-2 rounded-full ${pendingBrandCount > 0 ? 'bg-amber-500' : 'bg-ink-300'}`} />
+              Marca por crear
+              {pendingBrandCount > 0 && (
+                <span className="inline-flex items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                  {pendingBrandCount}
+                </span>
+              )}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setFilter({ nuevos: newOnly ? undefined : '1' })}
@@ -598,7 +627,25 @@ export const TableProduct = () => {
                     )}
                   </td>
                   <td className="p-4 align-middle text-sm text-ink-700">
-                    {product.brand?.name ?? '—'}
+                    {/* Si CDR dice de que marca es pero esa marca todavia no existe en la
+                        tienda, se avisa acá: es el paso que hay que hacer ANTES de activar
+                        el producto, y se resuelve en el panel "Marcas por crear". */}
+                    {product.brand?.name ??
+                      (product.cdr_marca ? (
+                        <span
+                          className="inline-flex flex-col leading-tight"
+                          title={`CDR lo manda como "${product.cdr_marca}". Creá esa marca en el panel de la derecha y se le asigna sola.`}
+                        >
+                          <span className="text-xs font-semibold text-amber-700">
+                            Falta crear
+                          </span>
+                          <span className="text-xs text-ink-500">
+                            {product.cdr_marca}
+                          </span>
+                        </span>
+                      ) : (
+                        '—'
+                      ))}
                   </td>
                   <td className="p-4 align-middle">
                     {product.category?.name ? (

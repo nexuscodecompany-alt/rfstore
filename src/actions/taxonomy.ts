@@ -80,6 +80,30 @@ export const getBrandIdsByCategories = async (
 };
 
 /* ------------------------------ MARCAS ----------------------------- */
+
+/**
+ * Marcas que CDR viene mandando y que todavia NO existen en la tienda.
+ *
+ * Cuando CDR trae un producto de una marca que ya tenemos, el producto sale con la marca
+ * puesta solo. Cuando trae una marca nueva, en cambio, el producto entra sin marca y no
+ * se entera nadie: esto es lo que hace visible ese caso.
+ *
+ * Al crear la marca, un trigger de la base le asigna de una todos los productos que la
+ * estaban esperando (ver migracion marcas_pendientes_de_cdr).
+ */
+export interface PendingCdrBrand {
+	marca: string;
+	productos: number;
+	productos_activos: number;
+	ejemplos: string[];
+}
+
+export const getPendingCdrBrands = async (): Promise<PendingCdrBrand[]> => {
+	const { data, error } = await supabase.rpc('cdr_pending_brands');
+	if (error) throw new Error(error.message);
+	return (data ?? []) as PendingCdrBrand[];
+};
+
 export const createBrand = async (name: string): Promise<Brand> => {
 	const { data, error } = await supabase
 		.from('brands')

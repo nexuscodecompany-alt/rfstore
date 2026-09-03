@@ -62,6 +62,28 @@ export interface Product {
 	 * vende más caro para cubrir la comisión. Null/undefined = regla ML automática.
 	 */
 	ml_margin_override_percent?: number | null;
+
+	/**
+	 * Datos crudos del WS de CDR v2.0 (ver docs/cdr/README.md). Son lo que dice el
+	 * proveedor, no decisiones nuestras: `cdr_marca` sugiere la marca pero el
+	 * `brand_id` manda, y `cdr_categoria` es la jerarquía de CDR, no la nuestra.
+	 * Todos opcionales: CDR omite la clave entera cuando el dato no está cargado.
+	 */
+	cdr_marca?: string | null;
+	cdr_categoria?: string | null;
+	/** Texto libre: "1 año", "6 meses", "90 días contra defecto de fabricación". */
+	cdr_garantia?: string | null;
+	cdr_garantia_url?: string | null;
+	cdr_modelo?: string | null;
+	/** NO identifica al producto: varias variantes comparten el mismo (doc 7.4). */
+	cdr_gtin?: string | null;
+	cdr_nro_parte?: string | null;
+	cdr_peso_gramos?: number | null;
+	cdr_ancho_cm?: number | null;
+	cdr_alto_cm?: number | null;
+	cdr_profundidad_cm?: number | null;
+	/** false = CDR despublicó el producto. No lo desactiva solo. */
+	cdr_habilitado?: boolean | null;
 }
 
 export interface PreparedProducts {

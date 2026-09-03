@@ -223,7 +223,8 @@ export const getAdminProducts = async (
     minReadiness = 0,
     contentDirtyOnly = false,
     sortBy: AdminSortField = 'created_at',
-    sortDir: 'asc' | 'desc' = 'desc'
+    sortDir: 'asc' | 'desc' = 'desc',
+    pendingBrandOnly = false
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
@@ -275,6 +276,14 @@ export const getAdminProducts = async (
 
     if (newOnly) query = query.is('seen_at', null);
 
+    // Filtro "Marca por crear": productos de CDR que llegaron con una marca que todavia
+    // no existe en la tienda. No hace falta cruzar contra brands: cuando la marca SI
+    // existe, el trigger cdr_assign_brand_on_insert ya se la asigno, asi que quedarse
+    // sin brand_id teniendo cdr_marca es justamente la senal de que falta crearla.
+    if (pendingBrandOnly) {
+        query = query.eq('source', 'cdr').is('brand_id', null).not('cdr_marca', 'is', null);
+    }
+
     // Filtro "Cambió en CDR (pendiente ML)": productos publicados en ML cuyo contenido
     // (nombre/descripción) cambió en CDR y todavía no se empujó a la publicación.
     if (contentDirtyOnly) query = query.eq('ml_content_dirty', true);
@@ -286,6 +295,19 @@ export const getAdminProducts = async (
     const { data: products, error, count } = await query.range(from, to);
     if (error) throw new Error(error.message);
     return { products: products ?? [], count: count ?? 0 };
+};
+
+// Cuantos productos estan esperando que se cree su marca (badge del filtro
+// "Marca por crear"). Mismo criterio que el filtro del listado.
+export const getPendingBrandCount = async (): Promise<number> => {
+    const { count, error } = await supabase
+        .from('products')
+        .select('id', { count: 'exact', head: true })
+        .eq('source', 'cdr')
+        .is('brand_id', null)
+        .not('cdr_marca', 'is', null);
+    if (error) throw new Error(error.message);
+    return count ?? 0;
 };
 
 export const getNewProductsCount = async (): Promise<number> => {

@@ -1,6 +1,6 @@
 // deno-lint-ignore-file no-explicit-any
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
-import { getValidAccessToken, mlFetch, getFxRate, descriptionToText, parseWarranty, extractFromFeatures, buildTitle, extractAttributesFromText, sanitizeDescription, buildMlDescription } from './ml-helpers.ts';
+import { getValidAccessToken, mlFetch, getFxRate, descriptionToText, parseWarranty, parseCdrWarranty, warrantyTimeLabel, extractFromFeatures, buildTitle, extractAttributesFromText, sanitizeDescription, buildMlDescription } from './ml-helpers.ts';
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS' };
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -137,30 +137,36 @@ interface MlAttrDef { id: string; name: string; value_type: string; values: { id
 
 // Atributos de la categoria de ML: ids que existen, cuales son obligatorios y la definicion
 // completa (con value_type + valores permitidos) para poder auto-completar / armar el form.
-async function getCategoryAttrs(catId: string, token: string): Promise<{ ids: Set<string>; required: { id: string; name: string }[]; defs: Map<string, MlAttrDef> }> {
+async function getCategoryAttrs(catId: string, token: string): Promise<{ ids: Set<string>; required: { id: string; name: string }[]; defs: Map<string, MlAttrDef>; modifiable: Set<string> }> {
   try {
     const r = await mlFetch(`/categories/${catId}/attributes`, { token });
-    if (!r.ok || !Array.isArray(r.data)) return { ids: new Set(), required: [], defs: new Map() };
+    if (!r.ok || !Array.isArray(r.data)) return { ids: new Set(), required: [], defs: new Map(), modifiable: new Set() };
     const ids = new Set<string>();
     const required: { id: string; name: string }[] = [];
     const defs = new Map<string, MlAttrDef>();
+    // Que la categoria DEFINA un atributo no significa que lo podamos escribir: ML tiene
+    // atributos read_only/fixed que calcula el (o toma de la ficha de catalogo) y que si
+    // se los mandamos responde "ignored because it is not modifiable". Verificado con
+    // PACKAGE_WEIGHT en notebooks: 4 warnings por publicacion y el dato descartado igual.
+    const modifiable = new Set<string>();
     for (const a of r.data) {
       if (!a?.id) continue;
       ids.add(a.id);
       defs.set(a.id, { id: a.id, name: a.name || a.id, value_type: a.value_type || 'string', values: Array.isArray(a.values) ? a.values : [] });
       const tags = a.tags || {};
+      if (!tags.read_only && !tags.fixed) modifiable.add(a.id);
       // obligatorios que NO completa ML solo (excluimos read_only / fixed / variation).
       if ((tags.required || tags.catalog_required) && !tags.read_only && !tags.fixed && !tags.variation_attribute) {
         required.push({ id: a.id, name: a.name || a.id });
       }
     }
-    return { ids, required, defs };
-  } catch { return { ids: new Set(), required: [], defs: new Map() }; }
+    return { ids, required, defs, modifiable };
+  } catch { return { ids: new Set(), required: [], defs: new Map(), modifiable: new Set() }; }
 }
 
 // Normaliza texto para matchear (minusculas, sin acentos).
 function normText(s: string): string {
-  return (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[“”‘’]/g, '"');
+  return (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[\u201C\u201D\u2018\u2019]/g, '"');
 }
 
 // Intenta derivar el valor de UN atributo obligatorio buscandolo en el texto del producto
@@ -256,7 +262,7 @@ Deno.serve(async (req: Request) => {
   if (!product_id || !variant_id) return json({ ok: false, error: 'missing_product_or_variant_id' }, 400);
 
   try {
-    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, ml_margin_override_percent').eq('id', product_id).single();
+    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, ml_margin_override_percent, cdr_garantia, cdr_modelo, cdr_gtin, cdr_nro_parte, cdr_peso_gramos, cdr_ancho_cm, cdr_alto_cm, cdr_profundidad_cm').eq('id', product_id).single();
     if (pErr || !product) throw new Error(`product_not_found: ${pErr?.message ?? 'null'}`);
     // Sin filtros propios (decision del admin): publicamos aunque este inactivo; ML decide.
     if (!product.active) await logEvent('ml_publish_forced_inactive', { product_id, variant_id });
@@ -314,8 +320,20 @@ Deno.serve(async (req: Request) => {
     const rawDescText = descriptionToText(product.description);
     const cleanDesc = sanitizeDescription(rawDescText);
     const fullText = `${rawDescText}\n${(product.features ?? []).join('\n')}\n${product.name}`;
-    const warranty = parseWarranty(fullText, warrantyDefault);
-    const featuresExtracted = extractFromFeatures(product.features);
+    // Garantia: sale del campo DEDICADO de CDR (96,7 % del catalogo). Solo se cae al
+    // parseo del texto libre de la ficha cuando CDR no la manda, que es como se venia
+    // haciendo para todo y acertaba mucho menos.
+    const warranty = parseCdrWarranty((product as any).cdr_garantia, warrantyDefault)
+      ?? parseWarranty(fullText, warrantyDefault);
+    // GTIN / modelo / nro de parte: ahora son columnas propias. El parseo por regex del
+    // array `features` ("GTIN: 6923...") queda de fallback para productos manuales o
+    // viejos que todavia no pasaron por el sync.
+    const fromFeatures = extractFromFeatures(product.features);
+    const featuresExtracted = {
+      gtin: (product as any).cdr_gtin || fromFeatures.gtin,
+      model: (product as any).cdr_modelo || fromFeatures.model,
+      nro_parte: (product as any).cdr_nro_parte || fromFeatures.nro_parte,
+    };
     const attrsFromText = extractAttributesFromText(product.name, rawDescText);
 
     // Combos (external_code "A+B", ej notebook + mochila): no tienen GTIN ni ficha completa
@@ -380,6 +398,22 @@ Deno.serve(async (req: Request) => {
       for (const [id, value_name] of Object.entries(tech)) {
         if (value_name && catReq.ids.has(id) && !attributes.some(a => a.id === id)) attributes.push({ id, value_name });
       }
+      // Peso y medidas del paquete. CDR los manda para ~64 % del catalogo y ML los usa
+      // para calcular el envio: sin esto los completa el vendedor a mano o ML estima mal.
+      // Solo se mandan si la categoria los acepta (catReq.ids) y si el dato es > 0: un 0
+      // de CDR significa 'no cargado', no 'pesa cero' (doc 7.7 aplicada a medidas).
+      const dim = (v: unknown) => { const n = Number(v ?? 0); return Number.isFinite(n) && n > 0 ? n : null; };
+      const pkg: Record<string, string | null> = {
+        PACKAGE_WEIGHT: dim((product as any).cdr_peso_gramos) ? `${dim((product as any).cdr_peso_gramos)} g` : null,
+        PACKAGE_WIDTH: dim((product as any).cdr_ancho_cm) ? `${dim((product as any).cdr_ancho_cm)} cm` : null,
+        PACKAGE_HEIGHT: dim((product as any).cdr_alto_cm) ? `${dim((product as any).cdr_alto_cm)} cm` : null,
+        PACKAGE_LENGTH: dim((product as any).cdr_profundidad_cm) ? `${dim((product as any).cdr_profundidad_cm)} cm` : null,
+      };
+      for (const [id, value_name] of Object.entries(pkg)) {
+        // modifiable, NO ids: en muchas categorias ML define estos atributos pero los
+        // calcula el y los descarta si se los mandamos.
+        if (value_name && catReq.modifiable.has(id) && !attributes.some(a => a.id === id)) attributes.push({ id, value_name });
+      }
       // Despues, para cada OBLIGATORIO que todavia falta, intentamos derivarlo del texto
       // usando los valores permitidos de ML (auto-fix). Registramos cada auto-completado.
       for (const req of catReq.required) {
@@ -422,8 +456,15 @@ Deno.serve(async (req: Request) => {
     }
 
     const sale_terms = [
-      { id: 'WARRANTY_TYPE', value_name: warranty.type === 'manufacturer' ? 'Garantía de fábrica' : 'Garantía del vendedor' },
-      { id: 'WARRANTY_TIME', value_name: `${warranty.months} meses` },
+      // months = 0 es el "Sin garantia" explicito de CDR: ML tiene un tipo propio para
+      // eso y declarar "0 meses de garantia del vendedor" seria decir otra cosa.
+      ...(warranty.months <= 0
+        ? [{ id: 'WARRANTY_TYPE', value_name: 'Sin garantía' }]
+        : [
+            { id: 'WARRANTY_TYPE', value_name: warranty.type === 'manufacturer' ? 'Garantía de fábrica' : 'Garantía del vendedor' },
+            // "10 años" y no "120 meses": ML espera el plazo largo en años.
+            { id: 'WARRANTY_TIME', value_name: warrantyTimeLabel(warranty.months) },
+          ]),
     ];
 
     const imageUrls = (product.images ?? []).slice(0, 12);

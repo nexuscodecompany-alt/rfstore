@@ -1,0 +1,411 @@
+
+===== PAGE 1 =====
+Web Service de Productos
+Guía de integración para clientes
+Versión 2.0 · 01 de septiembre de 2026
+Reemplaza a todo material entregado con anterioridad.
+1 Qué es
+Servicio SOAP que devuelve el catálogo de productos publicados en cdrmedios.com , con precios, stock,
+ficha técnica e imágenes.
+Tiene un solo método: productos_con_galeria . Con ese método se resuelve toda la integración.
+Existe un segundo servicio que consulta el stock de una lista puntual de códigos. No es el recomendado y no se
+habilita por defecto. Si tu caso lo necesita, pedilo expresamente a CDR.
+2 Conexión
+WSDL
+https://www.cdrmedios.com/ws/productos/service.php?
+class=SublimewsProductosUsuariosCompleto&wsdl
+Protocolo
+SOAP (rpc/encoded)
+Namespace
+http://schema.example.com
+Método
+productos_con_galeria
+Credenciales
+email  + token , los provee CDR
+IMPORTANTE
+El token  no es la contraseña con la que entrás a la web. Es una clave aparte, exclusiva del web service. Si
+intentás usar tu contraseña de login, no va a funcionar.
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 1 de 9
+
+===== PAGE 2 =====
+3 Parámetros
+Parámetro
+Tipo
+Descripción
+email
+string
+Usuario provisto por CDR.
+token
+string
+Token provisto por CDR. Ver la advertencia de arriba.
+fecha
+string
+YYYY-MM-DD HH:MM:SS . Devuelve solo los productos creados o modificados desde ese
+momento. Ver sección 4.
+formato
+string
+json  o xml . Cualquier otro valor (o vacío) devuelve JSON.
+El método devuelve un string con el JSON o el XML adentro. Hay que parsearlo.
+4 Cómo usar el parámetro fecha
+Es la parte que más problemas genera. Son tres reglas.
+4.1 Primera llamada: fecha vieja
+Poné una fecha anterior a la existencia del catálogo, por ejemplo 2015-01-01 00:00:00 . Eso trae todo.
+4.2 Llamadas siguientes: la fecha de tu última llamada
+Guardá el momento en que hiciste la consulta y usalo como fecha  la próxima vez. Así solo recibís lo que cambió.
+10:00  →  fecha = 2015-01-01 00:00:00    (primera vez, trae todo)
+10:05  →  fecha = 2026-09-01 10:00:00
+10:10  →  fecha = 2026-09-01 10:05:00
+SI REPETÍS EL FULL SYNC TE BLOQUEAN EL USUARIO
+Pedir el catálogo entero una y otra vez genera una respuesta muy pesada, y el sistema tranca al usuario que
+hace la consulta. La fecha incremental no es una recomendación de eficiencia: es una condición de uso.
+4.3 Sincronizá al menos una vez por día — obligatorio
+Un producto que se queda sin stock se sigue devolviendo solo durante 24 horas. Pasado ese plazo, el servicio deja
+de enviarlo.
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 2 de 9
+
+===== PAGE 3 =====
+LA CONSECUENCIA ES SILENCIOSA
+Si sincronizás cada dos días, nunca vas a ver el momento en que el stock pasó a cero. El producto
+simplemente deja de aparecer en la respuesta, y como tu sistema solo actualiza lo que recibe, se queda con el
+último stock conocido para siempre. Vas a estar publicando disponibilidad de algo que no existe.
+No hay error, no hay aviso. Por eso: una sincronización diaria como mínimo. Si publicás stock en tiempo real,
+conviene más seguido.
+5 Campos de la respuesta
+24 campos por producto, más la galería de imágenes. Los ejemplos son reales, del producto AUD461 .
+#
+Campo
+Contenido
+Ejemplo
+1
+codigo
+Identificador único del producto. Es la clave
+para cruzar con tus sistemas.
+AUD461
+2
+stock
+Cantidad disponible al momento de la consulta.
+0
+3
+nombre
+Nombre comercial. Texto plano.
+Audífonos Edifier WH950NB Bluetooth
+Cancelación Ruido Blanco
+4
+copete
+Bajada corta. Texto plano, sin HTML.
+Música sin interrupciones
+5
+descripcion
+Ficha larga. Viene en HTML.
+<p>Diseñados para…<br />
+<strong>…
+6
+descripcion_comercial
+Texto de venta preparado por CDR para que lo
+publiques. Puede venir vacío.
+—
+7
+marca
+Marca en texto.
+Edifier
+8
+webmarca
+Sitio genérico de la marca. Estable.
+edifier.com/int/en
+9
+fabricante
+Sitio del producto puntual en el fabricante.
+Puede quedar caído si discontinúan el modelo.
+edifier.com/global/p/…/wh950nb
+10
+garantia
+Plazo de garantía, texto libre.
+1 año
+11
+vinculogarantia
+Enlace al servicio técnico que atiende esa
+garantía. Suele venir vacío.
+—
+12
+precio
+Tu precio de compra.
+92.00
+13
+moneda
+Moneda del precio. En la práctica siempre
+USD .
+USD
+14
+pvp
+Precio sugerido de reventa para tu sitio web.
+0  = sin sugerido cargado.
+159
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 3 de 9
+
+===== PAGE 4 =====
+#
+Campo
+Contenido
+Ejemplo
+15
+pvpml
+Precio sugerido de reventa para MercadoLibre.
+Más alto que pvp  porque absorbe la comisión
+de la plataforma. 0  = sin sugerido cargado.
+0
+16
+gtin
+EAN internacional. No sirve como identificador
+— ver 7.4.
+6923520245451
+17
+modelo
+Modelo del fabricante.
+WH950NB
+18
+nro_parte
+Part number del fabricante.
+—
+19
+habilitado
+Si está publicado. Ver el formato en 7.1.
+1.0
+20
+ancho
+Ancho en cm.
+18.9
+21
+alto
+Alto en cm.
+22.6
+22
+profundidad
+Profundidad en cm.
+7.2
+23
+peso
+Peso en gramos.
+700
+24
+categoria
+Jerarquía web, niveles separados por >> .
+Audio Imagen >> Auriculares y
+Microfonos >> Inalámbricos
+Galería
+galeria  es un array. Cada imagen trae:
+Campo
+Contenido
+img
+URL de descarga de la imagen.
+fecha
+Fecha de alta de esa imagen.
+md5
+Hash del archivo. Usalo para detectar cambios — ver 7.5.
+Qué campos pueden venir vacíos o ausentes
+Medido sobre los 1.816 productos publicados al 01/09/2026:
+Campo
+Viene cargado en
+categoria , descripcion , precio
+100 %
+copete
+99,7 %
+garantia
+96,9 %
+marca
+96,8 %
+webmarca
+89,2 %
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 4 de 9
+
+===== PAGE 5 =====
+Campo
+Viene cargado en
+gtin
+84,4 %
+modelo
+77,7 %
+fabricante
+69,5 %
+ancho  · alto  · profundidad  · peso
+~68 %
+nro_parte
+63,8 %
+pvp  con valor mayor a 0
+8,6 %
+vinculogarantia
+5,4 %
+REGLA DE ORO
+Ningún campo excepto codigo  está garantizado. Programá pensando en que puede llegar vacío — o en que
+la clave no venga del todo, según 7.2.
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 5 de 9
+
+===== PAGE 6 =====
+6 Ejemplo de respuesta JSON
+[
+{
+"codigo": "AUD461",
+"stock": 0,
+"nombre": "Audífonos Edifier WH950NB Bluetooth Cancelación Ruido Blanco",
+"copete": "Música sin interrupciones",
+"descripcion": "<p>Diseñados para ofrecer una experiencia auditiva inmersiva…<br />
+<strong>Características principales:</strong><br />
+- Color blanco (Ivory)<br />- Cancelación de Ruido Activa (ANC)…</p>",
+"descripcion_comercial": "",
+"marca": "Edifier",
+"webmarca": "http://www.edifier.com/int/en",
+"fabricante": "https://www.edifier.com/global/p/over-ear-on-ear-headphones/wh950nb",
+"garantia": "1 año",
+"vinculogarantia": "",
+"precio": "92.00",
+"moneda": "USD",
+"pvp": 159,
+"pvpml": 0,
+"gtin": "6923520245451",
+"modelo": "WH950NB",
+"nro_parte": "",
+"habilitado": "1.0",
+"ancho": "18.9",
+"alto": "22.6",
+"profundidad": "7.2",
+"peso": "700",
+"categoria": "Audio Imagen >> Auriculares y Microfonos >> Inalámbricos",
+"galeria": [
+{
+"img": "https://www.cdrmedios.com/dlimgs/dlimgs.php?i=e5d687322e3bb8132b0fee4c…",
+"fecha": "2026-08-28 11:11:52",
+"md5": "f8fbc98fe0e41ad8def75313670f7887"
+}
+]
+}
+]
+Si pedís formato=xml , la raíz es <PRODUCTOS>  y cada producto es un <item> , con los mismos nombres de campo.
+7 Ocho cosas que hay que saber sí o sí
+Son las que rompen integraciones. Todas están medidas contra el servicio real.
+7.1
+habilitado : convertilo a número, no lo compares como texto
+El valor es un decimal, y la forma exacta en que te llega depende de tu cliente SOAP: puede ser 1  / 0  como
+número, o "1.0"  / "0.0"  como texto. Comparar con igualdad contra "1"  o contra 1  falla en uno de los dos
+casos.
+La única prueba que funciona siempre es el cast numérico:
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 6 de 9
+
+===== PAGE 7 =====
+if ( floatval(['habilitado'] ?? 0) > 0 ) { /* publicado */ }
+El servicio incluye productos con habilitado  en cero. Filtralos vos.
+7.2 Hay claves que directamente no vienen
+No todos los productos traen las 24 claves. Cuando un dato no está cargado, el servicio a veces omite la clave entera
+en lugar de mandarla vacía.
+Caso confirmado: los combos —los que tienen un +  en el código, como MON368+SOP120 — llegan sin marca , sin
+webmarca  y sin garantia . No vienen en blanco: no están.
+En PHP eso es un Undefined array key; en JavaScript, undefined . Accedé siempre con guarda:
+= ['marca'] ?? '';      // PHP
+const marca = p.marca ?? '';       // JavaScript
+7.3
+descripcion  es HTML, copete  y nombre  no
+descripcion  trae etiquetas ( <p> , <br /> , <strong> , <a> ). Medido: 5.980 de 5.984 productos la traen con
+HTML; ninguno en texto plano.
+Si la escapás como texto, tus fichas van a mostrar las etiquetas a la vista. copete  y nombre , en cambio, son texto
+plano y no hay que interpretarlos como HTML.
+Ojo si lo mirás en el navegador: si volcás la respuesta en una página de prueba, el navegador interpreta las etiquetas
+y vas a ver texto plano con saltos de línea. El campo sí trae HTML — se comprueba sobre el string crudo, no sobre lo
+renderizado. Los enlaces <a href>  que traen algunas fichas también desaparecen a la vista.
+7.4 El gtin  NO identifica al producto
+Varios productos distintos comparten el mismo GTIN, porque las variantes lo heredan del original: la versión outlet, la
+refurbished, la que viene con sistema operativo preinstalado.
+El único identificador es codigo . Si cruzás por GTIN vas a mezclar productos con distinto precio y distintas
+prestaciones.
+7.5 La URL de las imágenes cambia según quién consulta
+El campo img  incluye un identificador que varía entre usuarios del servicio. La misma foto del mismo producto
+tiene URL distinta para cada cliente.
+Por eso: para saber si una imagen cambió, comparás el md5 , no la URL. El md5  es del archivo y sí es estable.
+7.6 Los tipos numéricos vienen mezclados
+Algunos campos numéricos llegan como texto ( "92.00" , "18.9" ) y otros como número ( 159 ). No asumas el tipo:
+convertí siempre de forma explícita antes de operar.
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 7 de 9
+
+===== PAGE 8 =====
+7.7
+pvp  y pvpml  en cero significan «sin sugerido», no «gratis»
+Solo el 8,6 % de los productos publicados tiene un precio sugerido cargado. Cuando llega 0 , no hay sugerido
+definido — no lo publiques como precio.
+Y no confundas los tres precios:
+Campo
+Qué es
+precio
+Lo que vos le pagás a CDR.
+pvp
+Lo que CDR te sugiere cobrar en tu web.
+pvpml
+Lo que CDR te sugiere cobrar en MercadoLibre — más alto, porque absorbe la comisión de la plataforma.
+7.8
+categoria  es una jerarquía, no una etiqueta
+Los niveles vienen en un solo string separados por >> :
+Audio Imagen >> Auriculares y Microfonos >> Inalámbricos
+Si querés armar un árbol de navegación, partí por ese separador.
+8 Ejemplo en PHP
+<?php
+function soapCreateClient($wsdl) {
+return new SoapClient($wsdl, [
+'cache_wsdl' => WSDL_CACHE_NONE,
+'trace'      => true,
+'exceptions' => true,
+]);
+}
+$wsdl = 'https://www.cdrmedios.com/ws/productos/service.php'
+. '?class=SublimewsProductosUsuariosCompleto&wsdl';
+$parametros = [
+'email'   => 'xxx@tumail.com',
+'token'   => 'abc123',              // NO es la clave de login de la web
+'fecha'   => '2026-09-01 10:00:00', // fecha y hora de tu última llamada
+'formato' => 'json',
+];
+$cliente   = soapCreateClient($wsdl);
+$resultado = $cliente->__soapCall('productos_con_galeria', $parametros);
+$productos = json_decode($resultado, true);
+foreach ($productos as $p) {
+if (floatval($p['habilitado']) <= 0) continue;   // ver 7.1
+// procesar $p['codigo'], $p['precio'], $p['stock'] …
+}
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 8 de 9
+
+===== PAGE 9 =====
+9 Errores
+El servicio responde con HTTP 200 aunque haya fallado. El error viene dentro del string devuelto, en JSON:
+{"ERROR":"USUARIO NO CONFIGURADO"}
+Mensaje
+Qué significa
+USUARIO NO CONFIGURADO
+El par email/token no está habilitado para este servicio. Contactá a CDR.
+Parámetro incorrecto
+Revisá el formato de fecha  ( YYYY-MM-DD HH:MM:SS ).
+NO ALCANZA CON MIRAR EL CÓDIGO HTTP
+Siempre validá el contenido de la respuesta antes de procesarla. Un HTTP 200 no garantiza que haya datos.
+10 Checklist antes de salir a producción
+Dudas sobre la integración o para solicitar credenciales: contactá a CDR Medios.
+Guardo la fecha y hora de cada llamada y la uso en la siguiente.
+Sincronizo como mínimo una vez por día.
+Filtro por habilitado  con floatval(...) > 0 .
+Uso codigo  como identificador, nunca gtin .
+Renderizo descripcion  como HTML.
+Detecto cambios de imagen por md5 , no por URL.
+No publico pvp  ni pvpml  cuando vienen en 0 .
+Valido si la respuesta trae {"ERROR": …}  antes de procesarla.
+Web Service de Productos · Guía de integración
+CDR Medios · cdrmedios.com
+Documento v2.0 — 01/09/2026 · Página 9 de 9

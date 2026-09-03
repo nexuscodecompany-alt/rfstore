@@ -14,6 +14,7 @@ import {
 } from 'react-icons/hi2';
 import {
 	getBrandsAdmin,
+	getPendingCdrBrands,
 	getCategories,
 	getSubcategories,
 	createBrand,
@@ -217,6 +218,12 @@ export const DashboardTaxonomiesPage = () => {
 	const [openCat, setOpenCat] = useState<string | null>(null);
 
 	const { data: brands = [] } = useQuery({ queryKey: ['brands', 'admin'], queryFn: getBrandsAdmin });
+	// Marcas que CDR manda y no tenemos dadas de alta. Se recalcula al crear una marca:
+	// crear la marca es justamente lo que saca a esa fila de la lista.
+	const { data: pendingBrands = [] } = useQuery({
+		queryKey: ['brands', 'cdr-pendientes'],
+		queryFn: getPendingCdrBrands,
+	});
 	const { data: categories = [] } = useQuery({
 		queryKey: ['categories'],
 		queryFn: getCategories,
@@ -243,7 +250,13 @@ export const DashboardTaxonomiesPage = () => {
 	};
 
 	// Marcas
-	const mAddBrand = useMutation({ mutationFn: createBrand, onSuccess: () => inv('brands'), onError: onErr });
+	// Crear una marca no solo agrega la marca: el trigger de la base le asigna los
+	// productos de CDR que la esperaban, asi que tambien hay que refrescar productos.
+	const mAddBrand = useMutation({
+		mutationFn: createBrand,
+		onSuccess: () => { inv('brands'); inv('products'); },
+		onError: onErr,
+	});
 	const mEditBrand = useMutation({ mutationFn: updateBrand, onSuccess: () => inv('brands'), onError: onErr });
 	const mDelBrand = useMutation({ mutationFn: deleteBrand, onSuccess: () => inv('brands'), onError: onErr });
 
@@ -418,6 +431,60 @@ export const DashboardTaxonomiesPage = () => {
 						placeholder='Nueva marca'
 						onAdd={name => mAddBrand.mutate(name)}
 					/>
+
+					{/* Marcas que CDR ya esta mandando y todavia no existen aca. Sin esto,
+					    esos productos entran sin marca y no se entera nadie. Al crearla, un
+					    trigger de la base le asigna los productos que la esperaban. */}
+					{pendingBrands.length > 0 && (
+						<div className='mt-4 rounded-xl border border-amber-200 bg-amber-50/70 p-3'>
+							<p className='text-sm font-semibold text-amber-900'>
+								{pendingBrands.length === 1
+									? '1 marca nueva de CDR'
+									: `${pendingBrands.length} marcas nuevas de CDR`}
+							</p>
+							<p className='mt-0.5 text-xs leading-relaxed text-amber-800/80'>
+								CDR manda estos productos con una marca que no tenés creada. Al
+								crearla se le asignan solos.
+							</p>
+							<ul className='mt-3 space-y-1.5'>
+								{pendingBrands.map(pb => (
+									<li
+										key={pb.marca}
+										className='flex items-center gap-3 rounded-lg bg-white px-3 py-2'
+									>
+										<div className='min-w-0 flex-1'>
+											<div className='flex items-baseline gap-2'>
+												<span className='truncate font-medium text-ink-900'>
+													{pb.marca}
+												</span>
+												<span className='shrink-0 text-xs tabular-nums text-ink-500'>
+													{pb.productos}
+													{pb.productos === 1 ? ' producto' : ' productos'}
+													{pb.productos_activos > 0 &&
+														` · ${pb.productos_activos} activo${pb.productos_activos === 1 ? '' : 's'}`}
+												</span>
+											</div>
+											{pb.ejemplos?.[0] && (
+												<p
+													className='truncate text-xs text-ink-400'
+													title={pb.ejemplos.join(' · ')}
+												>
+													{pb.ejemplos[0]}
+												</p>
+											)}
+										</div>
+										<button
+											onClick={() => mAddBrand.mutate(pb.marca)}
+											disabled={mAddBrand.isPending}
+											className='shrink-0 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-amber-600 disabled:opacity-50'
+										>
+											Crear marca
+										</button>
+									</li>
+								))}
+							</ul>
+						</div>
+					)}
 					<div className='mt-4 max-h-[480px] space-y-1.5 overflow-auto pr-1'>
 						{brands.map(brand => (
 							<div

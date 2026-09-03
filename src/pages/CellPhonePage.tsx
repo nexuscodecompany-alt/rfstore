@@ -12,6 +12,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { BsChatLeftText } from "react-icons/bs";
 import { FaWhatsapp } from "react-icons/fa";
 import { ProductDescription } from "../components/one-product/ProductDescription";
+import { ProductSpecs } from "../components/products/ProductSpecs";
 import { GridImages } from "../components/one-product/GridImages";
 import { useProduct } from "../hooks/products/useProduct";
 import { useQuery } from "@tanstack/react-query";
@@ -183,7 +184,7 @@ export const CellPhonePage = () => {
           <Separator />
 
           {/* Características */}
-          <ul className="my-10 space-y-2 ml-7">
+          <ul className="mt-10 mb-8 space-y-2 ml-7">
             {product.features.map((feature) => (
               <li
                 key={feature}
@@ -194,6 +195,17 @@ export const CellPhonePage = () => {
               </li>
             ))}
           </ul>
+
+          {/* Ficha técnica (garantía, modelo, peso y medidas de CDR). Se rinde
+              sola: si el producto no tiene ninguno de esos datos, no muestra nada. */}
+          <ProductSpecs
+            garantia={product.cdr_garantia}
+            modelo={product.cdr_modelo}
+            pesoGramos={product.cdr_peso_gramos}
+            anchoCm={product.cdr_ancho_cm}
+            altoCm={product.cdr_alto_cm}
+            profundidadCm={product.cdr_profundidad_cm}
+          />
 
           {/* COMPRAR */}
           {isOutOfStock ? (

@@ -1,0 +1,64 @@
+URL de consumo de WS: https://www.cdrmedios.com/ws/productos/service.php?class=SublimewsProductosUsuariosCompleto&wsdl
+Para ingresar aca te tengo que pasar el mail de su usuario y token
+
+/**
+* Funcion productos_con_galeria
+* @param string email (usuario)
+* @param string token (token) clave token del usuario / no es la misma de login de la web
+* @param string fecha y ahora de actualizacion (YYYY-MM-DD HH:MM:SS) devuelve únicamente los productos actualizados a partir de esa fecha. únicamente en la primer llamada se puede poner una como fecha 1/1/2015 es decir anterior a la actual para llamar a todos los productos. Luego solo se pone la fecha y hora de la última llamada. Es importante poner siempre la fecha y hora de la última llamada al hacer la consulta ya que sino la misma será muy pesada y el sistema trancará al usuario que hace la consulta)
+* @param string formato salida (JSON/XML)
+* @return string
+*/
+
+ 
+
+Ej. de parámetros enviados:
+$parametros=array(
+"email" => "xxx@tumail.com",
+"token" => "abc123",
+"fecha" => "2020-03-11 12:00:00", //Fecha desde la última llamada
+"formato" => "" //Por defecto devuelve JSON opcionalmente se puede usar XML para que retorne ese formato
+);
+
+ 
+Ej de Retorno JSON:
+[{"codigo":"IMP107","stock":"10","nombre":"Impresora multifuncion XP 2101 + resma de 500 hojas","copete":"Impresora Epson multifunci\u00f3n XP 2101 compacta con wi-fi\r\nPapel chamex 75 gr","descripcion":"<p><a href=\"https:\/\/www.cdrmedios.com\/catalogo\/impresion\/impresoras-nuevas\/impresora-epson-multifuncion-xp-2101-compacta-con-wi-fi-imp107\/\" target=\"_blank\" rel=\"noopener\">Impresora Epson multifunci\u00f3n XP 2101 compacta con wi-fi<\/a><\/p>\r\n<p><a href=\"https:\/\/www.cdrmedios.com\/productos\/productos_masinfo.php?id=4916&amp;secc=productos&amp;path=0.15.102\" target=\"_blank\" rel=\"noopener\">Papel chamex 75 gr<\/a><\/p>","precio":"105.40","moneda":"USD","gtin":"","modelo":"","nro_parte":"","galeria":[{"img":"https:\/\/www.cdrmedios.com\/dlimgs\/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adce3df2dfe794c505b4","fecha":"2022-05-22 16:48:05","md5":"5f84b474d0b775aa8311e4bbdc4b7b15"},{"img":"https:\/\/www.cdrmedios.com\/dlimgs\/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adce4f51a6edaaf4812f","fecha":"2022-05-22 16:48:05","md5":"7b5136c39e2d9b77d162af955aca8ba1"},{"img":"https:\/\/www.cdrmedios.com\/dlimgs\/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adcebb87526edf4a1ca1","fecha":"2022-05-22 16:48:05","md5":"3ae0fc686d8103c574a332b4e15886d3"},{"img":"https:\/\/www.cdrmedios.com\/dlimgs\/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adce37a1d25efa4d65ff","fecha":"2022-07-04 16:06:57","md5":"ae564017be7fda83b074c229844c18c3"}]}
+
+
+Ej de Retorno XML:
+<PRODUCTOS encoding="UTF-8">
+<item>
+<codigo>IMP107+PAP23</codigo>
+<stock>10</stock>
+<nombre>Impresora multifuncion XP 2101 + resma de 500 hojas</nombre>
+<copete>Impresora Epson multifunción XP 2101 compacta con wi-fi Papel chamex 75 gr</copete>
+<descripcion><p><a href="https://www.cdrmedios.com/catalogo/impresion/impresoras-nuevas/impresora-epson-multifuncion-xp-2101-compacta-con-wi-fi-imp107/" target="_blank" rel="noopener">Impresora Epson multifunción XP 2101 compacta con wi-fi</a></p> <p><a href="https://www.cdrmedios.com/productos/productos_masinfo.php?id=4916&secc=productos&path=0.15.102" target="_blank" rel="noopener">Papel chamex 75 gr</a></p></descripcion>
+<precio>105.40</precio>
+<moneda>USD</moneda>
+<gtin/>
+<modelo/>
+<nro_parte/>
+<galeria>
+<item>
+<img>https://www.cdrmedios.com/dlimgs/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adce3df2dfe794c505b4</img>
+<fecha>2022-05-22 16:48:05</fecha>
+<md5>5f84b474d0b775aa8311e4bbdc4b7b15</md5>
+</item>
+<item>
+<img>https://www.cdrmedios.com/dlimgs/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adce4f51a6edaaf4812f</img>
+<fecha>2022-05-22 16:48:05</fecha>
+<md5>7b5136c39e2d9b77d162af955aca8ba1</md5>
+</item>
+<item>
+<img>https://www.cdrmedios.com/dlimgs/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adcebb87526edf4a1ca1</img>
+<fecha>2022-05-22 16:48:05</fecha>
+<md5>3ae0fc686d8103c574a332b4e15886d3</md5>
+</item>
+<item>
+<img>https://www.cdrmedios.com/dlimgs/dlimgs.php?i=034c6db26fab25605d0bc2e07acbf9852b1123b61cd5adce37a1d25efa4d65ff</img>
+<fecha>2022-07-04 16:06:57</fecha>
+<md5>ae564017be7fda83b074c229844c18c3</md5>
+</item>
+</galeria>
+</item>
+</PRODUCTOS>
