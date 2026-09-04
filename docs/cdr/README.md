@@ -235,17 +235,28 @@ los mira uno por uno.
 `cdr_pending_brands()` (sólo admin) las lista con cuántos productos espera cada una y un par de
 ejemplos. Se ve en dos lugares, y en los dos sólo aparece si hay algo pendiente:
 
-- **Productos** — filtro **"Marca por crear"**, al lado de *Nuevos desde CDR* y con el mismo
-  comportamiento: badge con el conteo, se prende y apaga, entra en *Limpiar filtros* y vive en
-  la URL (`?sinmarca=1`), así que el filtro sobrevive a entrar a un producto y volver con atrás.
-  Sólo aparece si hay alguno esperando. Además, en la columna Marca esos productos muestran
-  **"Falta crear"** con el nombre que manda CDR, para ver cuál no conviene activar todavía.
-- **Categorías, marcas y proveedores** — la lista de marcas pendientes con el botón para crearlas.
-  Es donde se hace la acción.
+Se ve en **Categorías, marcas y proveedores**, dentro de la tarjeta de Marcas: la lista de las
+que faltan, con cuántos productos espera cada una, un ejemplo real y el botón para crearla. Sólo
+aparece si hay alguna pendiente. Está ahí y no en el listado de productos a propósito: es donde
+se administran las marcas, que es donde se hace la acción.
 
-El filtro del listado NO cruza contra `brands`: cuando la marca existe, el trigger ya le puso el
-`brand_id`, así que quedarse sin marca teniendo `cdr_marca` **es** la señal de que falta crearla.
-Un filtro barato que no necesita subconsulta.
+### Los TRES momentos en que se resuelve una marca
+
+Hay que cubrirlos a los tres o el panel miente. Faltaba el tercero y por eso Xiaomi, Brateck y HP
+figuraban como "falta crear" con la marca perfectamente creada:
+
+| Momento | Quién lo resuelve |
+|---|---|
+| Producto nuevo cuya marca ya existe | `cdr_assign_brand_on_insert` |
+| Marca nueva con productos esperándola | `brand_claim_cdr_products` |
+| **Producto viejo al que el sync recién ahora le llena `cdr_marca`** | `cdr_assign_brand_on_insert` (ampliado a `UPDATE OF cdr_marca`) |
+
+El tercero es el que se pasó por alto: los productos que entraron antes de que existieran las
+columnas `cdr_*` no tenían `cdr_marca`. El sync se la fue completando después, pero para entonces
+ya no eran un INSERT, así que nadie les asignaba el `brand_id` aunque la marca existiera.
+
+Con los tres cubiertos, **"sin `brand_id` teniendo `cdr_marca`" significa de verdad "esa marca no
+existe"**. Antes no era cierto, y cualquier consulta que asumiera eso daba un resultado engañoso.
 
 **Las marcas NO se crean solas, a propósito.** Las crea el admin, igual que decide qué producto
 nuevo activar. Lo automático es lo de después.

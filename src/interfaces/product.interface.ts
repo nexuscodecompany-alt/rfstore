@@ -70,7 +70,19 @@ export interface Product {
 	 * Todos opcionales: CDR omite la clave entera cuando el dato no está cargado.
 	 */
 	cdr_marca?: string | null;
+	/** Sitio genérico de la marca. */
+	cdr_marca_url?: string | null;
+	/** Ficha del producto puntual en el fabricante. Puede quedar caída si lo discontinúan. */
+	cdr_fabricante_url?: string | null;
 	cdr_categoria?: string | null;
+	/** Texto de venta preparado por CDR. Viene en el 12,7 % del catálogo. */
+	cdr_descripcion_comercial?: string | null;
+	/** Precio sugerido por CDR para la web. NULL = sin sugerido (CDR manda 0, que NO es gratis). */
+	cdr_pvp_usd?: number | null;
+	/** Sugerido para ML: más alto que el de la web porque absorbe la comisión. */
+	cdr_pvpml_usd?: number | null;
+	/** Cuándo se refrescaron por última vez estos campos desde el WS. */
+	cdr_fields_updated_at?: string | null;
 	/** Texto libre: "1 año", "6 meses", "90 días contra defecto de fabricación". */
 	cdr_garantia?: string | null;
 	cdr_garantia_url?: string | null;

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getAdminProducts, getContentDirtyCount, getNewProductsCount, getPendingBrandCount, markProductsSeen } from '../../actions';
+import { getAdminProducts, getContentDirtyCount, getNewProductsCount, markProductsSeen } from '../../actions';
 import type { AdminSortField } from '../../actions/product';
 
 export const useAdminProducts = (
@@ -14,13 +14,12 @@ export const useAdminProducts = (
 	minReadiness = 0,
 	contentDirtyOnly = false,
 	sortBy: AdminSortField = 'created_at',
-	sortDir: 'asc' | 'desc' = 'desc',
-	pendingBrandOnly = false
+	sortDir: 'asc' | 'desc' = 'desc'
 ) => {
 	const { data, isLoading } = useQuery({
-		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir, pendingBrandOnly],
+		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir],
 		queryFn: () =>
-			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir, pendingBrandOnly),
+			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir),
 	});
 
 	return {
@@ -35,17 +34,6 @@ export const useContentDirtyCount = () => {
 	const { data } = useQuery({
 		queryKey: ['content-dirty-count'],
 		queryFn: getContentDirtyCount,
-		refetchInterval: 60_000,
-	});
-	return data ?? 0;
-};
-
-// Productos esperando que se cree su marca. Se refresca solo, igual que el de nuevos:
-// el numero baja apenas se crea la marca (el trigger les asigna el brand_id).
-export const usePendingBrandCount = () => {
-	const { data } = useQuery({
-		queryKey: ['pending-brand-count'],
-		queryFn: getPendingBrandCount,
 		refetchInterval: 60_000,
 	});
 	return data ?? 0;

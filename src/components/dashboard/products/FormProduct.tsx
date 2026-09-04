@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import { generateSlug, hasMarginOverride } from "../../../helpers";
 import { VariantsInput } from "./VariantsInput";
+import { CdrFieldsBox } from "./CdrFieldsBox";
 import { UploaderImages } from "./UploaderImages";
 import { Editor } from "./Editor";
 import { PriceBox } from "./PriceBox";
@@ -525,6 +526,10 @@ export const FormProduct = ({ titleForm }: Props) => {
               </span>
             </label>
           </div>
+
+          {/* Todo lo que manda CDR de este producto, en sólo lectura. Se rinde solo si
+              el producto no es de CDR o si todavía no pasó por una corrida del sync. */}
+          <CdrFieldsBox product={product} />
         </SectionFormProduct>
 
         <SectionFormProduct titleSection="Imágenes del producto">
