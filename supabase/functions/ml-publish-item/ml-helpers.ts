@@ -190,14 +190,24 @@ export function sanitizeDescription(text: string): string {
     if (!line) continue;
     const lower = line.toLowerCase();
     if (BLACKLIST_PHRASES.some(p => lower.includes(p))) continue;
-    if (/(\btel\.?:?|\bcel\.?:?|\bwhatsapp\b|\bwsp\b|\bphone\b)/i.test(line) && /\d/.test(line)) continue;
+    if (/(\btel\b|\bcel\b|\btelefono\b|\btel[eé]fono\b|\bcelular\b|\bwhatsapp\b|\bwsp\b|\bphone\b)/i.test(line) && /\d/.test(line)) continue;
     // Direcciones fisicas y datos de service/terceros: ML los toma como spam.
-    if (ADDRESS_LABEL_RE.test(line)) continue;
+    // Una direccion de verdad lleva numero de puerta ("Direccion: Constituyente 1681").
+    // Sin exigirlo se borraban specs que arrancan igual: "Direccion: Omnidireccional" en
+    // los microfonos, que es el patron polar y no un domicilio.
+    if (ADDRESS_LABEL_RE.test(line) && /\d/.test(line)) continue;
     if (ADDRESS_STREET_START_RE.test(line)) continue;
     if (SERVICE_CONTEXT_RE.test(line)) continue;
+    // Linea corta cargada de digitos = telefono suelto sin etiqueta. Se excluyen las que
+    // tienen "Etiqueta: valor" porque son fichas tecnicas, no contactos: "Modelo: 25098RA98G"
+    // y "Resolucion: 200 12.000 dpi" caian aca y se perdian de la publicacion. Los datos de
+    // contacto CON etiqueta ya los agarran las reglas de arriba (tel/cel/whatsapp/direccion).
     const dc = (line.replace(/[^0-9]/g, '').length);
     const wc = line.split(/\s+/).length;
-    if (dc >= 7 && wc <= 4) continue;
+    // Un telefono tiene los digitos JUNTOS ("099 123 456", "2900 1234"). Contar
+    // digitos sueltos borraba specs como "TN3600XL BK 6.000 paginas": 7 digitos
+    // repartidos en un codigo y un rendimiento, que no son un contacto.
+    if (dc >= 7 && wc <= 4 && /(?:\d[\s.\-]?){7,}/.test(line) && !/^[^:]{1,30}:/.test(line)) continue;
     out.push(line);
   }
   return out.join('\n').trim();
