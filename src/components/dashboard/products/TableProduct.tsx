@@ -99,8 +99,13 @@ export const TableProduct = () => {
   // segundo click = ascendente.
   // Por defecto se entra viendo lo ÚLTIMO que CDR modificó, de más reciente a más viejo:
   // es la pregunta que el admin se hace todos los días ("¿qué se movió?").
-  const sortBy = (get('orden') as AdminSortField) || 'stock_updated';
-  const sortDir = get('dir') === 'asc' ? 'asc' : 'desc';
+  //
+  // A diferencia de los filtros, el orden NO se guarda en el query string: invertirlo es un
+  // solo click sobre el encabezado y, si se persistía, el listado quedaba pegado al revés
+  // para siempre (se entraba al panel y lo más viejo aparecía arriba, sin que fuera obvio
+  // por qué). Viviendo en estado local, cada vez que se entra se arranca del estándar.
+  const [sortBy, setSortBy] = useState<AdminSortField>('stock_updated');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
   // El buscador se escribe letra por letra: local + volcado a la URL con respiro.
   const [inputValue, setInputValue] = useState(searchTerm);
@@ -117,8 +122,16 @@ export const TableProduct = () => {
   // Click en encabezado: si es la columna activa invierte el sentido, si no la activa
   // arrancando de mayor a menor. Siempre vuelve a la página 1 (el orden cambió entero).
   const toggleSort = (field: AdminSortField) => {
-    const nextDir = sortBy === field && sortDir === 'desc' ? 'asc' : 'desc';
-    setFilter({ orden: field === 'stock_updated' ? undefined : field, dir: nextDir === 'asc' ? 'asc' : undefined });
+    setSortDir(sortBy === field && sortDir === 'desc' ? 'asc' : 'desc');
+    setSortBy(field);
+    // El orden cambió entero, así que la página en la que estabas ya no significa nada.
+    setFilter({});
+  };
+
+  // Vuelve al orden con el que se entra al panel: lo último que CDR movió, arriba.
+  const resetSort = () => {
+    setSortBy('stock_updated');
+    setSortDir('desc');
   };
 
   const { brands, categories } = useTaxonomiesAdmin();
@@ -352,7 +365,8 @@ export const TableProduct = () => {
           {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || withStockOnly || sortBy !== 'stock_updated' || sortDir !== 'desc') && (
             <button
               type="button"
-              onClick={() =>
+              onClick={() => {
+                resetSort();
                 setFilter({
                   marca: undefined,
                   cat: undefined,
@@ -363,10 +377,8 @@ export const TableProduct = () => {
                   listo: undefined,
                   mlcambios: undefined,
                   constock: undefined,
-                  orden: undefined,
-                  dir: undefined,
-                })
-              }
+                });
+              }}
               className="whitespace-nowrap text-xs font-semibold text-brand-700 hover:text-brand-900"
             >
               Limpiar filtros
