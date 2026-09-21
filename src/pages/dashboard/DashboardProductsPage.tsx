@@ -1,8 +1,15 @@
 import { Link } from 'react-router-dom';
-import { HiOutlinePlus, HiOutlineRectangleGroup } from 'react-icons/hi2';
+import {
+	HiOutlineArrowDownTray,
+	HiOutlinePlus,
+	HiOutlineRectangleGroup,
+} from 'react-icons/hi2';
 import { TableProduct } from '../../components/dashboard/products/TableProduct';
+import { useExportProducts } from '../../hooks';
 
 export const DashboardProductsPage = () => {
+	const { exportCsv, isExporting } = useExportProducts();
+
 	return (
 		<div className='flex h-full flex-col gap-5'>
 			<div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
@@ -14,6 +21,17 @@ export const DashboardProductsPage = () => {
 				</div>
 
 				<div className='flex flex-wrap gap-2'>
+					{/* Exporta el catálogo ENTERO, no la página visible ni los filtros puestos. */}
+					<button
+						type='button'
+						onClick={() => exportCsv()}
+						disabled={isExporting}
+						title='Descargar todo el catálogo en CSV: stock, ventas y estado en cada canal'
+						className='inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 transition-all hover:bg-ink-50 disabled:cursor-not-allowed disabled:opacity-60'
+					>
+						<HiOutlineArrowDownTray size={18} />
+						{isExporting ? 'Generando…' : 'Descargar CSV'}
+					</button>
 					<Link
 						to='/dashboard/productos/taxonomias'
 						className='inline-flex items-center gap-2 rounded-full border border-ink-200 bg-white px-4 py-2 text-sm font-semibold text-ink-700 transition-all hover:bg-ink-50'

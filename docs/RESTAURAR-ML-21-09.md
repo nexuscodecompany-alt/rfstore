@@ -151,3 +151,85 @@ Arreglo propuesto: registrar en el mapping el momento de la última pausa NUESTR
 fue tocado DESPUÉS de nuestra pausa, la última palabra es del vendedor → no reactivar.
 Alternativa más simple: un switch global de "modo vacaciones" en el panel que apague la
 reactivación con un click, sin depender de que alguien se acuerde de tocar la base.
+
+---
+
+# EJECUTADO — lunes 21/09/2026
+
+Restauración hecha en el orden 0 → 1 → 2 → 3 → 4. Todo verificado contra la API de ML.
+
+| Paso | Estado | Detalle |
+|---|---|---|
+| 0. Credenciales | ✅ | Fila devuelta a `ml_credentials`. El `refresh_token` sobrevivió la semana: `ml-token-refresh` → `{ok:true, refreshed:1}`. ML responde 200. `ops.ml_credentials_freeze` y el esquema `ops` **borrados** (ese `refresh_token` quedó rotado al renovar, así que la copia ya no servía). |
+| 1. Trigger | ✅ | `variants_stock_to_ml` habilitado (`tgenabled = 'O'`). |
+| 2. Reactivar | ⚠️ **40 de 47** | Ver abajo: 7 se quedaron sin stock durante el freeze. |
+| 3. Prender todo | ✅ | `ml_auto_reactivate_enabled = true`; crons 13, 15, 17, 19, 22, 23 activos; `ml_vacation_freeze` y `admin_notify_email` borrados. |
+| 4. Resync | ✅ | 647 `update_stock` + 1160 `update_price` encolados. |
+
+## Desvío del plan: 40 reactivadas, no 47
+
+El doc original reactivaba las 47 a ciegas. Durante la semana el trigger estuvo apagado, así que
+el stock siguió moviéndose sin que ML se enterara: **7 de las 47 hoy están por debajo del umbral**.
+Reactivarlas habría sido publicarlas sin mercadería (sobreventa → cancelación con penalización de ML).
+Quedan pausadas, que es exactamente lo que el sync normal haría con ellas:
+
+| Código | Producto | Stock |
+|---|---|---|
+| FIL07 | Filamento Bambu Lab PLA Basic blanco | 0 ← *la que se vendió durante el freeze (orden 346)* |
+| FIL48 | Filamento Bambu Lab PLA Silk+ rojo | 0 |
+| FIL59 | Filamento Bambu Lab PLA Translucent lila | 1 (bajo umbral dropship) |
+| FIL67 | Filamento Bambu Lab PLA Madera palo de rosa | 1 (bajo umbral dropship) |
+| FIL68 | Filamento Bambu Lab PLA Madera roble blanco | 0 |
+| FIL80 | Filamento Bambu Lab PLA Basic marrón | 0 |
+| FIL94 | Filamento Bambu Lab PLA Matte lila | 0 |
+
+Se reactivan solas en cuanto CDR les devuelva stock (el flag `auto_paused_stock` y el cron 13 ya
+están operativos). No hay nada más que hacer con ellas.
+
+Además, el resync de stock se encoló **después** de los `reactivate` (id mayor = se procesa después)
+e incluye esas 40: si no, volvían a la venta con la cantidad de hace una semana.
+
+## Estado de ML al restaurar
+
+Consultado a la API el 21/09: **10 activas / 1080 pausadas** (el 15/09 eran 0 / 1078). O sea que el
+cliente despausó apenas 10 a mano; **las ~1030 que pausó él siguen pausadas**. Eso lo decide él
+desde ML con la acción masiva — nosotros sólo reactivamos las 40 que había pausado *nuestro* freeze.
+
+## Mails
+
+- `alerts_notify_email` = `facundohernandez122@gmail.com` (desarrollador) — nunca se cambió, sigue igual.
+- `admin_notify_email` **borrada**: el digest de CDR vuelve a caer en `ADMIN_EMAIL` (el cliente),
+  que es el comportamiento previo al freeze (verificado en `cdr-daily-digest/index.ts:32-36`).
+- `ADMIN_EMAIL` (cliente): nunca se tocó.
+- El `check_failed: mercadolibre` del reporte diario **desaparece** desde el próximo envío.
+
+## Repricing
+
+ML tenía los precios de hace una semana. `ml-reprice-active` encoló **1160** (sólo 45 ya estaban al
+día). Dólar verificado antes de disparar: 41,40 BROU mostrador venta, traído el mismo día.
+
+## El bug de fondo sigue sin arreglar
+
+Nada de esto arregla la causa del incidente: `ml-process-sync-queue` no distingue una pausa nuestra
+por stock 0 de una pausa manual del vendedor. Hoy hay **486 mappings con `auto_paused_stock = true`**:
+si el cliente pausó a mano alguna de ésas y CDR le devuelve stock, **se la vamos a reactivar por
+arriba otra vez**. Mientras no se implemente el `auto_paused_at` (o el switch de "modo vacaciones"
+en el panel), la próxima vez que el cliente se vaya hay que repetir este freeze a mano.
+
+## Drenado verificado (primeros ~7 min)
+
+| Acción en ML | Cantidad | Qué significa |
+|---|---|---|
+| `qty_updated` | 154 | stock empujado bien |
+| `paused` | 8 | se quedaron sin stock durante el freeze; pausadas como corresponde |
+| `skipped_moderated` | 17 | ML los tiene bloqueados (moderación). No es falla nuestra, se reporta en `ml_moderated` |
+| errores reales | 0 | |
+
+**Cero `reactivated` en el resync** — confirma que empujar stock NO reactiva por arriba las ~1030
+publicaciones que el cliente dejó pausadas a mano. El riesgo se verifica así, y quedó descartado.
+
+Único error del lote: **MON364** (`no_active_mapping`), un duplicado **preexistente del 07/08** —
+dos publicaciones ML sobre la misma variante, así que esa variante **no sincronizaba stock desde
+hace mes y medio** (riesgo de sobreventa silencioso). Una de las dos (`MLU1478003616`) está
+`under_review`/`forbidden`: se reflejó esa verdad en el mapping (sin tocar ML) y con eso la variante
+volvió a tener un solo mapping sincronizable. Ninguna de las dos tenía ventas.

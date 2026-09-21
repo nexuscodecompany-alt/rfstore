@@ -734,6 +734,7 @@ export type Database = {
           price_usd: number | null
           slug: string
           source: string
+          stock_changed_at: string | null
           subcategory_id: string | null
         }
         Insert: {
@@ -778,6 +779,7 @@ export type Database = {
           price_usd?: number | null
           slug: string
           source?: string
+          stock_changed_at?: string | null
           subcategory_id?: string | null
         }
         Update: {
@@ -822,6 +824,7 @@ export type Database = {
           price_usd?: number | null
           slug?: string
           source?: string
+          stock_changed_at?: string | null
           subcategory_id?: string | null
         }
         Relationships: [

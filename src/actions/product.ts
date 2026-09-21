@@ -195,7 +195,7 @@ export const searchProducts = async (searchTerm: string) => {
 /* ADMINISTRADOR          */
 /* ********************************** */
 // Campos por los que el admin puede ordenar el listado clickeando el encabezado.
-export type AdminSortField = 'name' | 'stock' | 'price' | 'active' | 'created_at' | 'ml_ready';
+export type AdminSortField = 'name' | 'stock' | 'price' | 'active' | 'created_at' | 'ml_ready' | 'stock_updated';
 
 // Mapeo a columnas reales de products. Se usa como whitelist: nunca mandamos a
 // PostgREST un nombre de columna que venga del front sin validar.
@@ -206,6 +206,9 @@ const ADMIN_SORT_COLUMNS: Record<AdminSortField, string> = {
     active: 'active',
     created_at: 'created_at',
     ml_ready: 'ml_ready_percent',
+    // Ultima vez que el stock CAMBIO de valor (no que se sincronizo): CDR puede seguir
+    // mandando el producto en el feed todos los dias arrastrando el mismo numero viejo.
+    stock_updated: 'stock_changed_at',
 };
 
 // Listado para el panel admin: trae TODOS los productos (activos e inactivos,
@@ -223,7 +226,8 @@ export const getAdminProducts = async (
     minReadiness = 0,
     contentDirtyOnly = false,
     sortBy: AdminSortField = 'created_at',
-    sortDir: 'asc' | 'desc' = 'desc'
+    sortDir: 'asc' | 'desc' = 'desc',
+    withStockOnly = false
 ) => {
     const itemsPerPage = 25;
     const from = (page - 1) * itemsPerPage;
@@ -274,6 +278,10 @@ export const getAdminProducts = async (
     else if (activeFilter === 'inactive') query = query.eq('active', false);
 
     if (newOnly) query = query.is('seen_at', null);
+
+    // "Solo con stock": el orden por antiguedad de stock sirve para encontrar numeros que
+    // CDR arrastra sin mover, y eso solo tiene sentido sobre lo que dice tener stock.
+    if (withStockOnly) query = query.gt('total_stock', 0);
 
     // Filtro "Cambió en CDR (pendiente ML)": productos publicados en ML cuyo contenido
     // (nombre/descripción) cambió en CDR y todavía no se empujó a la publicación.
@@ -663,4 +671,89 @@ export const updateProduct = async (
     }
 
     return updatedProduct;
+};
+/* ********************************** */
+/* EXPORTAR CATÁLOGO A CSV            */
+/* ********************************** */
+
+// Una fila por producto con todo lo que el dueño mira para decidir: si está publicado en
+// cada canal, stock, ventas y hace cuánto que no se mueve el stock.
+export interface ProductReportRow {
+    codigo: string | null;
+    producto: string;
+    marca: string;
+    categoria: string;
+    subcategoria: string;
+    origen: string;
+    publicado_en_rfstore: string;
+    estado_en_ml: string;
+    ml_id: string;
+    ml_link: string;
+    stock: number;
+    precio_usd: number | null;
+    unidades_vendidas: number;
+    ventas: number;
+    vendidas_en_ml: number;
+    vendidas_en_rfstore: number;
+    ultima_venta: string | null;
+    stock_actualizado: string | null;
+    visto_en_cdr: string | null;
+    fecha_alta: string | null;
+    precio_bloqueado: string;
+    stock_manual: string;
+    contenido_bloqueado: string;
+    rubro_cdr: string;
+}
+
+// El reporte viene de una RPC que devuelve UN jsonb con todo: si devolviera filas,
+// PostgREST lo cortaría en max_rows (5000) y el catálogo ya tiene más que eso — en
+// silencio y sin error, que es la peor forma de perder datos.
+export const getProductsReport = async (): Promise<ProductReportRow[]> => {
+    const { data, error } = await (supabase.rpc as any)('export_products_report');
+    if (error) throw new Error(error.message);
+    return (data ?? []) as ProductReportRow[];
+};
+
+// Encabezados en el orden en que se leen en la planilla.
+const CSV_COLUMNS: { key: keyof ProductReportRow; label: string }[] = [
+    { key: 'codigo', label: 'Código' },
+    { key: 'producto', label: 'Producto' },
+    { key: 'marca', label: 'Marca' },
+    { key: 'categoria', label: 'Categoría' },
+    { key: 'subcategoria', label: 'Subcategoría' },
+    { key: 'origen', label: 'Origen' },
+    { key: 'publicado_en_rfstore', label: 'Publicado en RF Store' },
+    { key: 'estado_en_ml', label: 'Estado en ML' },
+    { key: 'stock', label: 'Stock' },
+    { key: 'precio_usd', label: 'Costo USD' },
+    { key: 'ventas', label: 'Ventas' },
+    { key: 'unidades_vendidas', label: 'Unidades vendidas' },
+    { key: 'vendidas_en_ml', label: 'Unidades vendidas en ML' },
+    { key: 'vendidas_en_rfstore', label: 'Unidades vendidas en RF Store' },
+    { key: 'ultima_venta', label: 'Última venta' },
+    { key: 'stock_actualizado', label: 'Stock actualizado' },
+    { key: 'visto_en_cdr', label: 'Visto en CDR' },
+    { key: 'fecha_alta', label: 'Fecha de alta' },
+    { key: 'stock_manual', label: 'Stock manual' },
+    { key: 'precio_bloqueado', label: 'Precio bloqueado' },
+    { key: 'contenido_bloqueado', label: 'Contenido bloqueado' },
+    { key: 'rubro_cdr', label: 'Rubro en CDR' },
+    { key: 'ml_id', label: 'ID de ML' },
+    { key: 'ml_link', label: 'Link de ML' },
+];
+
+// Excel en español abre bien el CSV sólo si el separador es ";" (con "," mete todo en
+// una columna). El BOM es lo que hace que los acentos y las ñ no salgan rotos.
+const csvCell = (value: unknown): string => {
+    if (value === null || value === undefined) return '';
+    const text = String(value);
+    // Un texto que arranca con = + - @ lo interpreta Excel como fórmula: se neutraliza.
+    const safe = /^[=+\-@]/.test(text) ? `'${text}` : text;
+    return /[";\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+};
+
+export const buildProductsCsv = (rows: ProductReportRow[]): string => {
+    const header = CSV_COLUMNS.map(c => csvCell(c.label)).join(';');
+    const body = rows.map(r => CSV_COLUMNS.map(c => csvCell(r[c.key])).join(';'));
+    return '\uFEFF' + [header, ...body].join('\r\n');
 };

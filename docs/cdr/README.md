@@ -66,6 +66,40 @@ El `token` NO es la contraseña de la web: es una clave aparte del web service.
 Consulta el stock de una lista puntual de códigos, en tiempo real. **No se habilita
 por defecto** — hay que pedírselo a CDR. Lo usaría `cdr-check-stock` en el checkout.
 
+## Arquitectura del sync: qué corre, cuándo y para qué
+
+**Las dos mitades son distintas y ninguna reemplaza a la otra.** Precio/stock necesitan
+frecuencia; las altas necesitan el catálogo completo. Pedir el catálogo completo seguido hace
+que CDR bloquee el usuario, así que la única forma de tener las dos cosas es separarlas:
+
+| Cron | jobid | Frecuencia | Modo | Feed | Para qué |
+|---|---|---|---|---|---|
+| `cdr-sync-5min` | 8 | cada 5 min | `full` | incremental | **Precio y stock en casi tiempo real.** Barato (8-60 productos). También ve las bajas: los deshabilitados vienen siempre (Hallazgo 1) |
+| `cdr-sync-fullfeed` | 27 | 06:40 y 18:40 UTC | `full` + `full_feed` | **completo** | **Altas** + reconciliación por ausencia (apaga el stock de lo que CDR dejó de mandar) |
+| `cdr-fill-images` | 20 | 08:20 UTC | — | completo | Rellena imágenes faltantes |
+| `cdr-daily-digest` | 19 | 09:00 UTC | — | — | Mail al cliente con los productos nuevos del día |
+| `cdr-sync-daily-newonly` | 3 | **APAGADO** | `new-only` | — | Obsoleto: `full` ya hace altas + updates. No reactivar (ver incidente) |
+
+Son **3 llamadas de catálogo completo por día** (2 del fullfeed + 1 de imágenes) y ~288
+incrementales. Dentro de lo que la doc de CDR tolera.
+
+**Por qué `mode: 'full'` en los dos:** `full` = `new-only` + `update-prices`. Lo que cambia el
+comportamiento **no es el modo sino `full_feed`**, que decide si se pide el catálogo entero y si
+se reconcilia (`index.ts:359` y `:449`). Un `full` sin `full_feed` es un incremental que
+actualiza; con `full_feed` es la corrida completa que además da de alta.
+
+### Reglas para no volver a romperlo
+
+1. **Las altas cuelgan del feed completo, nunca del incremental** (Hallazgo 5).
+2. **Todo cron que pida el catálogo completo se cuenta**: son 3/día. Agregar uno es decisión
+   consciente, no un detalle.
+3. **`to_insert > 0` con `inserted = 0` sostenido es una falla**, aunque `ok: true`. Es
+   exactamente lo que se vio 36 corridas seguidas sin que nadie lo notara.
+4. Los productos nuevos entran `active = false`, sin marca ni categoría: **no se publican
+   solos**, esperan al admin. Un alta nunca es destructiva.
+
+---
+
 ## Dónde vive esto en el código
 
 | Pieza | Qué hace |
@@ -140,6 +174,30 @@ no de habilitación. Antes de pedirle nada a CDR, probar variantes del array.
 
 ---
 
+### 5. El feed incremental NO trae los productos nuevos
+
+**La regla más cara de todas, y contradice la letra de la doc de CDR.** La sección 3 dice que
+`fecha` "devuelve solo los productos **creados** o modificados desde ese momento". En la
+práctica, **los productos nuevos NO aparecen en una llamada incremental**: sólo llegan cuando
+se pide el catálogo completo (`fecha = 2015-01-01`).
+
+Evidencia dura (incidente del 03/09 al 21/09/2026):
+
+| Modo | Llamadas | `to_insert` | Resultado |
+|---|---|---|---|
+| `full` incremental (cada 5 min) | ~5.200 corridas en 18 días | **0 siempre** | Nunca vio un alta |
+| `update-prices` full feed (2×/día) | 36 corridas | **55 constante** | Las veía todas |
+
+La corrida del `new-only` del 03/09 lo dejó por escrito: pasó a incremental por el cursor nuevo,
+trajo 53 productos y **los 53 eran deshabilitados** (`disabled_in_feed: 53`, `to_insert: 0`).
+Ese mismo modo, en full feed, venía insertando 16 productos por día.
+
+**Consecuencia de diseño, no negociable:**
+
+> El incremental sirve para **stock y precio**. Las **altas sólo se detectan en el feed completo.**
+> Cualquier rediseño del sync que deje las altas colgando del incremental vuelve a romper esto,
+> en silencio y sin un solo error en los logs.
+
 ## Flujos revisados al migrar a la v2.0 (03/09/2026)
 
 Todo lo que toca el WS de CDR o depende del sync, y cómo quedó.
@@ -148,7 +206,7 @@ Todo lo que toca el WS de CDR o depende del sync, y cómo quedó.
 |---|---|---|
 | `cdr-sync-products` | ✅ v31 | Cursor incremental, filtro `habilitado`, `p_reconcile` |
 | `cdr_bulk_update_stock_price` | ✅ | `p_reconcile` explícito; matado el bug del umbral `>= 1500` |
-| Crons de CDR | ✅ | Un tick cada 5 min + full feed 2×/día; `new-only` horario apagado (lo cubre el tick) |
+| Crons de CDR | ⚠️ corregido 21/09 | Un tick cada 5 min + full feed 2×/día; `new-only` apagado. **La nota "lo cubre el tick" era FALSA y costó 18 días sin altas** — ver "Hallazgo 5" y el incidente del 03/09 |
 | Trigger → cola → ML | ✅ sin cambios | `variants_stock_to_ml` se dispara por cambio de `stock`, no le importa de dónde venga |
 | `health-alerts` | ✅ v5 | Ver abajo: tenía un chequeo que iba a dar falsos críticos |
 | Panel `/dashboard/cdr-sync` | ✅ | `cdr_last_full_sync` se sigue actualizando en toda corrida (v31) |
@@ -173,14 +231,53 @@ si pasan 14 h sin un full feed (se esperan cada 12 h, y la ventana de CDR es de 
 **Los rate limit ya no cuentan como fallas.** Son autolimitantes y el cursor no avanza, así que
 no se pierde nada: llenar el reporte diario con eso sería ruido sin acción posible.
 
+### INCIDENTE: 18 días sin altas (03/09 → 21/09/2026) — RESUELTO
+
+**Síntoma:** el cliente preguntó si desde el 03/09 no entraban productos nuevos. Tenía razón:
+última alta el 03/09, **cero en 18 días**, con 55 productos acumulados esperando (celulares
+Xiaomi Poco C85/C81 Pro, cámaras Canon y Kodak — mercadería vendible).
+
+**Causa.** Al migrar al cursor incremental (v29/v30, 03/09) las altas quedaron huérfanas por la
+combinación de dos cosas, ninguna visible en los logs:
+
+1. Se apagó el cron `new-only` anotando *"lo cubre el tick de 5 min"*, porque `mode: 'full'` dice
+   ser "altas Y update". Es cierto que inserta — pero corre **incremental**, y el incremental no
+   trae altas (Hallazgo 5). `to_insert: 0` en ~5.200 corridas.
+2. La única corrida que pedía el catálogo completo (`cdr-sync-fullfeed`, 2×/día) iba en modo
+   `update-prices`, que **calcula `to_insert` y no inserta**: el bloque de alta excluye ese modo
+   (`index.ts:420`). Registró `to_insert: 55, inserted: 0` — 36 corridas seguidas.
+
+> El modo que **veía** las altas no las insertaba; el que **insertaba** no las veía.
+> Las dos corridas decían `ok: true`. Ningún error, ninguna alerta, 18 días.
+
+**Arreglo (21/09):** `cdr_sync_fullfeed_tick` pasó de `mode: 'update-prices'` a `mode: 'full'`.
+Una palabra, **cero llamadas nuevas al WS** — la corrida completa ya existía, ahora además da de
+alta. Verificado: `to_insert: 55 → inserted: 55, backlog: 0`, los 55 entraron `active = false`.
+
+**Bug de paso, encontrado en el camino (también arreglado):** el feed completo venía con
+`ok: false` desde el 18/09 por
+`content_update: null value in column "features" violates not-null`. Un producto de CDR sin
+copete **ni** modelo **ni** nro_parte **ni** GTIN llega con `features: []`; en
+`cdr_bulk_update_content`, `array_agg` sobre cero filas devuelve `NULL` y revienta el lote
+entero de contenido. Arreglado con `coalesce(..., '{}'::text[])`. Efecto medido: la sincro de
+contenido pasó de `content_applied: 0-1` a **219** en la primera corrida.
+
+**Lo que falló como proceso:** la nota "lo cubre el tick" se escribió sin verificarla contra una
+corrida real. Un `to_insert: 55 / inserted: 0` sostenido estuvo a la vista 36 veces.
+
 ### Pendientes conocidos (no bloquean, pero conviene saberlos)
 
 - **`cdr-fill-images` sigue pidiendo el catálogo COMPLETO** (fecha `2015-01-01` hardcodeada),
   1 vez por día a las 08:20 UTC. Son 4 MB y una llamada más en esa hora concreta (13 en vez
   de 12). Riesgo bajo y se recupera solo, pero si aparece un rate limit a esa hora, es esto.
   Tampoco filtra `habilitado`: puede bajar imágenes de productos despublicados.
-- **`health-alerts` no está en el repo** (nunca estuvo). Vive sólo en Supabase. Bajarla con
-  el MCP o el CLI antes de tocarla.
+- ~~**`health-alerts` no está en el repo**~~ **RESUELTO 21/09**: ya vive en
+  `supabase/functions/health-alerts/` (v6). OJO al redeployarla: el CLI no puede bundlear en
+  este entorno (falla el certificado de esm.sh) y **el deploy por MCP la deja en
+  `verify_jwt = true`**, que es lo contrario de como estaba. El cron la llamaba SIN
+  `Authorization`, así que eso la dejó devolviendo 401. Ahora el cron 22 usa
+  `public.health_alerts_tick()`, que manda el JWT del Vault igual que los ticks de CDR, y
+  ya no depende de que la función esté abierta.
 - **`cdr-check-stock`** hace un round-trip inútil a `get_stock` en cada checkout. El resultado
   es correcto (cae a la base), pero es latencia al pedo. Ver `historico/`.
 
@@ -268,3 +365,125 @@ alta. Verificado: crear "Hollyland" asoció 12 productos en el acto.
 
 Con eso quedan cubiertos los dos sentidos: producto nuevo de marca conocida (se asigna al entrar)
 y marca nueva con productos ya esperando (se asignan al crearla).
+
+---
+
+## Chequeos de consistencia (correr cuando algo huela raro)
+
+```sql
+-- 1. ¿Entran altas? Si esto tiene más de ~2 días y CDR sigue publicando, algo se rompió.
+select max(created_at) from products where source = 'cdr';
+
+-- 2. LA SEÑAL QUE SE NOS PASÓ 18 DÍAS: detecta nuevos y no inserta ninguno.
+select created_at, mode, report->>'feed_mode' as feed, to_insert, inserted, ok
+  from cdr_sync_run_history
+ where report->>'feed_mode' = 'full'
+ order by created_at desc limit 5;
+-- to_insert > 0 con inserted = 0, sostenido, es una FALLA aunque diga ok: true.
+
+-- 3. El feed completo tiene que correr 2 veces al día y terminar ok.
+select count(*) from cdr_sync_run_history
+ where report->>'feed_mode' = 'full' and ok and created_at > now() - interval '24 hours';
+
+-- 4. Stock congelado: productos con stock que el feed completo no confirma hace días.
+select count(*) from products p join variants v on v.product_id = p.id
+ where p.source = 'cdr' and v.stock > 0
+   and (p.last_synced_at is null or p.last_synced_at < now() - interval '48 hours');
+
+-- 5. Productos rotos (sin variante = sin precio ni stock, no vendibles).
+select external_code, name from products p
+ where p.source = 'cdr'
+   and not exists (select 1 from variants v where v.product_id = p.id);
+```
+
+### Estado al 21/09/2026, después del arreglo
+
+| Chequeo | Valor | Lectura |
+|---|---|---|
+| Stock congelado >48 h | 0 | ✅ la reconciliación funciona |
+| Productos sin variante | 3 | ⚠️ `MON242O`, `KIT11`, `IMP133+BOT16-19` — los tres de la carga inicial del 22/05 e **inactivos**, así que no se venden ni molestan. Limpieza pendiente, sin urgencia |
+| Productos sin imágenes | 11 | ✅ explicado: son los que CDR ya no manda (`not_in_feed` del `cdr-fill-images`) |
+| Inactivos sin categoría | 2855 | ℹ️ backlog de **clasificación**, no del sync: más de la mitad del catálogo de CDR nunca se publicó. Es decisión comercial, pero conviene que el dueño sepa el tamaño |
+| Full feeds ok en 24 h | 1 | ⚠️ era 0: los anteriores morían con `ok: false` por el bug de `features`. Desde el arreglo vuelven a ser 2/día |
+
+---
+
+## El vigilante: por qué no avisó (21/09/2026)
+
+El reporte diario llegaba todos los días a `facundohernandez122@gmail.com` — pero el 19 y el
+20/09 decía **"todo en orden"** mientras las altas llevaban 16 días caídas. Dos agujeros:
+
+**1. No había ningún chequeo de altas.** Se vigilaba que el sync *corriera* y que el stock no
+quedara congelado, pero nunca que *entraran productos nuevos*.
+
+**2. `cdr_failed_runs` miraba "las últimas 20 corridas" sin distinguir el tipo.** Con 288
+incrementales por día, **20 corridas son 90 minutos**. Un full feed que corre cada 12 h no cae
+nunca en esa ventana: por eso el `ok: false` del full feed, que venía desde el 18/09, no se
+reportó ni una vez. El chequeo no estaba roto — estaba mirando el lugar equivocado.
+
+### Chequeos nuevos (v6)
+
+| Chequeo | Severidad | Qué mira |
+|---|---|---|
+| `cdr_insert_stalled` | 🔴 crit | El full feed detecta productos para dar de alta y no inserta ninguno. **Es la señal exacta que estuvo a la vista 36 corridas seguidas** |
+| `cdr_no_new_products` | 🟠 → 🔴 a los 7 días | Días sin que entre un alta. Red de seguridad por si el fallo viene por otro lado |
+| `cdr_full_feed_failed` | 🔴 crit | Full feeds que terminaron mal, mirados **sobre sus propias corridas**, no mezclados con los incrementales |
+
+Al deployar la v6 el chequeo nuevo disparó de entrada: *"7 de las últimas 8 corridas de catálogo
+COMPLETO de CDR fallaron"* — las del bug de `features`, que nunca se habían reportado.
+
+### Trampa al redeployar health-alerts
+
+El deploy por MCP deja `verify_jwt = true`, y el cron la llamaba **sin `Authorization`** → 401.
+El vigilante se habría quedado mudo justo después de arreglarlo. Resuelto con
+`public.health_alerts_tick()`, que manda el JWT del Vault igual que los ticks de CDR.
+**Después de cualquier deploy de health-alerts, verificar que el tick devuelva 202:**
+
+```sql
+select public.health_alerts_tick();
+select id, status_code, left(content,60) from net._http_response order by id desc limit 1;
+```
+
+---
+
+## "Stock actualizado": detectar el stock que CDR arrastra (21/09/2026)
+
+**El problema:** CDR puede mandar un producto en el feed todos los días con la misma cantidad
+desde hace meses. El feed lo confirma, pero el número puede no ser real.
+
+**Por qué no servía lo que ya había:** `products.last_synced_at` dice cuándo lo **vimos** en el
+feed, no cuándo **cambió** el número. Como el feed completo pasa 2 veces por día por todo el
+catálogo, para el 100% de lo que tiene stock da "hoy". No distingue nada.
+
+**Lo que se agregó:** `products.stock_changed_at`, que se marca **sólo cuando `total_stock`
+cambia de valor**. Se resuelve dentro del `UPDATE` que ya hacía `recalc_product_total_stock`,
+comparando el total viejo contra el nuevo, así que **no agrega escrituras** al camino caliente
+del bulk de CDR (1800+ productos por corrida). Como cuelga del recálculo, captura el cambio
+venga de donde venga: CDR, una venta, ML o una edición manual.
+
+**Backfill:** `ml_sync_log` guarda el stock empujado a ML desde el 11/06/2026; de ahí se derivó
+la última vez que ese número cambió para 1154 productos. El resto queda en `null` ("—" en el
+panel) y se va completando solo.
+
+**En el panel:** columna **"Stock actual."** ordenable, con semáforo (verde < 14 días, ámbar
+14-30, rojo 30+), y el chip **"Solo con stock"** — mirar la antigüedad sobre productos en 0 no
+tiene sentido. Ordenando ascendente salen arriba los sospechosos. Al estrenarlo apareció un
+`DRO15 — Dron Potensic ATOM` con 10 unidades y **102 días sin moverse**.
+
+## Botón "Descargar CSV" del listado de productos
+
+Exporta el **catálogo entero** (no la página ni los filtros aplicados): código, producto, marca,
+categoría, origen, si está publicado en RF Store y el estado en ML, stock, costo, ventas
+(unidades totales y separadas por canal), última venta, "stock actualizado", visto en CDR,
+candados y el rubro de CDR.
+
+Detalles que importan:
+
+- Sale de la RPC `export_products_report()`, que devuelve **un solo `jsonb`**. Si devolviera
+  filas, PostgREST lo cortaría en `max_rows` (5000) y el catálogo ya tiene 5217 — **en silencio
+  y sin error**, que es la peor forma de perder datos. Ver [tope de filas](#).
+- Sólo ventas en estado `Concretado`, y sin los extras del checkout (`is_extra`).
+- La RPC valida `is_admin()` adentro y sólo tiene `execute` para `authenticated`/`service_role`.
+- El CSV se arma en el front con `;` como separador y BOM UTF-8: es lo que hace que Excel en
+  español lo abra en columnas y no rompa los acentos. Los valores que empiezan con `= + - @` se
+  neutralizan para que Excel no los tome como fórmula.

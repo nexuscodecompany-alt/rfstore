@@ -63,6 +63,9 @@ const tableHeaders: { label: string; sort?: AdminSortField; className?: string }
   { label: 'Precio Web' },
   { label: 'Precio ML' },
   { label: 'Stock', sort: 'stock' },
+  // Cuándo cambió el NÚMERO de stock, no cuándo se sincronizó: CDR puede mandar el
+  // producto en el feed todos los días arrastrando la misma cantidad vieja.
+  { label: 'Stock actual.', sort: 'stock_updated' },
   { label: 'Estado', sort: 'active' },
   { label: 'Listo ML', sort: 'ml_ready' },
   { label: 'Fecha', sort: 'created_at' },
@@ -91,6 +94,7 @@ export const TableProduct = () => {
   const contentDirtyOnly = getBool('mlcambios');
   const mlFilter = (get('ml') as '' | 'in' | 'out') || '';
   const minReadiness = getNumber('listo') ?? 0;
+  const withStockOnly = getBool('constock');
   // Ordenamiento SERVER-SIDE: se clickea el encabezado de la columna y ordena todo el
   // catálogo (no sólo la página visible). Primer click = descendente (mayor a menor),
   // segundo click = ascendente.
@@ -152,7 +156,8 @@ export const TableProduct = () => {
     minReadiness,
     contentDirtyOnly,
     sortBy,
-    sortDir
+    sortDir,
+    withStockOnly
   );
 
   const { mutate, isPending } = useDeleteProduct();
@@ -343,7 +348,7 @@ export const TableProduct = () => {
 
           {/* El orden ahora se maneja clickeando el encabezado de cada columna. */}
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || sortBy !== 'created_at' || sortDir !== 'desc') && (
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || withStockOnly || sortBy !== 'created_at' || sortDir !== 'desc') && (
             <button
               type="button"
               onClick={() =>
@@ -356,6 +361,7 @@ export const TableProduct = () => {
                   ml: undefined,
                   listo: undefined,
                   mlcambios: undefined,
+                  constock: undefined,
                   orden: undefined,
                   dir: undefined,
                 })
@@ -368,6 +374,21 @@ export const TableProduct = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Mirar la antigüedad del stock sólo tiene sentido sobre lo que dice tener
+              stock: un 0 no se "desactualiza". */}
+          <button
+            type="button"
+            onClick={() => setFilter({ constock: withStockOnly ? undefined : '1' })}
+            title="Mostrar sólo productos con stock disponible"
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-all ${
+              withStockOnly
+                ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                : 'border-ink-200 bg-white text-ink-700 hover:bg-ink-50'
+            }`}
+          >
+            <span className={`h-2 w-2 rounded-full ${withStockOnly ? 'bg-emerald-500' : 'bg-ink-300'}`} />
+            Solo con stock
+          </button>
           <button
             type="button"
             onClick={() => setFilter({ nuevos: newOnly ? undefined : '1' })}
@@ -616,6 +637,7 @@ export const TableProduct = () => {
                       columna. Antes mostraba sólo la 1ª variante y con productos
                       multi-variante el orden parecía equivocado. */}
                   <StockCell product={product} total={totalStock(product)} />
+                  <StockAgeCell changedAt={product.stock_changed_at} />
                   <td className="p-4 align-middle">
                     {product.active ? (
                       <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
@@ -929,6 +951,49 @@ const ProductThumb = ({
 
 // Celda "Stock". Con el candado de stock puesto es editable a mano: el sync de CDR
 // ya no la pisa. Si el producto está en ML, guardar dispara el sync de cantidad.
+// Hace cuánto que NO se mueve el número de stock.
+// No es lo mismo que "cuándo sincronizamos": el feed completo de CDR pasa 2 veces por día
+// por todo el catálogo, así que `last_synced_at` dice "hoy" para todo lo que tiene stock.
+// Lo que interesa acá es si CDR viene arrastrando la MISMA cantidad hace semanas, que es
+// la señal de que ese stock puede no ser real.
+const StockAgeCell = ({ changedAt }: { changedAt: string | null }) => {
+  if (!changedAt) {
+    return (
+      <td className='p-4 align-middle'>
+        <span
+          className='text-xs text-ink-300'
+          title='Todavía no se registró un cambio de stock para este producto (el dato se empezó a guardar el 21/09/2026)'
+        >
+          —
+        </span>
+      </td>
+    );
+  }
+
+  const dias = Math.floor((Date.now() - new Date(changedAt).getTime()) / 86_400_000);
+  // Los cortes son los del negocio, no arbitrarios: CDR mueve stock seguido, así que
+  // más de dos semanas quieto ya es raro y al mes conviene mirarlo.
+  const tono =
+    dias >= 30
+      ? 'bg-rose-50 text-rose-700 ring-rose-200'
+      : dias >= 14
+        ? 'bg-amber-50 text-amber-800 ring-amber-200'
+        : 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+
+  const texto = dias === 0 ? 'hoy' : dias === 1 ? 'ayer' : `hace ${dias} d`;
+
+  return (
+    <td className='p-4 align-middle'>
+      <span
+        className={`inline-flex whitespace-nowrap items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ${tono}`}
+        title={`El stock cambió por última vez el ${formatDate(changedAt)}`}
+      >
+        {texto}
+      </span>
+    </td>
+  );
+};
+
 const StockCell = ({ product, total }: { product: any; total: number }) => {
   const { setStock, isSettingStock, stockVars } = useSetVariantStock();
   const variants = product.variants ?? [];

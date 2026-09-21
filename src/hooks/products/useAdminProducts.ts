@@ -14,12 +14,13 @@ export const useAdminProducts = (
 	minReadiness = 0,
 	contentDirtyOnly = false,
 	sortBy: AdminSortField = 'created_at',
-	sortDir: 'asc' | 'desc' = 'desc'
+	sortDir: 'asc' | 'desc' = 'desc',
+	withStockOnly = false
 ) => {
 	const { data, isLoading } = useQuery({
-		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir],
+		queryKey: ['admin-products', page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir, withStockOnly],
 		queryFn: () =>
-			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir),
+			getAdminProducts(page, searchTerm, brandId, categoryId, source, activeFilter, newOnly, mlFilter, minReadiness, contentDirtyOnly, sortBy, sortDir, withStockOnly),
 	});
 
 	return {

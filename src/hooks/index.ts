@@ -18,6 +18,7 @@ export * from './products/useSetProductStockLocked';
 export * from './products/useSetProductSyncPaused';
 export * from './products/useSetProductSyncLocks';
 export * from './products/useSetMlItemStatus';
+export * from './products/useExportProducts';
 export * from './products/useSetVariantStock';
 export * from './products/useRecalcMlReadiness';
 
