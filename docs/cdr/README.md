@@ -465,10 +465,24 @@ venga de donde venga: CDR, una venta, ML o una edición manual.
 la última vez que ese número cambió para 1154 productos. El resto queda en `null` ("—" en el
 panel) y se va completando solo.
 
-**En el panel:** columna **"Stock actual."** ordenable, con semáforo (verde < 14 días, ámbar
-14-30, rojo 30+), y el chip **"Solo con stock"** — mirar la antigüedad sobre productos en 0 no
-tiene sentido. Ordenando ascendente salen arriba los sospechosos. Al estrenarlo apareció un
-`DRO15 — Dron Potensic ATOM` con 10 unidades y **102 días sin moverse**.
+**En el panel:** la columna que antes decía **"Fecha"** (y mostraba `created_at`, la fecha de
+ALTA) pasó a llamarse **"Modificado"** y muestra `stock_changed_at`. Es el orden por defecto del
+listado, descendente: al entrar se ve lo último que CDR movió. La fecha de alta no se perdió,
+quedó en el tooltip. Se completa con el chip **"Solo con stock"**.
+
+> **Las tres fechas que se confundían** (esto costó una tarde entera de ida y vuelta):
+> | Columna | Qué es | Sirve para |
+> |---|---|---|
+> | `created_at` ("Fecha", vieja) | cuándo se dio de alta el producto | nada del stock: **no cambia nunca** |
+> | `last_synced_at` ("Visto en CDR") | cuándo lo vimos en el feed | nada: el feed completo pasa 2×/día por TODO, así que dice "hoy" para el 100% de lo que tiene stock |
+> | `stock_changed_at` ("Modificado") | cuándo CDR **cambió el número** | esto es lo que el admin mira |
+>
+> El síntoma clásico de la confusión: "la fecha más nueva es del 3/9 y no se mueve". Era
+> `created_at`, y el 3/9 fue la última alta antes de que se rompieran (ver el incidente).
+
+Un producto sin fecha es uno cuyo stock no se movió desde que se empezó a medir, así que en el
+orden descendente cae al fondo, que es justo donde corresponde. Al estrenarlo apareció un
+`DRO15 — Dron Potensic ATOM` con 10 unidades y **102 días sin que CDR lo toque**.
 
 ## Botón "Descargar CSV" del listado de productos
 

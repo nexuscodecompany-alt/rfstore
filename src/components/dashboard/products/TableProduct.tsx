@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { FaEllipsis } from 'react-icons/fa6';
 import { HiOutlineExternalLink } from 'react-icons/hi';
-import { HiOutlineClock, HiOutlinePhoto } from 'react-icons/hi2';
+import { HiOutlinePhoto } from 'react-icons/hi2';
 import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
@@ -29,7 +29,6 @@ import { CdrSyncLocksModal, type CdrSyncLocksValue } from './CdrSyncLocksModal';
 import type { AdminSortField } from '../../../actions/product';
 import { useFilterParams, type ParamValue } from '../../../hooks/useFilterParams';
 import { Pagination } from '../../shared/Pagination';
-import { CellTableProduct } from './CellTableProduct';
 import { MlPublishAttributesModal } from './MlPublishAttributesModal';
 
 // Un producto puede tener VARIAS filas en ml_item_mapping: cada republicación deja la
@@ -49,7 +48,7 @@ export const liveMlMapping = (rows?: MlMappingRow[] | null): MlMappingRow | unde
 // ordenables a nivel base: "Precio Web" y "Precio ML" se calculan aplicando márgenes
 // por tramo/categoría sobre el costo, así que ordenar por costo NO daría el mismo
 // orden y el control mentiría.
-const tableHeaders: { label: string; sort?: AdminSortField; extraSort?: AdminSortField; className?: string }[] = [
+const tableHeaders: { label: string; sort?: AdminSortField; className?: string }[] = [
   // La miniatura necesita ancho FIJO: con 13 columnas el navegador reparte el ancho
   // sobrante y esta celda es la primera en colapsar. Al comprimirse, el
   // `max-width:100%` que Tailwind le pone a toda <img> le ganaba al `w-16` y la
@@ -62,13 +61,13 @@ const tableHeaders: { label: string; sort?: AdminSortField; extraSort?: AdminSor
   { label: 'Costo CDR', sort: 'price' },
   { label: 'Precio Web' },
   { label: 'Precio ML' },
-  // La antigüedad del stock va DENTRO de esta celda, como subtexto, no en una columna
-  // aparte: con 14 columnas la tabla se iba de ancho y había que scrollear para verla.
-  // El reloj del encabezado es el que ordena por esa antigüedad.
-  { label: 'Stock', sort: 'stock', extraSort: 'stock_updated' },
+  { label: 'Stock', sort: 'stock' },
   { label: 'Estado', sort: 'active' },
   { label: 'Listo ML', sort: 'ml_ready' },
-  { label: 'Fecha', sort: 'created_at' },
+  // Antes mostraba la fecha de ALTA (created_at), que no cambia nunca y no dice nada de
+  // si CDR sigue moviendo el producto. Lo que el admin necesita es cuándo se modificó el
+  // stock por última vez. La fecha de alta pasó al tooltip.
+  { label: 'Modificado', sort: 'stock_updated' },
   { label: '' },
 ];
 
@@ -98,7 +97,9 @@ export const TableProduct = () => {
   // Ordenamiento SERVER-SIDE: se clickea el encabezado de la columna y ordena todo el
   // catálogo (no sólo la página visible). Primer click = descendente (mayor a menor),
   // segundo click = ascendente.
-  const sortBy = (get('orden') as AdminSortField) || 'created_at';
+  // Por defecto se entra viendo lo ÚLTIMO que CDR modificó, de más reciente a más viejo:
+  // es la pregunta que el admin se hace todos los días ("¿qué se movió?").
+  const sortBy = (get('orden') as AdminSortField) || 'stock_updated';
   const sortDir = get('dir') === 'asc' ? 'asc' : 'desc';
 
   // El buscador se escribe letra por letra: local + volcado a la URL con respiro.
@@ -117,7 +118,7 @@ export const TableProduct = () => {
   // arrancando de mayor a menor. Siempre vuelve a la página 1 (el orden cambió entero).
   const toggleSort = (field: AdminSortField) => {
     const nextDir = sortBy === field && sortDir === 'desc' ? 'asc' : 'desc';
-    setFilter({ orden: field === 'created_at' ? undefined : field, dir: nextDir === 'asc' ? 'asc' : undefined });
+    setFilter({ orden: field === 'stock_updated' ? undefined : field, dir: nextDir === 'asc' ? 'asc' : undefined });
   };
 
   const { brands, categories } = useTaxonomiesAdmin();
@@ -348,7 +349,7 @@ export const TableProduct = () => {
 
           {/* El orden ahora se maneja clickeando el encabezado de cada columna. */}
 
-          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || withStockOnly || sortBy !== 'created_at' || sortDir !== 'desc') && (
+          {(brandFilter || categoryFilter || sourceFilter || activeFilter || newOnly || mlFilter || minReadiness > 0 || contentDirtyOnly || withStockOnly || sortBy !== 'stock_updated' || sortDir !== 'desc') && (
             <button
               type="button"
               onClick={() =>
@@ -510,27 +511,7 @@ export const TableProduct = () => {
                   ) : (
                     header.label
                   )}
-                  {/* Segundo criterio para la misma columna: ordenar por hace cuánto que
-                      no se mueve el stock, sin gastar una columna entera en ello. */}
-                  {header.extraSort && (
-                    <button
-                      type="button"
-                      onClick={() => toggleSort(header.extraSort!)}
-                      title={
-                        sortBy === header.extraSort
-                          ? `Ordenado por antigüedad del stock ${sortDir === 'desc' ? '(más reciente primero)' : '(más abandonado primero)'} — click para invertir`
-                          : 'Ordenar por hace cuánto que no se mueve el stock'
-                      }
-                      className={`ml-1.5 inline-flex items-center gap-0.5 rounded align-middle transition-colors hover:text-brand-700 ${
-                        sortBy === header.extraSort ? 'text-brand-700' : 'text-ink-400'
-                      }`}
-                    >
-                      <HiOutlineClock size={14} />
-                      <span className="text-[10px] leading-none">
-                        {sortBy === header.extraSort ? (sortDir === 'desc' ? '▼' : '▲') : ''}
-                      </span>
-                    </button>
-                  )}
+
                 </th>
               ))}
             </tr>
@@ -657,11 +638,7 @@ export const TableProduct = () => {
                   {/* Stock TOTAL (suma de variantes), que es por lo que ordena la
                       columna. Antes mostraba sólo la 1ª variante y con productos
                       multi-variante el orden parecía equivocado. */}
-                  <StockCell
-                    product={product}
-                    total={totalStock(product)}
-                    changedAt={product.stock_changed_at}
-                  />
+                  <StockCell product={product} total={totalStock(product)} />
                   <td className="p-4 align-middle">
                     {product.active ? (
                       <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-emerald-200">
@@ -681,7 +658,10 @@ export const TableProduct = () => {
                       isRecalculating && recalcVars?.productId === product.id
                     }
                   />
-                  <CellTableProduct content={formatDate(product.created_at)} />
+                  <LastChangeCell
+                    changedAt={product.stock_changed_at}
+                    createdAt={product.created_at}
+                  />
                   <td className="relative">
                     <button
                       className="text-slate-900"
@@ -975,59 +955,61 @@ const ProductThumb = ({
 
 // Celda "Stock". Con el candado de stock puesto es editable a mano: el sync de CDR
 // ya no la pisa. Si el producto está en ML, guardar dispara el sync de cantidad.
-// Hace cuánto que NO se mueve el número de stock.
-// No es lo mismo que "cuándo sincronizamos": el feed completo de CDR pasa 2 veces por día
-// por todo el catálogo, así que `last_synced_at` dice "hoy" para el 100% de lo que tiene
-// stock. Lo que interesa acá es si CDR viene arrastrando la MISMA cantidad hace semanas.
+// Cuándo modificó CDR el stock de este producto por última vez.
+// Es LA fecha que mira el admin: dice si el producto sigue vivo en el feed o si CDR viene
+// arrastrando el mismo número hace semanas. No confundir con dos fechas parecidas:
+//  - created_at    = cuándo se dio de alta el producto. No cambia nunca (va en el tooltip).
+//  - last_synced_at = cuándo lo vimos en el feed. Como el feed completo pasa 2 veces por día
+//    por todo el catálogo, dice "hoy" para el 100% de lo que tiene stock: no distingue nada.
 //
-// El dato se empezó a registrar el 21/09/2026 (antes nadie lo guardaba), así que para los
-// productos que todavía no cambiaron desde entonces NO se inventa una fecha: se muestra el
-// piso real ("≥ N d"), que es literalmente cierto y ya sirve para ordenar.
-const STOCK_TRACKING_SINCE = new Date('2026-09-21T00:00:00Z').getTime();
-const DIA_MS = 86_400_000;
+// El registro arrancó el 21/09/2026. Un producto sin fecha es uno cuyo stock no se movió
+// desde entonces, así que en el orden descendente cae al fondo, que es donde corresponde.
+const LastChangeCell = ({
+  changedAt,
+  createdAt,
+}: {
+  changedAt: string | null;
+  createdAt: string;
+}) => {
+  const alta = `Alta del producto: ${formatDate(createdAt)}`;
 
-const StockAge = ({ changedAt }: { changedAt: string | null }) => {
-  const exacto = changedAt !== null && changedAt !== undefined;
-  const desde = exacto ? new Date(changedAt).getTime() : STOCK_TRACKING_SINCE;
-  const dias = Math.max(0, Math.floor((Date.now() - desde) / DIA_MS));
-
-  // Todavía no hay nada que decir: se empezó a medir hoy y este producto no se movió.
-  if (!exacto && dias < 1) {
+  if (!changedAt) {
     return (
-      <p className='mt-0.5 whitespace-nowrap text-[10px] text-ink-300' title='El seguimiento de cambios de stock arrancó hoy'>
-        sin registro
-      </p>
+      <td className='p-4 align-middle'>
+        <span
+          className='text-xs text-ink-300'
+          title={`Sin cambios de stock registrados (el seguimiento arrancó el 21/09/2026). ${alta}`}
+        >
+          sin cambios
+        </span>
+      </td>
     );
   }
 
-  // Cortes de negocio: CDR mueve stock seguido, más de dos semanas quieto ya es raro.
+  const dias = Math.max(
+    0,
+    Math.floor((Date.now() - new Date(changedAt).getTime()) / 86_400_000)
+  );
+  // CDR mueve stock seguido: más de dos semanas quieto ya merece una mirada.
   const tono =
-    dias >= 30 ? 'text-rose-600' : dias >= 14 ? 'text-amber-600' : 'text-ink-400';
-  const texto = dias === 0 ? 'hoy' : dias === 1 ? 'ayer' : `hace ${dias} d`;
+    dias >= 30 ? 'text-rose-600' : dias >= 14 ? 'text-amber-600' : 'text-ink-700';
 
   return (
-    <p
-      className={`mt-0.5 whitespace-nowrap text-[10px] font-medium ${tono}`}
-      title={
-        exacto
-          ? `El stock cambió por última vez el ${formatDate(changedAt)}`
-          : `Sin cambios desde que se empezó a medir (21/09/2026). Puede llevar más tiempo quieto: antes de esa fecha no se registraba.`
-      }
-    >
-      {exacto ? texto : `≥ ${dias} d`}
-    </p>
+    <td className='p-4 align-middle'>
+      <span
+        className={`whitespace-nowrap text-sm ${tono}`}
+        title={`CDR modificó el stock el ${formatDate(changedAt)}. ${alta}`}
+      >
+        {formatDate(changedAt)}
+      </span>
+      <p className='mt-0.5 whitespace-nowrap text-[10px] text-ink-400'>
+        {dias === 0 ? 'hoy' : dias === 1 ? 'ayer' : `hace ${dias} d`}
+      </p>
+    </td>
   );
 };
 
-const StockCell = ({
-  product,
-  total,
-  changedAt,
-}: {
-  product: any;
-  total: number;
-  changedAt: string | null;
-}) => {
+const StockCell = ({ product, total }: { product: any; total: number }) => {
   const { setStock, isSettingStock, stockVars } = useSetVariantStock();
   const variants = product.variants ?? [];
   const editable = product.stock_locked && variants.length === 1;
@@ -1052,17 +1034,12 @@ const StockCell = ({
     0
   );
   const hasSplit = owned > 0;
-  const breakdown = (
-    <>
-      {hasSplit && (
-        <p className='mt-0.5 whitespace-nowrap text-[10px] text-ink-400'>
-          <span className='font-semibold text-violet-700'>{owned} propio</span>
-          {product.source === 'cdr' ? ` · ${cdr} CDR` : ''}
-        </p>
-      )}
-      <StockAge changedAt={changedAt} />
-    </>
-  );
+  const breakdown = hasSplit ? (
+    <p className='mt-0.5 whitespace-nowrap text-[10px] text-ink-400'>
+      <span className='font-semibold text-violet-700'>{owned} propio</span>
+      {product.source === 'cdr' ? ` · ${cdr} CDR` : ''}
+    </p>
+  ) : null;
 
   if (!editable) {
     return (
