@@ -480,6 +480,12 @@ quedó en el tooltip. Se completa con el chip **"Solo con stock"**.
 > El síntoma clásico de la confusión: "la fecha más nueva es del 3/9 y no se mueve". Era
 > `created_at`, y el 3/9 fue la última alta antes de que se rompieran (ver el incidente).
 
+**El orden NO se guarda en la URL** (a diferencia de los filtros, que sí). Invertirlo es un solo
+click sobre el encabezado, y al persistirlo el listado quedaba pegado al revés: se entraba al
+panel y lo más viejo aparecía arriba, sin que fuera obvio por qué ni cómo volver. Vive en estado
+local, así que **cada vez que se entra se arranca del estándar** (lo último que CDR movió,
+arriba). "Limpiar filtros" también lo resetea.
+
 Un producto sin fecha es uno cuyo stock no se movió desde que se empezó a medir, así que en el
 orden descendente cae al fondo, que es justo donde corresponde. Al estrenarlo apareció un
 `DRO15 — Dron Potensic ATOM` con 10 unidades y **102 días sin que CDR lo toque**.
@@ -501,3 +507,67 @@ Detalles que importan:
 - El CSV se arma en el front con `;` como separador y BOM UTF-8: es lo que hace que Excel en
   español lo abra en columnas y no rompa los acentos. Los valores que empiezan con `= + - @` se
   neutralizan para que Excel no los tome como fórmula.
+
+---
+
+## Mapeo automático de categorías (21/09/2026)
+
+CDR manda el rubro en el campo `categoria` (jerarquía `Audio Imagen >> Parlantes`, viene al
+100%), se guardaba en `products.cdr_categoria` y **nadie lo usaba**: las altas entraban sin
+categoría y había que clasificarlas a mano de a una. La marca sí se resolvía sola.
+
+### Cómo funciona
+
+| Pieza | Qué hace |
+|---|---|
+| `cdr_category_map` | Tabla `rubro de CDR → categoría + subcategoría`. 124 filas |
+| `cdr_derive_category_map(min_confianza)` | La deduce de lo que el dueño ya clasificó a mano |
+| `trg_products_map_cdr_categoria` | Trigger en `products`: completa la categoría en el alta |
+
+**La tabla se deduce sola.** Cada vez que el dueño clasificó un producto a mano dejó dicho que
+ese rubro de CDR va en esa categoría; lo hizo 1161 veces. Si las N veces que tocó un rubro las
+mandó todas a la misma categoría, esa decisión ya está tomada.
+
+**Rubros sin historial propio** (CDR estrena rubros seguido) caen al **prefijo más largo** que
+sí lo tenga. Esto importa más de lo que parece: `Impresión >> Impresión 3D >> Filamentos >>
+PETG - Sunlu` no existía, pero `Impresión >> Impresión 3D >> Filamentos` sí, y lo resuelve al
+100%. **Por primer nivel habría caído en "Impresoras e Insumos", junto con los cartuchos.**
+
+**Umbral de confianza (85%).** Por debajo NO se mapea y el rubro queda pendiente de una persona.
+No es un detalle de prolijidad: `Energía >> Pilas y Cargadores` se deduce como **"Seguridad"**
+con 56% (históricamente los UPS de Energía se clasificaron ahí), y unas pilas en Seguridad es
+peor que no clasificarlas.
+
+### Por qué es un trigger y no va en la edge function
+
+Cubre **cualquier** camino de alta (el sync, una carga manual, un backfill) y no obliga a
+redeployar `cdr-sync-products`, cuyo espejo en el repo no coincide con producción. Sólo toca lo
+que está vacío: **una categoría elegida a mano nunca se pisa**, y `origen = 'manual'` en el mapa
+tampoco se pisa al volver a derivar.
+
+### Resultado
+
+- **92,4% del catálogo vivo clasificado** (1774 de 1920 que CDR sigue mandando).
+- 602 productos del backlog clasificados de una.
+- Quedan **15 rubros** (146 productos) que necesitan criterio humano.
+- Los otros ~2098 sin categoría **no tienen `cdr_categoria` guardado y ninguno sigue vivo en el
+  feed**: es catálogo muerto que CDR dejó de mandar. No se pueden clasificar ni hace falta.
+
+### Mantenimiento
+
+```sql
+-- Volver a derivar (no pisa los mapeos manuales):
+select * from public.cdr_derive_category_map(85);
+
+-- Rubros que CDR manda y todavía no están mapeados:
+select distinct p.cdr_categoria, count(*) from products p
+ where p.source='cdr' and p.category_id is null and coalesce(p.cdr_categoria,'') <> ''
+   and p.cdr_categoria not in (select cdr_categoria from cdr_category_map)
+ group by 1 order by 2 desc;
+
+-- Cargar una decisión del dueño (gana sobre lo deducido y no se pisa nunca):
+insert into cdr_category_map (cdr_categoria, category_id, origen)
+values ('Energía >> Pilas y Cargadores', '<uuid categoría>', 'manual')
+on conflict (cdr_categoria) do update
+  set category_id = excluded.category_id, origen = 'manual', updated_at = now();
+```
