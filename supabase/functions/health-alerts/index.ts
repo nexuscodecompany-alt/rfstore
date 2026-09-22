@@ -70,9 +70,14 @@ const MODERATION_SUBSTATUS = ['under_review', 'banned', 'forbidden', 'freezed', 
 // arreglan solos entre reportes. Lo que se acumula es el AVISO, no la deteccion.
 const DIGEST_HOUR_UY = 9;
 const UY_OFFSET_MS = 3 * 3600_000; // Uruguay es UTC-3 fijo (no tiene horario de verano desde 2015)
-// Horas sin una corrida de catalogo COMPLETO antes de avisar. Se esperan 2 por dia (cada 12 h):
-// 14 h significa que ya se saltearon las dos y quedan menos de 10 h de la ventana de 24 h de CDR.
-const FULL_FEED_MAX_HOURS = 14;
+// Horas sin una corrida de catalogo COMPLETO antes de avisar.
+// 22/09/2026: el full feed paso de 2 por dia a CADA HORA, porque se verifico que es el UNICO
+// que actualiza el stock -- el incremental no trae cambios de stock, solo los deshabilitados
+// (33 productos tenian stock distinto al de CDR, todos con last_synced_at en el full feed
+// anterior; el incremental no los trajo en 10 h y el full los corrigio todos de una).
+// Con el stock dependiendo de una corrida horaria, esperar 14 h para avisar deja el catalogo
+// medio dia desincronizado sin que nadie se entere. 3 h = ya se saltearon tres corridas.
+const FULL_FEED_MAX_HOURS = 3;
 // Dias sin que entre un producto nuevo de CDR antes de avisar. CDR da de alta casi todos los
 // dias; 3 dias secos ya es raro y 7 es casi seguro que las altas se rompieron.
 const NO_NEW_PRODUCTS_MAX_DAYS = 3;
@@ -316,7 +321,7 @@ async function checkCdrSync(): Promise<Finding[]> {
   }
 
   // ---- Todo lo que sigue mira el FULL FEED, que es otra cosa --------------------------
-  // Con 2 corridas por dia, estas 8 son ~4 dias de historia. Mirarlas mezcladas con los
+  // Con una corrida por hora, estas 8 son las ultimas 8 horas. Mirarlas mezcladas con los
   // incrementales es precisamente lo que oculto el fallo del 18/09.
   const { data: fullRuns, error: fullErr } = await supabase
     .from('cdr_sync_run_history')
@@ -346,13 +351,13 @@ async function checkCdrSync(): Promise<Finding[]> {
 
   const lastFull: any = (fullRuns ?? []).find((r: any) => r.ok !== false);
   if (!lastFull) {
-    f.push({ key: 'cdr_no_full_feed', check_id: 'cdr_sync', severity: 'crit', title: 'No hay ninguna corrida de catalogo COMPLETO de CDR — no entran altas ni se reconcilia el stock', detail: { nota: 'Sin full feed no se apaga el stock de los productos que CDR deja de mandar, y tampoco entra ningun producto nuevo.', esperado: '2 por dia (cron cdr-sync-fullfeed, 06:40 y 18:40 UTC)' }, fingerprint: 'never' });
+    f.push({ key: 'cdr_no_full_feed', check_id: 'cdr_sync', severity: 'crit', title: 'No hay ninguna corrida de catalogo COMPLETO de CDR — no entran altas ni se reconcilia el stock', detail: { nota: 'Sin full feed no se apaga el stock de los productos que CDR deja de mandar, y tampoco entra ningun producto nuevo.', esperado: 'cada hora (cron cdr-sync-fullfeed, minuto 10)' }, fingerprint: 'never' });
     return f;
   }
 
   const hs = Math.round((Date.now() - new Date(lastFull.created_at).getTime()) / 3600_000);
   if (hs >= FULL_FEED_MAX_HOURS) {
-    f.push({ key: 'cdr_full_feed_stale', check_id: 'cdr_sync', severity: 'crit', title: `Hace ${hs} h que no corre el catalogo completo de CDR — el stock puede quedar congelado`, detail: { ultimo_full_feed: lastFull.created_at, esperado: '2 por dia (06:40 y 18:40 UTC)', por_que: 'Es la unica corrida que apaga el stock de productos que CDR dejo de mandar, y CDR los devuelve solo durante 24 h.' }, fingerprint: hs >= 26 ? 'critico' : 'atrasado' });
+    f.push({ key: 'cdr_full_feed_stale', check_id: 'cdr_sync', severity: 'crit', title: `Hace ${hs} h que no corre el catalogo completo de CDR — el stock puede quedar congelado`, detail: { ultimo_full_feed: lastFull.created_at, esperado: 'cada hora (minuto 10)', por_que: 'Es la unica corrida que apaga el stock de productos que CDR dejo de mandar, y CDR los devuelve solo durante 24 h.' }, fingerprint: hs >= 26 ? 'critico' : 'atrasado' });
   }
 
   // ---- ALTAS: la señal que se nos paso 18 dias ----------------------------------------

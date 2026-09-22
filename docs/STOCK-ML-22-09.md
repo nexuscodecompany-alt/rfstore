@@ -64,7 +64,7 @@ Cada hora (cron `ml-stock-reconcile-hourly`, minuto 45) barre **todas** las publ
 vendedor contra la API de ML, agrupa por `user_product_id` y corrige las cantidades.
 
 - No depende del trigger, ni de la cola, ni de que el mapping esté al día.
-- Prioriza lo que está **ofreciendo de más**; si la corrida no alcanza (tope 300 escrituras),
+- Prioriza lo que está **ofreciendo de más**; si la corrida no alcanza (tope 150 escrituras),
   lo que queda afuera es lo inofensivo y lo toma la corrida siguiente.
 - Para bloqueadas: escribe por una hermana editable del mismo inventario.
 - **Nunca reactiva ni despausa nada.** Bajar stock corta ventas; subir estado las crea, y eso
@@ -83,7 +83,7 @@ vendedor contra la API de ML, agrupa por `user_product_id` y corrige las cantida
 - Las bloqueadas ya no se reportan como `ok`: se marcan y el reconciliador las intenta por una
   hermana.
 
-### `health-alerts` v7 — el vigilante
+### `health-alerts` v7-v9 — el vigilante
 
 - `ml_active_no_stock` y `ml_qty_mismatch` ya no filtran por nuestro mapping: el estado lo
   dicta ML.
@@ -103,6 +103,45 @@ Desplegar `ml-process-sync-queue` por la API de Supabase lo dejó en `verify_jwt
 cron 13 llamaba **sin** cabecera de autorización → 401. La cola de ML habría quedado muerta en
 silencio. Se pasó al patrón del resto de los ticks: `ml_sync_queue_tick()`, que saca el token
 del Vault. Ahora funciona con `verify_jwt` en true o en false, indistinto.
+
+## Segunda parte: la cadena completa CDR → RF Store → ML
+
+Con RF↔ML ya alineado, quedaba verificar el eslabón de arriba. Para eso se agregó
+`ml-stock-audit`: una auditoría **read-only** que trae el feed real de CDR, lo compara contra
+RF (con la misma regla de reservas que usa el sync, vía la RPC `cdr_stock_audit`) y compara RF
+contra la API de ML. No escribe nada; sólo dice si las tres puntas coinciden.
+
+La primera corrida encontró **33 productos con stock distinto al de CDR**, 13 de ellos
+publicados en ML. No era latencia: los 33 tenían `last_synced_at` en la hora del último feed
+completo, o sea que **ningún incremental los trajo en 10 horas**.
+
+### El hallazgo: el feed incremental de CDR no trae cambios de stock
+
+La documentación del proyecto decía que el incremental servía para "stock y precio". Es falso
+para el stock. Lo que trae son los **deshabilitados**, que vienen siempre ignorando la fecha
+(Hallazgo 1) — por eso cada corrida devuelve ~45 productos constantes.
+
+Un feed completo disparado a mano corrigió los 33 de una: MOU164 pasó de 9 a 6, CEL2267 de 4 a
+3, CON284 de 8 a 7. Es la hermana del Hallazgo 5 (las altas tampoco venían en el incremental),
+y está documentado como **Hallazgo 6** en `docs/cdr/README.md`.
+
+**Consecuencia:** con el feed completo corriendo 2 veces por día, la ventana en la que ML podía
+ofrecer un stock que CDR ya no tenía llegaba a **12 horas**. Pasó a correr **cada hora**
+(cron `cdr-sync-fullfeed`, minuto 10) y `health-alerts` avisa si lleva 3 horas sin correr
+(antes 14, calibrado para el esquema viejo).
+
+### Estado verificado al cierre
+
+| Eslabón | Resultado |
+|---|---|
+| CDR → RF Store | **0 desajustes** sobre 1.893 productos comparados |
+| RF Store → ML | 27 desajustadas, **todas** de las que ML tiene bloqueadas (ninguna activa) |
+| Riesgo real | **0 publicaciones** vendiendo algo que no existe |
+
+De paso quedó demostrado el mecanismo de la publicación hermana en un caso real: el Samsung
+S26 (CEL2267) está bloqueado por ML, el sync no pudo empujarle el stock y lo marcó; el
+reconciliador lo corrigió después escribiendo por su publicación de catálogo `MLU1428430558`
+(ML pasó de 4 a 3).
 
 ## Lo que queda abierto
 

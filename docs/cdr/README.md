@@ -74,7 +74,7 @@ que CDR bloquee el usuario, así que la única forma de tener las dos cosas es s
 
 | Cron | jobid | Frecuencia | Modo | Feed | Para qué |
 |---|---|---|---|---|---|
-| `cdr-sync-5min` | 8 | cada 5 min | `full` | incremental | **Precio y stock en casi tiempo real.** Barato (8-60 productos). También ve las bajas: los deshabilitados vienen siempre (Hallazgo 1) |
+| `cdr-sync-5min` | 8 | cada 5 min | `full` | incremental | **Bajas en casi tiempo real**: los deshabilitados vienen siempre (Hallazgo 1). Barato (8-60 productos). **NO trae cambios de stock** — ver Hallazgo 6 |
 | `cdr-sync-fullfeed` | 27 | 06:40 y 18:40 UTC | `full` + `full_feed` | **completo** | **Altas** + reconciliación por ausencia (apaga el stock de lo que CDR dejó de mandar) |
 | `cdr-fill-images` | 20 | 08:20 UTC | — | completo | Rellena imágenes faltantes |
 | `cdr-daily-digest` | 19 | 09:00 UTC | — | — | Mail al cliente con los productos nuevos del día |
@@ -197,6 +197,38 @@ Ese mismo modo, en full feed, venía insertando 16 productos por día.
 > El incremental sirve para **stock y precio**. Las **altas sólo se detectan en el feed completo.**
 > Cualquier rediseño del sync que deje las altas colgando del incremental vuelve a romper esto,
 > en silencio y sin un solo error en los logs.
+
+### 6. El feed incremental TAMPOCO trae los cambios de stock
+
+**Verificado el 22/09/2026, y es la hermana del Hallazgo 5.** Hasta ahora esta misma guía
+decía que "el incremental sirve para **stock y precio**". Es falso para el stock.
+
+Evidencia: la auditoría de la cadena completa (`ml-stock-audit`) encontró **33 productos con
+un stock distinto al que CDR informaba**. Los 33 tenían `last_synced_at` exactamente en la
+hora del último **feed completo**, o sea que en las 10 horas siguientes **ningún incremental
+los trajo**, pese a que su stock en CDR había cambiado. Un feed completo disparado a mano los
+corrigió **todos de una** (MOU164 pasó de 9 a 6, CEL2267 de 4 a 3, CON284 de 8 a 7…).
+
+Qué trae entonces el incremental: los **deshabilitados**, que vienen siempre ignorando la
+fecha (Hallazgo 1). Por eso las corridas devuelven ~45 productos constantes y casi nunca
+cambian de tamaño: son casi todos bajas, no cambios de stock.
+
+**Consecuencia de diseño:**
+
+> El feed COMPLETO es el único que actualiza el stock, el único que da de alta y el único que
+> apaga el stock de lo que CDR deja de mandar. El tick incremental sirve para enterarse de las
+> BAJAS rápido, y para nada más.
+
+Por eso el full feed pasó de **2 veces por día a cada hora** (cron `cdr-sync-fullfeed`, minuto
+10). Con 2 por día la ventana de desincronización llegaba a **12 horas**, y en ese lapso ML
+podía estar ofreciendo un stock que CDR ya no tenía. Cuesta 4 MB por corrida (~96 MB/día,
+contra los 672 MB/día que costaba el esquema viejo de 168 full syncs).
+
+`health-alerts` quedó recalibrado en consecuencia: avisa si el feed completo lleva **3 horas**
+sin correr (antes 14, que era razonable con 2 corridas diarias y ahora dejaría medio día de
+catálogo desincronizado en silencio).
+
+---
 
 ## Flujos revisados al migrar a la v2.0 (03/09/2026)
 
@@ -571,3 +603,31 @@ values ('Energía >> Pilas y Cargadores', '<uuid categoría>', 'manual')
 on conflict (cdr_categoria) do update
   set category_id = excluded.category_id, origen = 'manual', updated_at = now();
 ```
+
+### El mapa aprende solo (no hay pantalla que mantener)
+
+No existe una pantalla de "mapeo de categorías" y **no hace falta**: el admin clasifica
+productos como siempre lo hizo, y el sistema generaliza.
+
+```
+El admin clasifica UN producto de un rubro sin mapear
+        │
+        ▼
+trg_products_learn_category_map  →  guarda ese rubro en cdr_category_map (origen='manual')
+        │
+        ▼
+Todo producto NUEVO que llegue con ese rubro entra ya clasificado
+        (trg_products_map_cdr_categoria, en el INSERT)
+```
+
+Así, los 15 rubros pendientes se resuelven clasificando **un producto de cada uno**, una sola
+vez. No hay que mantener una tabla aparte ni acordarse de re-derivar nada.
+
+**Lo que el aprendizaje NO hace, a propósito:**
+
+- **No pisa un mapeo que ya eligió una persona** (`origen = 'manual'`). Si el admin manda un
+  producto suelto a otra categoría, eso es una **excepción de ese producto**, no un cambio de
+  regla para todo el rubro. Para cambiar la regla se edita `cdr_category_map`.
+- **Sí corrige un mapeo deducido por la máquina** (`origen = 'auto'`): si el admin lo está
+  cambiando, es porque la deducción estaba mal.
+- Nunca toca productos ya clasificados: el trigger de alta sólo completa `category_id is null`.
