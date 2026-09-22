@@ -29,9 +29,7 @@
 //  (4 MB cada uno, ~672 MB/dia) porque la fecha estaba hardcodeada en 2015-01-01.
 //  Ahora:
 //   - cada modo lleva su propio cursor (app_settings.cdr_ws_cursor_<modo>) y pide
-//     solo lo modificado desde su ultima corrida OK. Cursores SEPARADOS por modo:
-//     con uno compartido, update-prices se comeria los productos nuevos antes de
-//     que new-only llegue a insertarlos.
+//     solo lo modificado desde su ultima corrida OK.
 //   - el cursor se calcula ANTES de llamar (si se tomara despues se perderian los
 //     cambios ocurridos durante la corrida) y se guarda SOLO si la corrida sirvio.
 //     Con full sync una corrida fallida se recuperaba sola; con incremental no.
@@ -110,7 +108,7 @@ const IMAGE_TIMEOUT_MS = 20000;
 // Tope default de inserciones por corrida (configurable: app_settings.cdr_max_inserts_per_run).
 const MAX_INSERTS_PER_RUN_DEFAULT = 100;
 // Ventana para considerar "transitorio" un fallo fatal: si la corrida anterior del mismo
-// modo fue OK dentro de esta ventana, no se manda mail (cubre cadencia horaria del new-only).
+// modo fue OK dentro de esta ventana, no se manda mail.
 const TRANSIENT_WINDOW_MS = 2 * 60 * 60 * 1000;
 // Tamano de lote para el RPC de contenido (el payload trae nombre+descripcion+features,
 // mucho mas pesado que solo precio/stock -> chunk para no mandar varios MB de una).
@@ -351,7 +349,7 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 	// cambio desde su ultima corrida OK.
 	const cursorKey = `cdr_ws_cursor_${mode}`;
 	const cursor = await getSetting<string>(cursorKey, '');
-	// OJO: el MODO y el FEED son cosas distintas.
+	// v30. OJO: el MODO y el FEED son cosas distintas.
 	//   mode 'full'  = que haga las dos cosas, altas Y update (vs solo una).
 	//   fullFeed     = que le pida a CDR el catalogo COMPLETO en vez del incremental.
 	// Mezclarlos hacia que el tick unificado (mode 'full' cada 5 min) pidiera el
@@ -397,12 +395,21 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 		counters.disabled_in_feed = deshabilitados.length;
 
 		// Traer TODOS los codigos existentes (PostgREST corta en 1000: paginar).
+		// El .order() NO es cosmetico: paginar con .range() sin un orden total es no
+		// determinista. Postgres puede devolver las filas en distinto orden entre una pagina
+		// y la siguiente, y entonces algunas se repiten y otras NO APARECEN NUNCA. Un codigo
+		// que se cae del Set se trata como producto NUEVO: se intenta dar de alta (falla con
+		// 'duplicate key ... products_external_code_unique' y marca la corrida como fallida)
+		// y, peor, ese producto NO entra en toUpdate, o sea que esa corrida no le sincroniza
+		// el stock. Caso real: PIL24, corrida 12753 del 22/09.
+		// external_code tiene constraint unica, asi que ordenar por el da un orden total.
 		const existingCodes = new Set<string>();
 		for (let from = 0; ; from += 1000) {
 			const { data: rows, error: exErr } = await supabase
 				.from('products')
 				.select('external_code')
 				.eq('source', 'cdr')
+				.order('external_code')
 				.range(from, from + 999);
 			if (exErr) throw new Error(`existing_codes: ${exErr.message}`);
 			if (!rows || rows.length === 0) break;
@@ -433,8 +440,7 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 			}
 		}
 		if (mode === 'update-prices' || mode === 'full') {
-			// Update en LOTE (una sola operacion SQL): la corrida siempre termina y
-			// reconcilia TODOS los productos (stock = CDR - reservado).
+			// Update en LOTE (una sola operacion SQL): la corrida siempre termina.
 			const rows = toUpdate.map(p => ({
 				code: p.codigo,
 				precio: Number(p.precio) || 0,
@@ -453,17 +459,6 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 			if (bulkErr) { counters.errors.push(`bulk_update: ${bulkErr.message}`); coreOk = false; }
 			else { counters.updated = (res as { variants?: number } | null)?.variants ?? 0; counters.bulk = res; }
 
-			// Contenido (nombre/descripcion/features): detecta cambios de CDR por hash y los
-			// aplica (respetando content_locked). La 1er corrida solo registra la huella
-			// (baseline): no pisa ni avisa. Marca ml_content_dirty si esta publicado en ML.
-			const contentRows = toUpdate.map(p => ({
-				code: p.codigo,
-				name: p.nombre || p.codigo,
-				copete: p.copete ?? '',
-				modelo: p.modelo ?? '',
-				description_html: p.descripcion ?? '',
-				features: [p.copete, p.modelo ? `Modelo: ${p.modelo}` : null, p.nro_parte ? `Nro parte: ${p.nro_parte}` : null, p.gtin ? `GTIN: ${p.gtin}` : null].filter(Boolean),
-			}));
 			// v32: campos crudos de CDR (marca, categoria, garantia, medidas...). Se mandan
 			// TODOS los del feed, habilitados y no: para los deshabilitados es lo que deja
 			// cdr_habilitado en false y permite listarlos en el panel.
@@ -480,6 +475,17 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 				counters.fields_updated += Number((fres as any)?.fields_updated ?? 0);
 			}
 
+			// Contenido (nombre/descripcion/features): detecta cambios de CDR por hash y los
+			// aplica (respetando content_locked). La 1er corrida solo registra la huella
+			// (baseline): no pisa ni avisa. Marca ml_content_dirty si esta publicado en ML.
+			const contentRows = toUpdate.map(p => ({
+				code: p.codigo,
+				name: p.nombre || p.codigo,
+				copete: p.copete ?? '',
+				modelo: p.modelo ?? '',
+				description_html: p.descripcion ?? '',
+				features: [p.copete, p.modelo ? `Modelo: ${p.modelo}` : null, p.nro_parte ? `Nro parte: ${p.nro_parte}` : null, p.gtin ? `GTIN: ${p.gtin}` : null].filter(Boolean),
+			}));
 			counters.content_applied = 0;
 			counters.content_baseline = 0;
 			counters.content_ml_flagged = 0;
@@ -560,11 +566,9 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 		// mail: solo queda en el historial.
 		const rateLimited = /MAXIMOS DE ACCESOS/i.test(String(e?.message ?? ''));
 		if (rateLimited) counters.rate_limited = true;
-		// v28: supresion de fallo TRANSITORIO. El WS de CDR se cae ~1 vez al dia
-		// (mantenimiento de medianoche) y esto mandaba un mail de FALLO diario a las 00:03.
-		// Si la corrida anterior del mismo modo fue OK hace <2 h, es un hipo puntual: queda
-		// registrado en cdr_sync_run_history pero NO se manda mail (el proximo tick, a los
-		// 10 min, confirma). DOS fallos seguidos => mail (problema real).
+		// v28: supresion de fallo TRANSITORIO. El WS de CDR se cae ~1 vez al dia y esto
+		// mandaba un mail de FALLO diario. Si la corrida anterior del mismo modo fue OK
+		// hace <2 h, es un hipo puntual: queda registrado pero NO se manda mail.
 		// Nota: el trigger de app_settings ya inserto ESTA corrida fallida en el historial,
 		// por eso la "anterior" es range(1,1).
 		let transient = false;
