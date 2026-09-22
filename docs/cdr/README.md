@@ -74,7 +74,7 @@ que CDR bloquee el usuario, así que la única forma de tener las dos cosas es s
 
 | Cron | jobid | Frecuencia | Modo | Feed | Para qué |
 |---|---|---|---|---|---|
-| `cdr-sync-5min` | 8 | cada 5 min | `full` | incremental | **Bajas en casi tiempo real**: los deshabilitados vienen siempre (Hallazgo 1). Barato (8-60 productos). **NO trae cambios de stock** — ver Hallazgo 6 |
+| ~~`cdr-sync-5min`~~ | 8 | **APAGADO 22/09** | `full` | incremental | Redundante desde que el full feed corre cada 10 min: no traía cambios de stock (Hallazgo 6), sólo los deshabilitados |
 | `cdr-sync-fullfeed` | 27 | 06:40 y 18:40 UTC | `full` + `full_feed` | **completo** | **Altas** + reconciliación por ausencia (apaga el stock de lo que CDR dejó de mandar) |
 | `cdr-fill-images` | 20 | 08:20 UTC | — | completo | Rellena imágenes faltantes |
 | `cdr-daily-digest` | 19 | 09:00 UTC | — | — | Mail al cliente con los productos nuevos del día |
@@ -219,14 +219,40 @@ cambian de tamaño: son casi todos bajas, no cambios de stock.
 > apaga el stock de lo que CDR deja de mandar. El tick incremental sirve para enterarse de las
 > BAJAS rápido, y para nada más.
 
-Por eso el full feed pasó de **2 veces por día a cada hora** (cron `cdr-sync-fullfeed`, minuto
-10). Con 2 por día la ventana de desincronización llegaba a **12 horas**, y en ese lapso ML
-podía estar ofreciendo un stock que CDR ya no tenía. Cuesta 4 MB por corrida (~96 MB/día,
-contra los 672 MB/día que costaba el esquema viejo de 168 full syncs).
+### Qué cambió en los crons (22/09/2026)
 
-`health-alerts` quedó recalibrado en consecuencia: avisa si el feed completo lleva **3 horas**
-sin correr (antes 14, que era razonable con 2 corridas diarias y ahora dejaría medio día de
-catálogo desincronizado en silencio).
+Con 2 full feeds por día la ventana de desincronización llegaba a **12 horas**, y en ese lapso
+ML podía estar ofreciendo un stock que CDR ya no tenía.
+
+| | Antes | Ahora |
+|---|---|---|
+| `cdr-sync-fullfeed` (jobid 27) | 2 × día | **cada 10 min** |
+| `cdr-sync-5min` (jobid 8) | cada 5 min | **apagado** |
+| Llamadas al WS | 290/día | **144/día** |
+| Atraso máximo del stock | 12 h | **~10 min** (+1 min a ML) |
+
+El tick incremental quedó **redundante**: la única diferencia entre los dos ticks es el flag
+`full_feed`, así que el completo hace todo lo que hacía el incremental **y además trae el
+stock**, que era justamente lo que faltaba. Dejarlo prendido eran 12 llamadas por hora para no
+aportar nada.
+
+Que esto sea viable dependió de una cosa: **`cdr_bulk_update_stock_price` escribía las ~1892
+filas del feed en cada corrida**, comparara o no. A 2 corridas por día no se notaba; a 144
+serían ~272.000 escrituras diarias sobre una tabla de 5.000 filas, y este proyecto ya se comió
+una alerta de disco de Supabase por escrituras así. Ahora el `UPDATE` de `products` es
+condicional (`price_usd is distinct from`) y `last_synced_at` se refresca con una guarda de
+6 h en vez de 1 minuto: en la última corrida real eso habría sido **7 escrituras en vez de
+1892**.
+
+> `last_synced_at` no significa "cambió algo", significa "CDR todavía lo manda", y de eso
+> dependen los chequeos de productos desaparecidos del feed. Por eso se refresca aparte y no
+> junto con el precio.
+
+No hay riesgo de rate limit: **0 rate limits en los últimos 14 días** con 290 llamadas diarias,
+y el esquema nuevo usa la mitad.
+
+`health-alerts` avisa si el feed completo lleva **3 horas** sin correr (antes 14, calibrado
+para 2 corridas diarias; con corridas cada 10 min, 3 h son 18 corridas perdidas).
 
 ---
 

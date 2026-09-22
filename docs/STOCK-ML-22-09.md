@@ -126,9 +126,36 @@ Un feed completo disparado a mano corrigió los 33 de una: MOU164 pasó de 9 a 6
 y está documentado como **Hallazgo 6** en `docs/cdr/README.md`.
 
 **Consecuencia:** con el feed completo corriendo 2 veces por día, la ventana en la que ML podía
-ofrecer un stock que CDR ya no tenía llegaba a **12 horas**. Pasó a correr **cada hora**
-(cron `cdr-sync-fullfeed`, minuto 10) y `health-alerts` avisa si lleva 3 horas sin correr
-(antes 14, calibrado para el esquema viejo).
+ofrecer un stock que CDR ya no tenía llegaba a **12 horas**.
+
+### Lo simple era lo correcto: consultar seguido
+
+La primera reacción fue subirlo a cada hora, por prudencia con el supuesto límite de accesos de
+CDR. El dueño lo cuestionó — *"el stock no se consulta cada 5 o 10 min y eso debería actualizar
+RF y ML? Siento que es sencillo"* — y tenía razón: **0 rate limits en los últimos 14 días** con
+290 llamadas diarias. El límite no se estaba tocando ni de cerca.
+
+| | Antes | Ahora |
+|---|---|---|
+| `cdr-sync-fullfeed` | 2 × día | **cada 10 min** |
+| `cdr-sync-5min` | cada 5 min | **apagado** (redundante) |
+| Llamadas al WS de CDR | 290/día | **144/día** |
+| Atraso máximo del stock | 12 h | **~10 min** (+1 min a ML por el trigger) |
+
+El tick incremental quedó redundante: la única diferencia entre los dos ticks es el flag
+`full_feed`, así que el completo hace todo lo que hacía aquél **y además trae el stock**. Se
+consulta más seguido **y** con la mitad de llamadas.
+
+**Lo que sí había que arreglar antes** no era CDR, era nuestro lado:
+`cdr_bulk_update_stock_price` reescribía las ~1892 filas del feed en cada corrida, cambiara o
+no el precio. A 2 corridas por día no se notaba; a 144 serían ~272.000 escrituras diarias sobre
+una tabla de 5.000 filas, y este proyecto ya se comió una alerta de disco de Supabase por
+escrituras así. Ahora el `UPDATE` de `products` es condicional y `last_synced_at` se refresca
+con una guarda de 6 h en vez de 1 minuto. Verificado pasándole a la RPC los 5.051 precios ya
+guardados: **0 escrituras** (antes, 5.051).
+
+`health-alerts` avisa si el feed completo lleva 3 horas sin correr (antes 14, calibrado para el
+esquema viejo; con corridas cada 10 min, 3 h son 18 corridas perdidas).
 
 ### Estado verificado al cierre
 
