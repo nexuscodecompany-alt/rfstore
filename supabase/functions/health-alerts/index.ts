@@ -46,6 +46,11 @@
 //      con 288 incrementales por dia eso son 90 MINUTOS. Un full feed que corre cada 12 h
 //      no caia nunca ahi: venia fallando desde el 18/09 y no se reporto una sola vez.
 //      Ahora los full feed tienen su propio chequeo (cdr_full_feed_failed).
+// v7 (2026-09-22): el vigilante tenia el chequeo correcto y no vio nada. ml_active_no_stock
+//    exigia que NUESTRO mapping dijera 'active'; las 32 publicaciones que estaban vendiendo
+//    sin stock lo tenian en 'paused' mientras ML las tenia ACTIVAS. El mapping desactualizado
+//    era la causa del problema Y la razon por la que el chequeo no lo veia. Ahora el estado
+//    lo dicta ML. Se suma ml_stock_out_of_sync: lo que se intento corregir y ML no dejo.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -149,7 +154,7 @@ async function notifyEmail(): Promise<string> {
 async function checkMercadoLibre(): Promise<Finding[]> {
   const f: Finding[] = [];
   const [mappings, variants, products, settingRow] = await Promise.all([
-    fetchAll('ml_item_mapping', 'id, ml_item_id, status, auto_paused_stock, product_id, variant_id', q => q.in('status', ['active', 'paused'])),
+    fetchAll('ml_item_mapping', 'id, ml_item_id, status, auto_paused_stock, product_id, variant_id, stock_out_of_sync, out_of_sync_since, out_of_sync_reason', q => q.in('status', ['active', 'paused'])),
     fetchAll('variants', 'id, stock'),
     fetchAll('products', 'id, name, external_code, stock_locked'),
     supabase.from('app_settings').select('value').eq('key', 'ml_stock_threshold').maybeSingle(),
@@ -188,13 +193,23 @@ async function checkMercadoLibre(): Promise<Finding[]> {
     const coherentSinStock = st.sub.includes('out_of_stock') && stock <= thr;
     if (m.status === 'active' && (st.status === 'paused' || st.status === 'closed') && !isModerated(st.status, st.sub) && !coherentSinStock) buckets.ml_down_externally.push(row);
     // 4) Activa en ML sin stock real en RF -> riesgo de vender algo que no tenemos.
-    if (m.status === 'active' && st.status === 'active' && stock <= 0) buckets.ml_active_no_stock.push(row);
+    //    v7 (2026-09-22): ESTE CHEQUEO EXISTIA Y NO VIO NADA. Exigia m.status === 'active',
+    //    o sea que NUESTRA anotacion dijera que la publicacion estaba activa. Las 32 que
+    //    estaban vendiendo sin stock tenian el mapping en 'paused' y ML las tenia ACTIVAS:
+    //    justamente por estar desactualizado el mapping es que nadie les bajo el stock, y por
+    //    mirar ese mismo mapping es que el vigilante tampoco las vio. Ahora la condicion la
+    //    pone ML y solo ML: si ML dice que esta activa y ofrece unidades, se mira, diga lo que
+    //    diga nuestra anotacion.
+    if (st.status === 'active' && Number(st.qty ?? 0) > 0 && stock <= thr) buckets.ml_active_no_stock.push({ ...row, stock_en_ml: st.qty, mapping_status: m.status });
     // 5) La pregunta que importa de verdad: ¿el numero que ve el comprador en ML es el que
-    //    tenemos? Se compara solo en las ACTIVAS y no moderadas: en una pausada ML congela la
-    //    cantidad vieja a proposito (no es vendible) y en una moderada no nos deja tocarla.
-    if (m.status === 'active' && st.status === 'active' && !isModerated(st.status, st.sub)
-        && stock > thr && st.qty !== null && Number(st.qty) !== stock) {
-      buckets.ml_qty_mismatch.push({ ...row, stock_en_ml: st.qty });
+    //    tenemos? Se compara contra el MISMO objetivo que usa el sincronizador (0 cuando el
+    //    stock esta en el umbral o por debajo), tambien sin filtrar por m.status.
+    //    En una pausada ML congela la cantidad vieja a proposito, asi que esas no cuentan:
+    //    no son vendibles y avisar por ellas seria ruido (lo cubre el reconciliador).
+    const objetivo = stock <= thr ? 0 : stock;
+    if (st.status === 'active' && !isModerated(st.status, st.sub)
+        && st.qty !== null && Number(st.qty) !== objetivo && objetivo > 0) {
+      buckets.ml_qty_mismatch.push({ ...row, stock_en_ml: st.qty, deberia_ser: objetivo });
     }
   }
 
@@ -202,7 +217,7 @@ async function checkMercadoLibre(): Promise<Finding[]> {
     ml_paused_with_stock: n => `${n} publicacion(es) pausadas en ML teniendo stock — la reactivacion automatica no esta funcionando`,
     ml_moderated: n => `${n} publicacion(es) bajo revision de ML (ficha incompleta o infraccion)`,
     ml_down_externally: n => `${n} publicacion(es) que damos por activas estan caidas en ML`,
-    ml_active_no_stock: n => `${n} publicacion(es) activas en ML con 0 en RF — riesgo de sobreventa`,
+    ml_active_no_stock: n => `${n} publicacion(es) ACTIVAS en ML ofreciendo stock que RF no tiene — se puede vender algo inexistente`,
     ml_qty_mismatch: n => `${n} publicacion(es) activas muestran en ML una cantidad distinta a la de RF`,
   };
   for (const [id, rows] of Object.entries(buckets)) {
@@ -214,6 +229,35 @@ async function checkMercadoLibre(): Promise<Finding[]> {
     });
   }
   return f;
+}
+
+// Desincronizaciones que el sistema intento arreglar y NO pudo: ML bloquea la edicion de la
+// publicacion y no hay hermana del mismo inventario por donde bajar el stock. Antes esto se
+// enterraba como 'skipped_moderated' con result='ok' y desaparecia de todos lados; asi CEL2261
+// estuvo seis semanas invisible hasta que se vendio.
+// Va como chequeo APARTE y no dentro del barrido de ML a proposito: aquel solo mira los
+// mappings en active/paused y dejaba afuera 9 de las 27 marcadas. Un chequeo que informa dos
+// tercios de lo que pasa es exactamente la clase de verdad a medias que causo este incidente.
+async function checkStockOutOfSync(): Promise<Finding[]> {
+  const rows = await fetchAll('ml_item_mapping', 'ml_item_id, status, out_of_sync_since, out_of_sync_reason, ml_verified_qty, ml_verified_status, product_id', q => q.eq('stock_out_of_sync', true));
+  if (!rows.length) return [];
+  const products = await fetchAll('products', 'id, name, external_code');
+  const prodOf = new Map(products.map((p: any) => [p.id, p]));
+  // Las que ML tiene ACTIVAS son las unicas que pueden vender algo inexistente ahora mismo.
+  const vendibles = rows.filter((r: any) => r.ml_verified_status === 'active');
+  const muestra = rows.slice(0, 15).map((r: any) => {
+    const p: any = prodOf.get(r.product_id) ?? {};
+    return { ml_item_id: r.ml_item_id, producto: `${p.external_code ?? '?'} - ${p.name ?? r.ml_item_id}`, stock_en_ml: r.ml_verified_qty, ml_status: r.ml_verified_status, desde: r.out_of_sync_since, motivo: String(r.out_of_sync_reason ?? '').slice(0, 160) };
+  });
+  return [{
+    key: 'ml_stock_out_of_sync', check_id: 'ml_stock_out_of_sync',
+    severity: vendibles.length ? 'crit' : 'warn',
+    title: vendibles.length
+      ? `${vendibles.length} publicacion(es) ACTIVAS con stock que no se puede corregir - ML tiene bloqueada la edicion`
+      : `${rows.length} publicacion(es) sin sincronizar - ML tiene bloqueada la edicion (ninguna esta activa, no venden)`,
+    detail: { total: rows.length, activas: vendibles.length, que_hacer: 'Se resuelve en ML: destrabar la publicacion (Mis publicaciones -> motivo de la revision) o darla de baja. Por API no hay forma.', muestra },
+    fingerprint: `${rows.length}:${vendibles.length}`,
+  }];
 }
 
 // La cola que empuja precio y stock a ML. Si se traba o falla, ML queda desincronizado.
@@ -462,6 +506,7 @@ async function run(force = false) {
   const checks: Array<[string, () => Promise<Finding[]>]> = [
     ['mercadolibre', checkMercadoLibre],
     ['sync_queue', checkSyncQueue],
+    ['stock_out_of_sync', checkStockOutOfSync],
     ['cdr_sync', checkCdrSync],
     ['orders', checkOrders],
     ['fx', checkFxRate],

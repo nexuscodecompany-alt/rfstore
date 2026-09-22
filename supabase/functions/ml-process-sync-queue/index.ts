@@ -39,6 +39,63 @@
 //    (que dejaba la publicacion sin sincronizar stock NUNCA MAS -> riesgo de sobreventa).
 //    El chequeo va ARRIBA del candado ml_auto_reactivate_enabled: si ya esta activa no hay
 //    nada que reactivar, solo sincronizarle el stock.
+//
+// v12 (2026-08-26):
+//  - BUG DE FONDO de la reactivacion: la condicion exigia sub_status 'out_of_stock', pero ese
+//    flag SOLO aparece cuando ML pausa por su cuenta. Cuando pausamos NOSOTROS por stock<=umbral
+//    (PUT status=paused) ML la marca 'paused_by_seller' -> la condicion era inalcanzable para
+//    nuestras propias pausas y la publicacion quedaba muerta para siempre aunque volviera el
+//    stock. La excepcion v10 tapaba el agujero solo para stock_locked; el dropship (la mayoria)
+//    quedaba afuera. Caso real: FIL42 / MLU694332931 pausada el 19/08 por stock 0 de CDR, stock
+//    de vuelta en 10 el 20/08, reactivacion abandonada con 'skipped_not_stock_pause'; 74
+//    publicaciones en el mismo estado, la mas vieja desde el 14/07.
+//    FIX: la prueba de que la pausa fue NUESTRA por stock ya la teniamos guardada y no se miraba:
+//    ml_item_mapping.auto_paused_stock. Ese flag lo pone en true SOLO la pausa automatica por
+//    stock; la pausa MANUAL (operation 'pause') lo pone en false a proposito. Asi que se reactiva
+//    tambien cuando auto_paused_stock = true, respetando siempre la moderacion de ML.
+//    Sigue valiendo la regla de oro: NUNCA reactivar una pausa manual ni una suspension.
+//
+// v13 (2026-08-27): update_stock no tenia el candado de moderacion que update_price ya tenia
+// desde v6. Cuando ML tiene un item MODERADO bloquea TODA edicion -> nuestros PUT volvian
+// 400 ('item.status.not_modifiable' / 'field_not_updatable'), se reintentaban 3 veces y
+// terminaban en 'error'. Dos publicaciones forbidden (CEL2261 y RAN76) ensuciaban la alerta
+// todos los dias con un fallo que no es nuestro y que reintentar no arregla.
+// Ahora, ante un 400 se consulta el estado real: si esta moderado se loguea 'skipped_moderated'
+// y se da por terminado. La consulta se hace SOLO al fallar, no en cada actualizacion, para
+// no duplicar las llamadas a ML de todo el catalogo.
+// El problema de fondo (la moderacion) se reporta aparte, en el chequeo ml_moderated de
+// health-alerts: ahi es donde tiene que verse, no como "fallo de sincronizacion".
+//
+// v14 (2026-09-22): EL BUG QUE TERMINO EN UNA VENTA SIN STOCK.
+// El 22/09 se vendio en ML un Redmi Note 15 Pro (CEL2261) que RF no tenia. Al mirarlo habia
+// 32 publicaciones ACTIVAS ofreciendo 154 unidades inexistentes. Dos agujeros, los dos aca:
+//
+//  a) STOCK 0 CON EL MAPPING EN 'paused': se daba por pausada la publicacion mirando NUESTRA
+//     anotacion, sin preguntarle a ML:
+//         if (mapping.status === 'paused') { logSync('already_paused'); return ok; }
+//     Si el mapping estaba desactualizado y ML la tenia ACTIVA, la publicacion no recibia el 0
+//     NUNCA y seguia vendiendo con la cantidad vieja para siempre. Y el trigger solo encola
+//     cuando el stock CAMBIA (trg_variant_stock_to_ml), asi que una vez en 0 no se reintentaba
+//     jamas. Lo perverso era la asimetria: el camino inverso (volvio el stock, mapping paused)
+//     SI le pregunta a ML desde la v11 -- se desconfiaba del mapping donde no habia riesgo y se
+//     le creia justo donde el error se paga con una venta que no se puede cumplir.
+//     FIX: con stock <= umbral el estado lo dicta ML, no nuestro mapping. Siempre se lee.
+//
+//  b) MODERADAS DADAS POR BUENAS: la v13 convirtio el fallo en 'skipped_moderated' con
+//     result='ok' y devolvia { ok: true }. Era cierto que reintentar no sirve, pero el efecto
+//     fue que una publicacion con stock fantasma quedaba reportada como exito y desaparecia de
+//     todos los tableros. CEL2261 estuvo asi desde el 12/08 hasta que se vendio.
+//     FIX: sigue sin reintentarse (no arregla nada), pero YA NO se reporta como ok: se marca
+//     ml_item_mapping.stock_out_of_sync y ml-stock-reconcile -- que tiene la vista completa por
+//     user_product_id -- intenta bajarlo por una publicacion HERMANA del mismo inventario. Si
+//     tampoco puede, manda aviso. Buscar la hermana no se hace aca a proposito: esta funcion
+//     corre cada minuto sobre pocos items y no tiene por que pagar ese barrido.
+//
+// Ademas: para dejar de vender ahora se escribe available_quantity = 0 en vez de status=paused.
+// ML pausa sola la publicacion y la marca 'out_of_stock' (que es el sub_status que la
+// reactivacion sabe reconocer), es idempotente, y se propaga a TODAS las publicaciones que
+// compartan el inventario -- incluida la de catalogo, que antes quedaba afuera y es por donde
+// se vendio el Redmi.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -102,6 +159,32 @@ function isModerated(st: any, sub: string[]): boolean {
   return MODERATION_SUBSTATUS.some(f => sub.includes(f)) || st === 'under_review' || st === 'closed' || st === 'inactive';
 }
 
+// Devuelve el estado si ML tiene el item moderado (y por lo tanto bloqueado para editar),
+// o null si no lo esta / no se pudo averiguar. Se usa como explicacion de un 400.
+async function moderadoPorML(mlItemId: string, token: string): Promise<string | null> {
+  const q = await mlReq(`/items/${mlItemId}?attributes=status,sub_status`, 'GET', token);
+  if (!q.ok) return null;
+  const st = String(q.data?.status ?? '');
+  const sub: string[] = Array.isArray(q.data?.sub_status) ? q.data.sub_status.map((s: any) => String(s)) : [];
+  return isModerated(st, sub) ? `status=${st} sub=${JSON.stringify(sub)}` : null;
+}
+
+// v14: una desincronizacion que no se pudo arreglar TIENE que quedar anotada. Mientras esta
+// marca este puesta, ml-stock-reconcile la vuelve a intentar por una publicacion hermana y
+// health-alerts la reporta. Lo que no se anota, no existe: asi se perdio CEL2261 seis semanas.
+async function marcarDesincronizado(mappingId: number, motivo: string): Promise<void> {
+  try {
+    const { data: cur } = await supabase.from('ml_item_mapping').select('out_of_sync_since').eq('id', mappingId).maybeSingle();
+    await supabase.from('ml_item_mapping').update({
+      stock_out_of_sync: true,
+      out_of_sync_since: cur?.out_of_sync_since ?? new Date().toISOString(),
+      out_of_sync_reason: motivo.slice(0, 300),
+    }).eq('id', mappingId);
+  } catch (_e) { /* best-effort */ }
+}
+
+const SYNC_OK = { stock_out_of_sync: false, out_of_sync_since: null, out_of_sync_reason: null };
+
 async function logSync(row: any): Promise<void> {
   try { await supabase.from('ml_sync_log').insert(row); } catch (_e) { /* log best-effort */ }
 }
@@ -136,15 +219,51 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
       const stock = Number(v.stock);
 
       if (stock <= threshold) {
-        if (mapping.status === 'paused') {
-          await supabase.from('ml_item_mapping').update({ auto_paused_stock: true, last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
-          await logSync({ ...baseLog, action: 'already_paused', new_ml_status: 'paused', stock, result: 'ok' });
+        // v14: EL ESTADO LO DICTA ML, NO NUESTRO MAPPING. Antes, con el mapping en 'paused' se
+        // daba por hecho que la publicacion ya estaba frenada y se devolvia ok sin mirar nada.
+        // Cuando el mapping estaba desactualizado, la publicacion seguia ACTIVA en ML con la
+        // cantidad vieja y no se enteraba nadie: asi se vendio CEL2261.
+        const itq = await mlReq(`/items/${mlItemId}?attributes=status,sub_status,available_quantity`, 'GET', token);
+        const mlStatus = String(itq.data?.status ?? '');
+        const mlSub: string[] = Array.isArray(itq.data?.sub_status) ? itq.data.sub_status.map((s: any) => String(s)) : [];
+        const mlQty = Number(itq.data?.available_quantity ?? 0);
+
+        // Ya esta como tiene que estar: con 0 no se puede comprar nada, este el estado que
+        // este. Unico caso en que no se escribe (y el que evita reescribir todo el catalogo
+        // cada vez que CDR confirma un 0 que ya estaba).
+        if (itq.ok && mlQty === 0) {
+          await supabase.from('ml_item_mapping').update({ status: mlStatus === 'active' ? 'active' : 'paused', auto_paused_stock: true, last_known_stock: stock, ml_verified_qty: 0, ml_verified_status: mlStatus, ml_verified_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), ...SYNC_OK }).eq('id', mapping.id);
+          await logSync({ ...baseLog, action: 'already_paused', new_ml_status: mlStatus, stock, result: 'ok' });
           return { ok: true };
         }
-        const r = await mlReq(`/items/${mlItemId}`, 'PUT', token, { status: 'paused' });
-        if (!r.ok) { await logSync({ ...baseLog, action: 'pause', new_ml_status: mapping.status, stock, result: 'error', error: `pause: ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}` }); return { ok: false, error: `pause: ${r.status}`, retryable: isRetryable(r.status) }; }
-        await supabase.from('ml_item_mapping').update({ status: 'paused', auto_paused_stock: true, last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
-        await logSync({ ...baseLog, action: 'paused', new_ml_status: 'paused', stock, result: 'ok' });
+
+        // Si ni siquiera se pudo leer el estado, NO se asume que esta todo bien: se reintenta.
+        if (!itq.ok) {
+          await logSync({ ...baseLog, action: 'read_state', new_ml_status: mapping.status, stock, result: 'error', error: `get_item: ${itq.status}` });
+          return { ok: false, error: `get_item: ${itq.status}`, retryable: true };
+        }
+
+        // Dejar la cantidad en 0 es lo que corta la venta: ML pausa sola la publicacion con
+        // sub_status 'out_of_stock' y el 0 se propaga a todas las publicaciones que compartan
+        // el inventario (la de catalogo incluida, que es por donde se vendio el Redmi).
+        const r = await mlReq(`/items/${mlItemId}`, 'PUT', token, { available_quantity: 0 });
+        if (!r.ok) {
+          const mod = r.status === 400 ? await moderadoPorML(mlItemId, token) : null;
+          if (mod) {
+            // v14: ML no deja tocarlo y reintentar no lo arregla, pero esto NO es un exito:
+            // la publicacion queda ofreciendo algo que no existe. Se anota para que
+            // ml-stock-reconcile lo intente por una hermana del mismo inventario y, si
+            // tampoco puede, avise. Antes esto devolvia ok y se perdia de vista.
+            const motivo = `no se pudo poner en 0 (ML tiene la publicacion bloqueada): ${mod}`;
+            await marcarDesincronizado(mapping.id, motivo);
+            await logSync({ ...baseLog, action: 'blocked_by_ml', new_ml_status: mlStatus, stock, result: 'error', error: motivo });
+            return { ok: false, error: 'blocked_by_ml', retryable: false };
+          }
+          await logSync({ ...baseLog, action: 'zero_qty', new_ml_status: mlStatus, stock, result: 'error', error: `zero_qty: ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}` });
+          return { ok: false, error: `zero_qty: ${r.status}`, retryable: isRetryable(r.status) };
+        }
+        await supabase.from('ml_item_mapping').update({ status: 'paused', auto_paused_stock: true, last_known_stock: stock, ml_verified_qty: 0, ml_verified_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), ...SYNC_OK }).eq('id', mapping.id);
+        await logSync({ ...baseLog, action: 'paused', new_ml_status: 'paused', stock, result: 'ok', error: mlStatus === 'active' ? `el mapping decia ${mapping.status}; ML la tenia ACTIVA con ${mlQty}` : null });
         return { ok: true };
       }
 
@@ -167,7 +286,7 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
             await logSync({ ...baseLog, action: 'qty_update', new_ml_status: 'active', stock, result: 'error', error: `resync_qty: ${up.status}: ${JSON.stringify(up.data).slice(0, 200)}` });
             return { ok: false, error: `update_qty: ${up.status}`, retryable: isRetryable(up.status) };
           }
-          await supabase.from('ml_item_mapping').update({ status: 'active', auto_paused_stock: false, last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
+          await supabase.from('ml_item_mapping').update({ status: 'active', auto_paused_stock: false, last_known_stock: stock, ml_verified_qty: stock, ml_verified_status: 'active', ml_verified_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), ...SYNC_OK }).eq('id', mapping.id);
           await logSync({ ...baseLog, action: 'qty_updated_resynced', new_ml_status: 'active', stock, result: 'ok', error: 'el mapping decia paused; ML la tenia ACTIVA -> se corrigio y se empujo el stock' });
           return { ok: true };
         }
@@ -178,32 +297,51 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
           return { ok: true };
         }
 
-        const pausedByStock = itq.ok && mlStatus === 'paused' && subStatus.includes('out_of_stock') && !isModerated(mlStatus, subStatus);
+        const moderated = isModerated(mlStatus, subStatus);
+        const pausedByStock = itq.ok && mlStatus === 'paused' && subStatus.includes('out_of_stock') && !moderated;
         // v10 (2026-08-03): en productos con STOCK MANUAL (stock_locked) cargar stock es una
         // decision explicita del admin sobre mercaderia que tiene fisicamente, asi que tambien
         // se reactiva la que figura 'paused_by_seller' (incluye las que pausamos nosotros por
         // stock 0: ML las reporta como pausadas por el vendedor, no como out_of_stock).
         // Las MODERADAS por ML se siguen respetando siempre.
-        const pausedBySellerOnStockLock = itq.ok && mlStatus === 'paused' && stockLocked && !isModerated(mlStatus, subStatus);
-        if (!pausedByStock && !pausedBySellerOnStockLock) {
+        const pausedBySellerOnStockLock = itq.ok && mlStatus === 'paused' && stockLocked && !moderated;
+        // v12 (2026-08-26): la senal confiable de que la pausa la hicimos NOSOTROS por stock es
+        // nuestro propio flag, no el sub_status de ML: 'out_of_stock' solo lo pone ML cuando pausa
+        // por su cuenta, mientras que nuestras pausas por API quedan como 'paused_by_seller'
+        // (el seller somos nosotros) y nunca cumplian la condicion de arriba.
+        // auto_paused_stock lo pone en true SOLO la pausa automatica por stock <= umbral; la pausa
+        // MANUAL (operation 'pause') y toda reactivacion lo ponen en false. Por eso alcanza como
+        // prueba, y sigue sin tocar pausas manuales ni suspensiones de ML.
+        const pausedByUsOnStock = itq.ok && mlStatus === 'paused' && mapping.auto_paused_stock === true && !moderated;
+        if (!pausedByStock && !pausedBySellerOnStockLock && !pausedByUsOnStock) {
           await supabase.from('ml_item_mapping').update({ last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
           await logSync({ ...baseLog, action: 'skipped_not_stock_pause', new_ml_status: 'paused', stock, result: 'ok', error: itq.ok ? `ml_status=${mlStatus} sub=${JSON.stringify(subStatus)}` : `get_item_${itq.status}` });
           return { ok: true };
         }
         const ra = await mlReq(`/items/${mlItemId}`, 'PUT', token, { status: 'active', available_quantity: stock });
         if (!ra.ok) { await logSync({ ...baseLog, action: 'reactivate', new_ml_status: 'paused', stock, result: 'error', error: `reactivate: ${ra.status}: ${JSON.stringify(ra.data).slice(0, 150)}` }); return { ok: false, error: `reactivate: ${ra.status}`, retryable: isRetryable(ra.status) }; }
-        await supabase.from('ml_item_mapping').update({ status: 'active', auto_paused_stock: false, last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
-        await logSync({ ...baseLog, action: 'reactivated', new_ml_status: 'active', stock, result: 'ok', error: pausedByStock ? null : `stock_locked: sub=${JSON.stringify(subStatus)}` });
+        await supabase.from('ml_item_mapping').update({ status: 'active', auto_paused_stock: false, last_known_stock: stock, ml_verified_qty: stock, ml_verified_status: 'active', ml_verified_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), ...SYNC_OK }).eq('id', mapping.id);
+        const reason = pausedByStock ? null : (pausedBySellerOnStockLock ? `stock_locked: sub=${JSON.stringify(subStatus)}` : `auto_paused_stock: sub=${JSON.stringify(subStatus)}`);
+        await logSync({ ...baseLog, action: 'reactivated', new_ml_status: 'active', stock, result: 'ok', error: reason });
         return { ok: true };
       }
 
       const r = await mlReq(`/items/${mlItemId}`, 'PUT', token, { available_quantity: stock });
       if (!r.ok) {
-        // si falla por moderacion lo veremos en el body; igual se loguea.
+        const mod = r.status === 400 ? await moderadoPorML(mlItemId, token) : null;
+        if (mod) {
+          // v14: igual que arriba. Reintentar no arregla que ML lo tenga bloqueado, pero la
+          // publicacion queda mostrando una cantidad que no es la nuestra -> se anota para que
+          // el reconciliador lo intente por una hermana del mismo inventario.
+          const motivo = `no se pudo empujar el stock (ML tiene la publicacion bloqueada): ${mod}`;
+          await marcarDesincronizado(mapping.id, motivo);
+          await logSync({ ...baseLog, action: 'blocked_by_ml', new_ml_status: 'active', stock, result: 'error', error: motivo });
+          return { ok: false, error: 'blocked_by_ml', retryable: false };
+        }
         await logSync({ ...baseLog, action: 'qty_update', new_ml_status: 'active', stock, result: 'error', error: `update_qty: ${r.status}: ${JSON.stringify(r.data).slice(0, 200)}` });
         return { ok: false, error: `update_qty: ${r.status}`, retryable: isRetryable(r.status) };
       }
-      await supabase.from('ml_item_mapping').update({ last_known_stock: stock, last_synced_at: new Date().toISOString() }).eq('id', mapping.id);
+      await supabase.from('ml_item_mapping').update({ last_known_stock: stock, ml_verified_qty: stock, ml_verified_at: new Date().toISOString(), last_synced_at: new Date().toISOString(), ...SYNC_OK }).eq('id', mapping.id);
       await logSync({ ...baseLog, action: 'qty_updated', new_ml_status: 'active', stock, result: 'ok' });
       return { ok: true };
     }
@@ -214,6 +352,8 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
 
       // Estado actual del item. Si ML lo tiene moderado (under_review/forbidden/banned/...),
       // el precio esta BLOQUEADO ('item.price.not_modifiable') -> saltar, no es editable.
+      // A diferencia del stock, un precio desactualizado no genera una venta que no podamos
+      // cumplir, asi que aca 'skipped_moderated' sigue siendo un desenlace aceptable.
       const cq = await mlReq(`/items/${mlItemId}?attributes=status,sub_status,currency_id`, 'GET', token);
       const st = cq.data?.status;
       const sub: string[] = Array.isArray(cq.data?.sub_status) ? cq.data.sub_status.map((s: any) => String(s)) : [];
