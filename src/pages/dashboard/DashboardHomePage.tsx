@@ -7,6 +7,8 @@ import {
 	HiOutlineArrowTrendingDown,
 	HiOutlineArrowPath,
 	HiOutlineCalendarDays,
+	HiOutlineChevronLeft,
+	HiOutlineChevronRight,
 } from 'react-icons/hi2';
 import { useDashboardMetrics } from '../../hooks/dashboard/useDashboardMetrics';
 import { useUsdUyuRate } from '../../hooks';
@@ -35,6 +37,25 @@ const monthRange = () => {
 		from: toISODate(new Date(now.getFullYear(), now.getMonth(), 1)),
 		to: toISODate(now),
 	};
+};
+
+// Mes entero a partir de un año/mes (mes 0-11). Si es el mes en curso corta en
+// hoy, igual que "Este mes"; los meses pasados van del 1º al último día.
+const fullMonthRange = (year: number, month: number) => {
+	const now = new Date();
+	const isCurrent = year === now.getFullYear() && month === now.getMonth();
+	return {
+		from: toISODate(new Date(year, month, 1)),
+		to: toISODate(isCurrent ? now : new Date(year, month + 1, 0)),
+	};
+};
+
+const monthLabel = (year: number, month: number) => {
+	const s = new Date(year, month, 1).toLocaleDateString('es-UY', {
+		month: 'long',
+		year: 'numeric',
+	});
+	return s.charAt(0).toUpperCase() + s.slice(1);
 };
 
 const num = (n: number) => Number(n || 0).toLocaleString('es-UY');
@@ -423,6 +444,24 @@ export const DashboardHomePage = () => {
 		setRange(preset.range());
 	};
 
+	// Navegador de meses (‹ Septiembre 2026 ›): parte del mes de la fecha "hasta"
+	// del rango que esté elegido, así también sirve después de un preset o de
+	// fechas a mano. No deja avanzar más allá del mes en curso.
+	const [navYear, navMonth] = range.to.split('-').map(Number);
+	const navMonthIdx = navMonth - 1;
+	const now = new Date();
+	const isCurrentMonth =
+		navYear === now.getFullYear() && navMonthIdx === now.getMonth();
+	const isWholeMonth =
+		activePreset === 'month' || activePreset === 'month-nav';
+	const shiftMonth = (delta: number) => {
+		const d = new Date(navYear, navMonthIdx + delta, 1);
+		const isNowMonth =
+			d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+		setActivePreset(isNowMonth ? 'month' : 'month-nav');
+		setRange(fullMonthRange(d.getFullYear(), d.getMonth()));
+	};
+
 	return (
 		<div className='space-y-6'>
 			{/* Encabezado */}
@@ -436,6 +475,40 @@ export const DashboardHomePage = () => {
 			{/* Filtros de fecha */}
 			<div className='flex flex-col gap-3 rounded-2xl border border-ink-200/70 bg-white p-4 shadow-soft lg:flex-row lg:items-center lg:justify-between'>
 				<div className='flex flex-wrap items-center gap-2'>
+					<div
+						className={`flex items-center rounded-full border transition-all ${
+							isWholeMonth
+								? 'border-brand-600 bg-brand-50'
+								: 'border-ink-200 bg-white'
+						}`}
+					>
+						<button
+							onClick={() => shiftMonth(-1)}
+							className='grid h-8 w-8 place-items-center rounded-full text-ink-500 transition-all hover:bg-ink-100 hover:text-brand-600'
+							title='Mes anterior'
+							aria-label='Mes anterior'
+						>
+							<HiOutlineChevronLeft size={16} />
+						</button>
+						<button
+							onClick={() => shiftMonth(0)}
+							className={`min-w-[9.5rem] px-1 text-center text-sm font-semibold ${
+								isWholeMonth ? 'text-brand-700' : 'text-ink-600'
+							}`}
+							title='Ver el mes entero'
+						>
+							{monthLabel(navYear, navMonthIdx)}
+						</button>
+						<button
+							onClick={() => shiftMonth(1)}
+							disabled={isCurrentMonth}
+							className='grid h-8 w-8 place-items-center rounded-full text-ink-500 transition-all hover:bg-ink-100 hover:text-brand-600 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent'
+							title='Mes siguiente'
+							aria-label='Mes siguiente'
+						>
+							<HiOutlineChevronRight size={16} />
+						</button>
+					</div>
 					{presets.map(p => (
 						<button
 							key={p.id}

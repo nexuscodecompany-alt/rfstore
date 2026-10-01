@@ -19,7 +19,7 @@ import { LuLoader2 } from 'react-icons/lu';
 import { signOut } from '../../actions';
 import toast from 'react-hot-toast';
 
-const WHATSAPP_URL = `https://wa.me/59894116299?text=${encodeURIComponent(
+const WHATSAPP_URL = `https://wa.me/59898732327?text=${encodeURIComponent(
 	'Hola, quería hacer una consulta.'
 )}`;
 

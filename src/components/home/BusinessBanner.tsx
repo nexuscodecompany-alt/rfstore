@@ -15,7 +15,7 @@ const perks = [
 	{ icon: HiOutlineWrenchScrewdriver, label: 'Instalación y configuración' },
 ];
 
-const WHATSAPP_URL = `https://wa.me/59894116299?text=${encodeURIComponent(
+const WHATSAPP_URL = `https://wa.me/59898732327?text=${encodeURIComponent(
 	'Hola, quería una cotización para mi empresa.'
 )}`;
 

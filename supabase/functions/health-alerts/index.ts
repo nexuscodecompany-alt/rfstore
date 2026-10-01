@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-// health-alerts (v6, 2026-09-21)
+// health-alerts (v9, 2026-09-25)
 // Vigilante del sistema: chequea cada hora y manda UN reporte por mail por dia con todo
 // lo que no deberia estar pasando.
 //
@@ -30,27 +30,43 @@
 //    "es importantisimo tener el stock sincronizado". Ahora se compara, publicacion por
 //    publicacion, la cantidad que ve el comprador en ML contra la de RF.
 // v5 (2026-09-03): adaptado al sync INCREMENTAL de CDR (cdr-sync-products v29-v31).
-//    - cdr_feed_drop comparaba `fetched` entre corridas cualesquiera. Con el incremental eso
-//      dejo de tener sentido: una corrida trae 0-60 productos y el full feed 1857, asi que la
-//      comparacion generaba falsos criticos por mail. Ahora se comparan full contra full.
-//    - NUEVO cdr_full_feed_stale: vigila que el catalogo COMPLETO siga corriendo.
-//    - los rate limit de CDR no cuentan como corridas fallidas.
 // v6 (2026-09-21): el vigilante estuvo 18 dias diciendo "todo en orden" mientras NO entraba
 //    ni un producto nuevo de CDR. Lo detecto el cliente. Dos agujeros, los dos tapados:
-//    - NUEVO cdr_insert_stalled: el feed completo detectaba 55 altas y no insertaba ninguna
-//      (iba en mode 'update-prices', que las cuenta y no las da de alta). La señal
-//      `to_insert > 0 con inserted = 0` estuvo a la vista 36 corridas y nadie la miraba.
-//    - NUEVO cdr_no_new_products: red de seguridad por dias sin altas, por si el fallo
-//      viene por otro lado.
-//    - ARREGLADO cdr_failed_runs: miraba "las ultimas 20 corridas" sin distinguir tipo, y
-//      con 288 incrementales por dia eso son 90 MINUTOS. Un full feed que corre cada 12 h
-//      no caia nunca ahi: venia fallando desde el 18/09 y no se reporto una sola vez.
-//      Ahora los full feed tienen su propio chequeo (cdr_full_feed_failed).
-// v7 (2026-09-22): el vigilante tenia el chequeo correcto y no vio nada. ml_active_no_stock
-//    exigia que NUESTRO mapping dijera 'active'; las 32 publicaciones que estaban vendiendo
-//    sin stock lo tenian en 'paused' mientras ML las tenia ACTIVAS. El mapping desactualizado
-//    era la causa del problema Y la razon por la que el chequeo no lo veia. Ahora el estado
-//    lo dicta ML. Se suma ml_stock_out_of_sync: lo que se intento corregir y ML no dejo.
+//    cdr_insert_stalled (to_insert > 0 con inserted = 0) y cdr_no_new_products, mas separar
+//    los full feed de los incrementales en cdr_failed_runs.
+// v7 (2026-09-22): SE VENDIO ALGO SIN STOCK Y EL VIGILANTE DIJO QUE TODO ESTABA BIEN.
+//    El chequeo que tenia que verlo (ml_active_no_stock) existia desde la v1 y estaba mal
+//    filtrado: exigia m.status === 'active', o sea que NUESTRA anotacion dijera que la
+//    publicacion estaba activa. Las 32 publicaciones que ofrecian 154 unidades inexistentes
+//    tenian el mapping en 'paused' mientras ML las tenia ACTIVAS -- y ese mapping
+//    desactualizado era a la vez la CAUSA del problema (nadie les bajaba el stock) y la razon
+//    por la que el chequeo no las veia. Mirar nuestro propio espejo para verificar el espejo
+//    no verifica nada. Ahora el estado lo dicta ML.
+//    NUEVOS: ml_stock_out_of_sync (lo que se intento corregir y ML no dejo) y ml_reconcile
+//    (que el reconciliador de stock siga corriendo, porque es la red de seguridad).
+// v8 (2026-09-22): recalibrado para el full feed HORARIO. Se verifico que el feed completo es
+//    el UNICO que actualiza el stock (el incremental no trae cambios de stock), asi que paso
+//    de 2 por dia a cada hora y el umbral de "hace mucho que no corre" baja de 14 h a 3 h:
+//    con el stock colgando de una corrida horaria, avisar a las 14 h deja medio dia de
+//    catalogo desincronizado sin que nadie se entere.
+// v9 (2026-09-25): el reporte venia con 6 incidencias abiertas y 4 eran falsas alarmas. Un
+//    reporte que grita todos los dias por cosas que no son problemas entrena a no leerlo, y
+//    ahi es cuando se pierde la que si importa (ver v6). Recalibrado cada una con su prueba:
+//  - cdr_no_new_products: 3 dias sin altas, pero el full feed corria bien cada 10 min y CDR
+//    simplemente no publico nada (1825 codigos = 1797 conocidos + 28 deshabilitados, cero
+//    sin contabilizar). Ahora, si la ultima corrida completa CUADRA (todo codigo del feed es
+//    conocido o deshabilitado y no hay backlog), no es una rotura: se calla hasta los 7 dias
+//    y ahi avisa como "confirmar con CDR", no como "se rompieron las altas".
+//  - ml_down_externally: ACC50/ACC60 las pauso el DUEÑO desde ML (sin sub_status, con stock).
+//    Una pausa manual no es un problema del sistema. Queda para lo que de verdad es: cerradas
+//    / inactivas, o pausadas por falta de stock cuando RF SI tiene. (Ademas, desde el 25/09 un
+//    trigger alinea ml_item_mapping.status con lo que ML reporta: el espejo ya no queda viejo.)
+//  - ml_paused_with_stock: FIL98 pausada con 10 unidades y un auto_paused_stock viejo. Nuestras
+//    pausas por stock dejan SIEMPRE la cantidad en 0 (o <= umbral) y ML les pone 'out_of_stock';
+//    sin esa huella la pausa no fue nuestra y "reactivarla" seria pisar al dueño.
+//  - ml_queue_errors: los 'blocked_by_ml' se contaban dos veces (aca y en ml_stock_out_of_sync)
+//    y seguian 24 h en el reporte aunque el reconciliador ya los hubiera corregido por una
+//    hermana. Esos los reporta solo ml_stock_out_of_sync, que refleja el estado ACTUAL.
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -65,9 +81,6 @@ const ML_TOKEN_URL = 'https://api.mercadolibre.com/oauth/token';
 const ML_API_BASE = 'https://api.mercadolibre.com';
 
 const MODERATION_SUBSTATUS = ['under_review', 'banned', 'forbidden', 'freezed', 'deleted', 'suspended', 'waiting_for_patch'];
-// UN mail por dia, a las 9 de la mañana de Uruguay. Los chequeos igual corren cada hora: eso
-// permite fechar con precision cuando empezo cada problema y no perder los que aparecen y se
-// arreglan solos entre reportes. Lo que se acumula es el AVISO, no la deteccion.
 const DIGEST_HOUR_UY = 9;
 const UY_OFFSET_MS = 3 * 3600_000; // Uruguay es UTC-3 fijo (no tiene horario de verano desde 2015)
 // Horas sin una corrida de catalogo COMPLETO antes de avisar.
@@ -78,9 +91,10 @@ const UY_OFFSET_MS = 3 * 3600_000; // Uruguay es UTC-3 fijo (no tiene horario de
 // Con el stock dependiendo de una corrida horaria, esperar 14 h para avisar deja el catalogo
 // medio dia desincronizado sin que nadie se entere. 3 h = ya se saltearon tres corridas.
 const FULL_FEED_MAX_HOURS = 3;
-// Dias sin que entre un producto nuevo de CDR antes de avisar. CDR da de alta casi todos los
-// dias; 3 dias secos ya es raro y 7 es casi seguro que las altas se rompieron.
 const NO_NEW_PRODUCTS_MAX_DAYS = 3;
+// v9: con el feed cuadrando, dias sin altas son decision de CDR, no una rotura nuestra.
+// Recien a la semana vale la pena preguntarle a CDR.
+const NO_NEW_PRODUCTS_CLEAN_FEED_DAYS = 7;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -159,7 +173,7 @@ async function notifyEmail(): Promise<string> {
 async function checkMercadoLibre(): Promise<Finding[]> {
   const f: Finding[] = [];
   const [mappings, variants, products, settingRow] = await Promise.all([
-    fetchAll('ml_item_mapping', 'id, ml_item_id, status, auto_paused_stock, product_id, variant_id, stock_out_of_sync, out_of_sync_since, out_of_sync_reason', q => q.in('status', ['active', 'paused'])),
+    fetchAll('ml_item_mapping', 'id, ml_item_id, status, auto_paused_stock, product_id, variant_id', q => q.in('status', ['active', 'paused'])),
     fetchAll('variants', 'id, stock'),
     fetchAll('products', 'id, name, external_code, stock_locked'),
     supabase.from('app_settings').select('value').eq('key', 'ml_stock_threshold').maybeSingle(),
@@ -183,46 +197,46 @@ async function checkMercadoLibre(): Promise<Finding[]> {
     const p: any = prodOf.get(m.product_id) ?? {};
     const stock = stockOf.get(m.variant_id) ?? 0;
     const thr = p.stock_locked ? 0 : threshold;
-    const label = `${p.external_code ?? '?'} — ${p.name ?? m.ml_item_id}`;
+    const label = `${p.external_code ?? '?'} - ${p.name ?? m.ml_item_id}`;
     const row = { ml_item_id: m.ml_item_id, producto: label, stock_rf: stock, ml_status: st.status, ml_sub_status: st.sub.join(',') };
+    const moderated = isModerated(st.status, st.sub);
+    // v9: la huella de una pausa NUESTRA por stock: la dejamos en 0 (o <= umbral) y ML le pone
+    // 'out_of_stock'. Una pausada con stock de sobra y sin esa huella la pauso el dueño.
+    const huellaPausaPorStock = st.sub.includes('out_of_stock') || Number(st.qty ?? 0) <= thr;
 
     // 1) EL BUG DE AGOSTO: la pausamos nosotros por stock, volvio el stock y sigue pausada.
-    //    Con ml-process-sync-queue v12 esto deberia auto-resolverse en < 2 min; si aparece,
-    //    la reactivacion se volvio a romper.
-    if (m.status === 'paused' && m.auto_paused_stock && stock > thr && st.status === 'paused' && !isModerated(st.status, st.sub)) buckets.ml_paused_with_stock.push(row);
-    // 2) ML la moderó (ficha incompleta, infraccion). No se toca sola: hay que arreglar la ficha.
-    if (isModerated(st.status, st.sub)) buckets.ml_moderated.push(row);
-    // 3) Nosotros la creemos activa y ML la tiene pausada/cerrada por su cuenta -> no vende y no lo sabiamos.
-    //    Excepcion: ML pausada por 'out_of_stock' con RF tambien en 0 no es una anomalia, es la
-    //    realidad coincidiendo (solo esta desactualizado nuestro mapping). Avisar seria ruido.
-    const coherentSinStock = st.sub.includes('out_of_stock') && stock <= thr;
-    if (m.status === 'active' && (st.status === 'paused' || st.status === 'closed') && !isModerated(st.status, st.sub) && !coherentSinStock) buckets.ml_down_externally.push(row);
-    // 4) Activa en ML sin stock real en RF -> riesgo de vender algo que no tenemos.
-    //    v7 (2026-09-22): ESTE CHEQUEO EXISTIA Y NO VIO NADA. Exigia m.status === 'active',
-    //    o sea que NUESTRA anotacion dijera que la publicacion estaba activa. Las 32 que
-    //    estaban vendiendo sin stock tenian el mapping en 'paused' y ML las tenia ACTIVAS:
-    //    justamente por estar desactualizado el mapping es que nadie les bajo el stock, y por
-    //    mirar ese mismo mapping es que el vigilante tampoco las vio. Ahora la condicion la
-    //    pone ML y solo ML: si ML dice que esta activa y ofrece unidades, se mira, diga lo que
-    //    diga nuestra anotacion.
+    if (m.status === 'paused' && m.auto_paused_stock && stock > thr && st.status === 'paused' && !moderated && huellaPausaPorStock) buckets.ml_paused_with_stock.push(row);
+    // 2) ML la modero (ficha incompleta, infraccion). No se toca sola: hay que arreglar la ficha.
+    if (moderated) buckets.ml_moderated.push(row);
+    // 3) Nosotros la creemos activa y en ML no vende sin que nadie lo haya decidido: cerrada /
+    //    inactiva, o frenada por falta de stock cuando RF SI tiene. v9: una pausa MANUAL del
+    //    dueño ya no cuenta -- es una decision, no una falla (y el trigger alinea el mapping).
+    const caida = st.status === 'closed' || st.status === 'inactive'
+      || (st.status === 'paused' && st.sub.includes('out_of_stock') && stock > thr);
+    if (m.status === 'active' && !moderated && caida) buckets.ml_down_externally.push(row);
+    // 4) Activa en ML ofreciendo unidades que RF no tiene -> se puede vender algo inexistente.
+    //    v7: ESTE CHEQUEO EXISTIA Y NO VIO NADA. Exigia m.status === 'active', o sea que
+    //    NUESTRA anotacion dijera que la publicacion estaba activa. Las 32 que estaban
+    //    vendiendo sin stock tenian el mapping en 'paused' y ML las tenia ACTIVAS: justamente
+    //    por estar desactualizado el mapping es que nadie les bajo el stock, y por mirar ese
+    //    mismo mapping es que el vigilante tampoco las vio. Ahora la condicion la pone ML.
     if (st.status === 'active' && Number(st.qty ?? 0) > 0 && stock <= thr) buckets.ml_active_no_stock.push({ ...row, stock_en_ml: st.qty, mapping_status: m.status });
-    // 5) La pregunta que importa de verdad: ¿el numero que ve el comprador en ML es el que
-    //    tenemos? Se compara contra el MISMO objetivo que usa el sincronizador (0 cuando el
-    //    stock esta en el umbral o por debajo), tambien sin filtrar por m.status.
-    //    En una pausada ML congela la cantidad vieja a proposito, asi que esas no cuentan:
-    //    no son vendibles y avisar por ellas seria ruido (lo cubre el reconciliador).
+    // 5) El numero que ve el comprador en ML es el que tenemos? Se compara contra el MISMO
+    //    objetivo que usa el sincronizador (0 cuando el stock esta en el umbral o por debajo),
+    //    tambien sin filtrar por m.status. En una pausada ML congela la cantidad vieja a
+    //    proposito, asi que esas no cuentan: no son vendibles (lo corrige el reconciliador).
     const objetivo = stock <= thr ? 0 : stock;
-    if (st.status === 'active' && !isModerated(st.status, st.sub)
+    if (st.status === 'active' && !moderated
         && st.qty !== null && Number(st.qty) !== objetivo && objetivo > 0) {
       buckets.ml_qty_mismatch.push({ ...row, stock_en_ml: st.qty, deberia_ser: objetivo });
     }
   }
 
   const titles: Record<string, (n: number) => string> = {
-    ml_paused_with_stock: n => `${n} publicacion(es) pausadas en ML teniendo stock — la reactivacion automatica no esta funcionando`,
+    ml_paused_with_stock: n => `${n} publicacion(es) pausadas en ML teniendo stock - la reactivacion automatica no esta funcionando`,
     ml_moderated: n => `${n} publicacion(es) bajo revision de ML (ficha incompleta o infraccion)`,
     ml_down_externally: n => `${n} publicacion(es) que damos por activas estan caidas en ML`,
-    ml_active_no_stock: n => `${n} publicacion(es) ACTIVAS en ML ofreciendo stock que RF no tiene — se puede vender algo inexistente`,
+    ml_active_no_stock: n => `${n} publicacion(es) ACTIVAS en ML ofreciendo stock que RF no tiene - se puede vender algo inexistente`,
     ml_qty_mismatch: n => `${n} publicacion(es) activas muestran en ML una cantidad distinta a la de RF`,
   };
   for (const [id, rows] of Object.entries(buckets)) {
@@ -268,16 +282,17 @@ async function checkStockOutOfSync(): Promise<Finding[]> {
 // La cola que empuja precio y stock a ML. Si se traba o falla, ML queda desincronizado.
 async function checkSyncQueue(): Promise<Finding[]> {
   const f: Finding[] = [];
-  const { data: errs } = await supabase.from('ml_sync_queue').select('id, operation, variant_id, last_error, created_at').eq('status', 'error').gte('created_at', hoursAgo(24));
+  // v9: 'blocked_by_ml' no se cuenta aca. La cola ya marca esos casos en stock_out_of_sync, el
+  // reconciliador los reintenta por una hermana, y ml_stock_out_of_sync los reporta con el
+  // estado ACTUAL. Contarlos aca los duplicaba y los dejaba 24 h aunque ya estuvieran resueltos.
+  const { data: errs } = await supabase.from('ml_sync_queue').select('id, operation, variant_id, last_error, created_at').eq('status', 'error').gte('created_at', hoursAgo(24)).neq('last_error', 'blocked_by_ml');
   if (errs?.length) {
     f.push({ key: 'ml_queue_errors', check_id: 'ml_queue_errors', severity: 'crit', title: `${errs.length} operacion(es) hacia ML fallaron en las ultimas 24 h`, detail: { total: errs.length, muestra: errs.slice(0, 10) }, fingerprint: String(errs.length) });
   }
-  // 'pending' vencido hace rato = el cron jobid 13 no esta corriendo, o la funcion se cae al arrancar.
   const { data: stuck } = await supabase.from('ml_sync_queue').select('id').eq('status', 'pending').lt('scheduled_for', hoursAgo(0.25)).limit(500);
   if (stuck && stuck.length > 0) {
     f.push({ key: 'ml_queue_stuck', check_id: 'ml_queue_stuck', severity: 'crit', title: `La cola de ML esta trabada: ${stuck.length} pendiente(s) hace mas de 15 min`, detail: { pendientes: stuck.length }, fingerprint: stuck.length > 50 ? 'muchos' : 'pocos' });
   }
-  // 'processing' viejo = una corrida murio a mitad y dejo filas tomadas que nadie va a procesar.
   const { data: zombie } = await supabase.from('ml_sync_queue').select('id').eq('status', 'processing').lt('created_at', hoursAgo(1)).limit(500);
   if (zombie && zombie.length > 0) {
     f.push({ key: 'ml_queue_zombie', check_id: 'ml_queue_zombie', severity: 'warn', title: `${zombie.length} fila(s) de la cola de ML quedaron colgadas en 'processing'`, detail: { colgadas: zombie.length }, fingerprint: String(zombie.length) });
@@ -285,19 +300,28 @@ async function checkSyncQueue(): Promise<Finding[]> {
   return f;
 }
 
+// El reconciliador de stock de ML es la red de seguridad que compara contra ML de verdad.
+// Si deja de correr volvemos al estado en que se vendio algo sin stock, asi que se vigila.
+async function checkStockReconcile(): Promise<Finding[]> {
+  const f: Finding[] = [];
+  const { data: runs } = await supabase.from('ml_stock_reconcile_runs').select('id, ok, dry_run, mismatches, fixed, unfixable, error, created_at').eq('dry_run', false).order('id', { ascending: false }).limit(5);
+  if (!runs?.length) {
+    f.push({ key: 'reconcile_never_ran', check_id: 'ml_reconcile', severity: 'crit', title: 'El reconciliador de stock de ML no corrio nunca', detail: { esperado: 'cada hora (cron ml-stock-reconcile-hourly)' }, fingerprint: 'never' });
+    return f;
+  }
+  const last: any = runs[0];
+  const hs = (Date.now() - new Date(last.created_at).getTime()) / 3600_000;
+  if (hs > 3) {
+    f.push({ key: 'reconcile_stale', check_id: 'ml_reconcile', severity: 'crit', title: `El reconciliador de stock de ML no corre hace ${Math.round(hs)} h`, detail: { ultima: last.created_at, por_que: 'Es lo unico que compara el stock contra ML de verdad. Sin el, una publicacion puede quedar vendiendo algo que no existe sin que nadie se entere.' }, fingerprint: hs > 12 ? 'muy_viejo' : 'viejo' });
+  }
+  const failed = (runs as any[]).filter(r => r.ok === false);
+  if (failed.length) {
+    f.push({ key: 'reconcile_failed', check_id: 'ml_reconcile', severity: 'crit', title: `${failed.length} de las ultimas ${runs.length} corridas del reconciliador de stock fallaron`, detail: { muestra: failed.slice(0, 3).map((r: any) => ({ id: r.id, cuando: r.created_at, error: r.error })) }, fingerprint: String(failed.length) });
+  }
+  return f;
+}
+
 // El feed de CDR es la fuente de precio y stock de casi todo el catalogo.
-// v5: reescrito para el sync INCREMENTAL (ver historial arriba).
-// v6 (2026-09-21): DOS AGUJEROS que dejaron pasar 18 dias sin altas sin un solo aviso.
-//  a) No habia NINGUN chequeo de altas. El 03/09 dejaron de entrar productos nuevos (el
-//     feed completo iba en modo 'update-prices', que los detecta y NO los inserta) y el
-//     reporte diario siguio diciendo "todo en orden" 18 dias. Lo detecto el CLIENTE, no
-//     nosotros. Ahora se vigila la señal exacta que estuvo a la vista 36 corridas
-//     seguidas: to_insert > 0 con inserted = 0. Y de red, los dias sin un alta.
-//  b) cdr_failed_runs miraba "las ultimas 20 corridas" SIN distinguir el tipo. Con 288
-//     incrementales por dia, 20 corridas = 90 MINUTOS, asi que un full feed que corre
-//     cada 12 h no cae NUNCA en esa ventana. El full feed venia fallando desde el 18/09
-//     ('content_update: null value in column features') y no se reporto una sola vez.
-//     Ahora los full feed se miran aparte, sobre sus propias ultimas corridas.
 async function checkCdrSync(): Promise<Finding[]> {
   const f: Finding[] = [];
   const { data: runs } = await supabase.from('cdr_sync_run_history').select('id, mode, ok, fetched, errors, report, created_at').order('id', { ascending: false }).limit(20);
@@ -307,22 +331,16 @@ async function checkCdrSync(): Promise<Finding[]> {
   }
   const last: any = runs[0];
   const mins = Math.round((Date.now() - new Date(last.created_at).getTime()) / 60000);
-  // cron cada 5 min: 45 sin correr es que se apago o se cuelga.
   if (mins > 45) {
     f.push({ key: 'cdr_stale', check_id: 'cdr_sync', severity: 'crit', title: `El sync de CDR no corre hace ${mins} min`, detail: { ultima: last.created_at, mode: last.mode }, fingerprint: mins > 180 ? 'muy_viejo' : 'viejo' });
   }
-  // Los rate limit de CDR NO son un fallo nuestro: son autolimitantes (se liberan al pasar
-  // la hora) y el cursor no avanza, asi que no se pierde ningun cambio.
-  // v6: esta ventana son ~90 min de corridas INCREMENTALES. Sirve para ver que el tick de
-  // 5 min este sano, y para nada mas: los full feed se chequean por separado mas abajo.
   const failed = (runs as any[]).filter(r => r.ok === false && !r.report?.rate_limited);
   if (failed.length) {
     f.push({ key: 'cdr_failed_runs', check_id: 'cdr_sync', severity: 'warn', title: `${failed.length} de las ultimas 20 corridas de CDR (tick de 5 min) fallaron`, detail: { muestra: failed.slice(0, 5).map((r: any) => ({ id: r.id, mode: r.mode, errors: r.errors })) }, fingerprint: String(failed.length) });
   }
 
   // ---- Todo lo que sigue mira el FULL FEED, que es otra cosa --------------------------
-  // Con una corrida por hora, estas 8 son las ultimas 8 horas. Mirarlas mezcladas con los
-  // incrementales es precisamente lo que oculto el fallo del 18/09.
+  // Con una corrida por hora, estas 8 son las ultimas 8 horas.
   const { data: fullRuns, error: fullErr } = await supabase
     .from('cdr_sync_run_history')
     .select('id, fetched, ok, errors, report, created_at')
@@ -330,41 +348,33 @@ async function checkCdrSync(): Promise<Finding[]> {
     .order('id', { ascending: false })
     .limit(8);
 
-  // Si la consulta falla NO se asume lo peor: decir "no hay full feed" cuando en realidad
-  // no pudimos mirar seria una falsa alarma critica. Se reporta como chequeo roto.
   if (fullErr) {
     f.push({ key: 'cdr_full_feed_check_failed', check_id: 'cdr_sync', severity: 'warn', title: 'No se pudo verificar si el catalogo completo de CDR esta corriendo', detail: { error: String(fullErr.message).slice(0, 300) }, fingerprint: 'query_error' });
     return f;
   }
 
-  // v6: full feeds que terminaron mal. ANTES no se miraban nunca (quedaban fuera de la
-  // ventana de 20 corridas) y por eso el bug de `features` estuvo 3 dias sin reportarse.
   const fullFailed = (fullRuns ?? []).filter((r: any) => r.ok === false && !r.report?.rate_limited);
   if (fullFailed.length) {
     f.push({
       key: 'cdr_full_feed_failed', check_id: 'cdr_sync', severity: 'crit',
       title: `${fullFailed.length} de las ultimas ${(fullRuns ?? []).length} corridas de catalogo COMPLETO de CDR fallaron`,
-      detail: { por_que: 'El full feed es el unico que da de alta y el unico que reconcilia el stock. Si falla, el tick de 5 min no lo suple ni lo denuncia.', muestra: fullFailed.slice(0, 4).map((r: any) => ({ id: r.id, cuando: r.created_at, errors: r.errors })) },
+      detail: { por_que: 'El full feed es el unico que da de alta, el unico que reconcilia el stock y el unico que trae los CAMBIOS de stock. Si falla, el tick de 5 min no lo suple ni lo denuncia.', muestra: fullFailed.slice(0, 4).map((r: any) => ({ id: r.id, cuando: r.created_at, errors: r.errors })) },
       fingerprint: String(fullFailed.length),
     });
   }
 
   const lastFull: any = (fullRuns ?? []).find((r: any) => r.ok !== false);
   if (!lastFull) {
-    f.push({ key: 'cdr_no_full_feed', check_id: 'cdr_sync', severity: 'crit', title: 'No hay ninguna corrida de catalogo COMPLETO de CDR — no entran altas ni se reconcilia el stock', detail: { nota: 'Sin full feed no se apaga el stock de los productos que CDR deja de mandar, y tampoco entra ningun producto nuevo.', esperado: 'cada hora (cron cdr-sync-fullfeed, minuto 10)' }, fingerprint: 'never' });
+    f.push({ key: 'cdr_no_full_feed', check_id: 'cdr_sync', severity: 'crit', title: 'No hay ninguna corrida de catalogo COMPLETO de CDR - el stock no se actualiza', detail: { nota: 'El feed completo es el unico que trae los cambios de stock, el unico que apaga el de los productos que CDR deja de mandar y el unico que da de alta.', esperado: 'cada hora (cron cdr-sync-fullfeed, minuto 10)' }, fingerprint: 'never' });
     return f;
   }
 
   const hs = Math.round((Date.now() - new Date(lastFull.created_at).getTime()) / 3600_000);
   if (hs >= FULL_FEED_MAX_HOURS) {
-    f.push({ key: 'cdr_full_feed_stale', check_id: 'cdr_sync', severity: 'crit', title: `Hace ${hs} h que no corre el catalogo completo de CDR — el stock puede quedar congelado`, detail: { ultimo_full_feed: lastFull.created_at, esperado: 'cada hora (minuto 10)', por_que: 'Es la unica corrida que apaga el stock de productos que CDR dejo de mandar, y CDR los devuelve solo durante 24 h.' }, fingerprint: hs >= 26 ? 'critico' : 'atrasado' });
+    f.push({ key: 'cdr_full_feed_stale', check_id: 'cdr_sync', severity: 'crit', title: `Hace ${hs} h que no corre el catalogo completo de CDR - el stock queda congelado`, detail: { ultimo_full_feed: lastFull.created_at, esperado: 'cada hora (minuto 10)', por_que: 'Es la unica corrida que trae los cambios de stock de CDR: el incremental no los trae (verificado 22/09/2026).' }, fingerprint: hs >= 6 ? 'critico' : 'atrasado' });
   }
 
   // ---- ALTAS: la señal que se nos paso 18 dias ----------------------------------------
-  // El feed completo es el UNICO lugar donde CDR muestra los productos nuevos: el
-  // incremental no los trae (verificado; docs/cdr/README.md "Hallazgo 5"). Si una corrida
-  // completa dice "hay 55 para insertar" y despues inserta 0, las altas estan rotas, por
-  // mas que la corrida diga ok: true.
   const ti = Number(lastFull.report?.to_insert ?? 0);
   const ins = Number(lastFull.report?.inserted ?? 0);
   if (ti > 0 && ins === 0) {
@@ -380,13 +390,29 @@ async function checkCdrSync(): Promise<Finding[]> {
     });
   }
 
-  // Red de seguridad por si el fallo viene de otro lado (el WS deja de mandar altas, el
-  // tope por corrida queda en 0, la corrida muere antes de insertar): si hace dias que no
-  // entra NADA, hay que mirarlo igual.
+  // v9: ¿la ultima corrida completa CUADRA? Cada codigo del feed tiene que ser un producto que
+  // ya conocemos (to_update) o uno deshabilitado (disabled_in_feed), sin nada para insertar ni
+  // backlog. Si cuadra, la deteccion de altas esta sana y "no entro nada" es que CDR no publico.
+  // Si NO cuadra (o faltan los campos), no se sabe, y se avisa como antes.
+  const rep = lastFull.report ?? {};
+  const unicos = Number(rep.fetched_unique ?? rep.fetched ?? NaN);
+  const contabilizados = Number(rep.to_update ?? NaN) + Number(rep.disabled_in_feed ?? NaN);
+  const feedCuadra = Number.isFinite(unicos) && Number.isFinite(contabilizados) && unicos > 0
+    && unicos === contabilizados && ti === 0 && Number(rep.insert_backlog ?? 0) === 0;
+
   const { data: lastNew } = await supabase.from('products').select('created_at').eq('source', 'cdr').order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (lastNew?.created_at) {
     const dias = Math.floor((Date.now() - new Date(lastNew.created_at).getTime()) / 86_400_000);
-    if (dias >= NO_NEW_PRODUCTS_MAX_DAYS) {
+    if (feedCuadra) {
+      if (dias >= NO_NEW_PRODUCTS_CLEAN_FEED_DAYS) {
+        f.push({
+          key: 'cdr_no_new_products', check_id: 'cdr_sync', severity: 'warn',
+          title: `Hace ${dias} dias que CDR no publica productos nuevos (nuestro sync esta sano)`,
+          detail: { ultima_alta: lastNew.created_at, feed: { codigos: unicos, conocidos: rep.to_update, deshabilitados: rep.disabled_in_feed, nuevos: 0 }, nota: 'El catalogo completo corre bien y cada codigo que manda CDR ya esta cargado. Si esto sorprende, confirmar con CDR que siga dando de alta.' },
+          fingerprint: 'feed_sano',
+        });
+      }
+    } else if (dias >= NO_NEW_PRODUCTS_MAX_DAYS) {
       f.push({
         key: 'cdr_no_new_products', check_id: 'cdr_sync', severity: dias >= 7 ? 'crit' : 'warn',
         title: `Hace ${dias} dias que no entra un producto nuevo de CDR`,
@@ -396,8 +422,6 @@ async function checkCdrSync(): Promise<Finding[]> {
     }
   }
 
-  // Caida brusca del feed COMPLETO: se comparan full contra full, que es lo unico
-  // comparable. Un incremental trae 0-60 productos por diseño y no dice nada del catalogo.
   const counts = (fullRuns ?? []).map((r: any) => Number(r.fetched ?? 0)).filter(n => n > 0).sort((a, b) => a - b);
   if (counts.length >= 3) {
     const median = counts[Math.floor(counts.length / 2)];
@@ -424,12 +448,6 @@ async function checkOrders(): Promise<Finding[]> {
     for (const r of rows) withItems.add(r.order_id);
   }
 
-  // Sin items = sin costo, sin ganancia y sin descuento de stock. Fue un bug real en ML
-  // (ver rfstore-ml-ventas-de-catalogo-sin-items): las ventas de catalogo entraban vacias.
-  // NO cuentan las ventas manuales por concepto (concept_id) ni por descripcion libre
-  // (manual_description): esas nacen sin productos a proposito, no es un agujero.
-  // Ademas 2 h de gracia: una venta de ML recien entrada todavia puede estar completandose
-  // por el reproceso del webhook, y avisar a los 5 minutos seria una falsa alarma.
   const graceMs = 2 * 3600_000;
   const vacias = orders.filter((o: any) => o.payment_status === 'paid' && !withItems.has(o.id)
     && !o.concept_id && !o.manual_description
@@ -437,8 +455,6 @@ async function checkOrders(): Promise<Finding[]> {
   if (vacias.length) {
     f.push({ key: 'orders_paid_no_items', check_id: 'orders', severity: 'crit', title: `${vacias.length} orden(es) cobradas quedaron SIN productos cargados`, detail: { ordenes: vacias.slice(0, 10).map((o: any) => ({ id: o.id, channel: o.channel, total: o.total_amount, fecha: o.created_at })) }, fingerprint: String(vacias.length) });
   }
-  // Concretada pero el pago figura pendiente: o no cobramos, o falta confirmarlo (y el cliente
-  // nunca recibio el mail de pago confirmado). Ver rfstore-email-formspree.
   const desalineadas = orders.filter((o: any) => o.status === 'Concretado' && o.payment_status === 'pending' && new Date(o.created_at).getTime() < Date.now() - 24 * 3600_000);
   if (desalineadas.length) {
     f.push({ key: 'orders_payment_mismatch', check_id: 'orders', severity: 'warn', title: `${desalineadas.length} orden(es) Concretadas siguen con el pago sin confirmar`, detail: { ordenes: desalineadas.slice(0, 10).map((o: any) => ({ id: o.id, metodo: o.payment_method, fecha: o.created_at })) }, fingerprint: String(desalineadas.length) });
@@ -453,7 +469,6 @@ async function checkFxRate(): Promise<Finding[]> {
   const j: any = await r.json().catch(() => ({}));
   const rate = Number(j?.rate);
   if (!rate || rate <= 0) return [{ key: 'fx_invalid', check_id: 'fx', severity: 'crit', title: 'La cotizacion del dolar devolvio un valor invalido', detail: j, fingerprint: 'invalid' }];
-  // Un salto grande casi siempre es la fuente rota, no el mercado.
   if (rate < 25 || rate > 70) return [{ key: 'fx_out_of_range', check_id: 'fx', severity: 'crit', title: `La cotizacion del dolar dio ${rate}, fuera de todo rango razonable`, detail: j, fingerprint: String(Math.round(rate)) }];
   return [];
 }
@@ -464,13 +479,10 @@ async function checkFxRate(): Promise<Finding[]> {
 
 function renderEmail(nuevas: any[], resueltas: any[], recordatorio: any[]): { subject: string; html: string; text: string } {
   const crit = nuevas.filter(n => n.severity === 'crit').length;
-  // El asunto lo decide lo mas urgente que haya. Si no hay NADA igual sale el mail: en un
-  // reporte diario el silencio no puede significar dos cosas ("todo bien" y "el vigilante
-  // se murio"), asi que el dia bueno tiene que decir explicitamente que esta todo bien.
   const subject = nuevas.length
-    ? `${crit ? '🔴' : '🟠'} RF Store: ${nuevas.length} problema${nuevas.length > 1 ? 's' : ''} nuevo${nuevas.length > 1 ? 's' : ''}`
+    ? `${crit ? '\u{1F534}' : '\u{1F7E0}'} RF Store: ${nuevas.length} problema${nuevas.length > 1 ? 's' : ''} nuevo${nuevas.length > 1 ? 's' : ''}`
     : recordatorio.length
-      ? `🟠 RF Store: ${recordatorio.length} problema${recordatorio.length > 1 ? 's' : ''} sin resolver`
+      ? `\u{1F7E0} RF Store: ${recordatorio.length} problema${recordatorio.length > 1 ? 's' : ''} sin resolver`
       : resueltas.length
         ? `✅ RF Store: ${resueltas.length} problema${resueltas.length > 1 ? 's' : ''} resuelto${resueltas.length > 1 ? 's' : ''}`
         : '✅ RF Store: todo en orden';
@@ -484,14 +496,15 @@ function renderEmail(nuevas: any[], resueltas: any[], recordatorio: any[]): { su
     ? `<h3 style="font:600 15px/1.4 system-ui;margin:22px 0 10px;color:#111">${t}</h3><ul style="padding-left:18px;margin:0">${rows.map(r => li(r, icon)).join('')}</ul>` : '';
 
   const html = `<div style="max-width:720px;margin:0 auto;padding:24px;font:14px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:#111">
-    <h2 style="font:700 19px/1.3 system-ui;margin:0 0 4px">Reporte de salud — RF Store</h2>
+    <h2 style="font:700 19px/1.3 system-ui;margin:0 0 4px">Reporte de salud - RF Store</h2>
     <div style="color:#777;font-size:13px">${new Date().toLocaleString('es-UY', { timeZone: 'America/Montevideo' })}</div>
-    ${nuevas.length || recordatorio.length || resueltas.length ? '' : '<p style="margin:22px 0 0;font-size:15px">Sin novedades: los 5 chequeos pasaron limpios.</p>'}
-    ${section('Nuevo desde el reporte anterior', nuevas, '🔴')}
-    ${section('Sigue sin resolverse', recordatorio, '🟠')}
+    ${nuevas.length || recordatorio.length || resueltas.length ? '' : '<p style="margin:22px 0 0;font-size:15px">Sin novedades: los 7 chequeos pasaron limpios.</p>'}
+    ${section('Nuevo desde el reporte anterior', nuevas, '\u{1F534}')}
+    ${section('Sigue sin resolverse', recordatorio, '\u{1F7E0}')}
     ${section('Resuelto', resueltas, '✅')}
     <p style="color:#888;font-size:12px;margin-top:28px;border-top:1px solid #eee;padding-top:12px">
       Reporte diario, 9:00. Los chequeos corren cada hora; el mail se manda una sola vez por dia con todo junto.<br>
+      Las publicaciones vendiendo sin stock que el sistema no pudo corregir avisan aparte, al momento.<br>
       Cambiar destinatario: <code>app_settings.alerts_notify_email</code>.
     </p></div>`;
 
@@ -510,8 +523,9 @@ function escapeHtml(s: string): string {
 async function run(force = false) {
   const checks: Array<[string, () => Promise<Finding[]>]> = [
     ['mercadolibre', checkMercadoLibre],
-    ['sync_queue', checkSyncQueue],
     ['stock_out_of_sync', checkStockOutOfSync],
+    ['sync_queue', checkSyncQueue],
+    ['stock_reconcile', checkStockReconcile],
     ['cdr_sync', checkCdrSync],
     ['orders', checkOrders],
     ['fx', checkFxRate],
@@ -529,8 +543,6 @@ async function run(force = false) {
     }
   }
 
-  // Estado ANTES de esta corrida. Se traen tambien las resueltas recientes: si una incidencia
-  // ya cerrada vuelve a aparecer no es "nueva", es una recaida, y hay que decirlo asi.
   const { data: prevRows } = await supabase.from('health_alerts_state').select('*');
   const prev = new Map((prevRows ?? []).map((r: any) => [r.key, r]));
   const seen = new Set(findings.map(f => f.key));
@@ -539,11 +551,8 @@ async function run(force = false) {
   for (const f of findings) {
     const before: any = prev.get(f.key);
     if (!before || before.resolved_at) {
-      // Nueva o recaida: en ambos casos arranca un ciclo nuevo, con first_seen_at de hoy.
       await supabase.from('health_alerts_state').upsert({ key: f.key, check_id: f.check_id, severity: f.severity, title: f.title, detail: f.detail, fingerprint: f.fingerprint, first_seen_at: ts, last_seen_at: ts, resolved_at: null });
     } else {
-      // Sigue abierta: se refresca el contenido pero se CONSERVA first_seen_at, que es el dato
-      // que responde "¿desde cuando esta rota?" en el reporte.
       await supabase.from('health_alerts_state').update({ severity: f.severity, title: f.title, detail: f.detail, fingerprint: f.fingerprint, last_seen_at: ts }).eq('key', f.key);
     }
   }
@@ -553,11 +562,6 @@ async function run(force = false) {
     await supabase.from('health_alerts_state').update({ resolved_at: ts }).eq('key', key);
   }
 
-  // ---- Reporte: UNA vez por dia, 9:00 de Uruguay ----
-  // El dueño pidio explicitamente 1 mail por dia con todo junto ("no quiero que me atomice"),
-  // asi que la deteccion es horaria pero el aviso se acumula. Se manda cuando ya paso la hora
-  // del reporte y el ultimo que salio NO fue de hoy; si un dia el cron no corre a las 9, la
-  // primera corrida posterior lo manda igual (por eso se compara el DIA, no la hora exacta).
   const { data: lastDigestRow } = await supabase.from('app_settings').select('value').eq('key', 'health_alerts_last_digest').maybeSingle();
   const lastDigestAt: string | null = (lastDigestRow?.value as any)?.at ?? null;
   const lastDigestDay: string | null = (lastDigestRow?.value as any)?.uy_day ?? null;
@@ -573,7 +577,6 @@ async function run(force = false) {
     const { data: current } = await supabase.from('health_alerts_state').select('*');
     for (const r of (current ?? []) as any[]) {
       if (!r.resolved_at) {
-        // "Nuevo" = aparecio despues del ultimo reporte. Lo demas ya lo venia viendo.
         (new Date(r.first_seen_at).getTime() > cutoff ? nuevas : recordatorio).push(r);
       } else if (new Date(r.resolved_at).getTime() > cutoff) {
         resueltas.push(r);
@@ -593,11 +596,8 @@ async function run(force = false) {
     } else {
       console.warn('RESEND_API_KEY no configurada - no se envia mail');
     }
-    // Solo se marca el reporte como enviado si REALMENTE salio: si Resend falla, el proximo
-    // intento vuelve a armarlo con la misma ventana en vez de saltearse el dia.
     if (emailed) {
       await supabase.from('app_settings').upsert({ key: 'health_alerts_last_digest', value: { at: ts, uy_day: uyDay } as any, updated_at: ts });
-      // Las resueltas ya reportadas no hacen falta mas; se guardan 30 dias por si sirven de historial.
       await supabase.from('health_alerts_state').delete().not('resolved_at', 'is', null).lt('resolved_at', hoursAgo(24 * 30));
     }
   }
@@ -610,8 +610,6 @@ async function run(force = false) {
 
 Deno.serve(async (req: Request) => {
   const qs = new URL(req.url).searchParams;
-  // ?sync=1 devuelve el resultado en vez de disparar y cortar (para probar a mano).
-  // ?force=1 manda el reporte ya, sin esperar a la hora del dia (tambien para probar).
   const force = qs.get('force') === '1';
   if (qs.get('sync') === '1') {
     try { return new Response(JSON.stringify(await run(force)), { status: 200, headers: { 'Content-Type': 'application/json' } }); }

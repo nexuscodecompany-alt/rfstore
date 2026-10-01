@@ -142,7 +142,7 @@ export const AccountProfilePage = () => {
 						type='tel'
 						inputMode='tel'
 						className='input-base w-full'
-						placeholder='094 116 299'
+						placeholder='098 732 327'
 						value={form.phone}
 						onChange={e => setForm({ ...form, phone: e.target.value })}
 					/>

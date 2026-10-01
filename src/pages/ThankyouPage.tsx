@@ -357,7 +357,7 @@ const TransferDetails = ({ info, orderId, totalAmount, totalUyu, formatUyu }: Tr
 };
 
 const SALES_EMAIL = 'ventas@rfstore.uy';
-const SALES_WHATSAPP = '59894116299';
+const SALES_WHATSAPP = '59898732327';
 
 const PaymentProofBlock = ({ orderId }: { orderId: number }) => {
 	const [file, setFile] = useState<File | null>(null);
@@ -447,7 +447,7 @@ const PaymentProofBlock = ({ orderId }: { orderId: number }) => {
 			</div>
 
 			<p className='text-[11px] text-amber-800/80 text-center'>
-				Mail: <strong>{SALES_EMAIL}</strong> · WhatsApp: <strong>094 116 299</strong>
+				Mail: <strong>{SALES_EMAIL}</strong> · WhatsApp: <strong>098 732 327</strong>
 			</p>
 		</div>
 	);

@@ -1,7 +1,7 @@
 import { FaWhatsapp } from 'react-icons/fa';
 
 export default function WhatsAppButton() {
-	const phoneNumber = '59894116299';
+	const phoneNumber = '59898732327';
 	const message =
 		'Hola, me gustaría consultar sobre sus productos que vi desde la web de RF STORE.';
 

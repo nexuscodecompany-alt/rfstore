@@ -48,7 +48,7 @@ export const Banner = () => {
 						<HiArrowRight />
 					</Link>
 					<a
-						href={`https://wa.me/59894116299?text=${encodeURIComponent('Hola, me gustaría solicitar asesoramiento.')}`}
+						href={`https://wa.me/59898732327?text=${encodeURIComponent('Hola, me gustaría solicitar asesoramiento.')}`}
 						target='_blank'
 						rel='noopener noreferrer'
 						className='btn-ghost-dark px-6 py-3'

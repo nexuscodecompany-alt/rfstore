@@ -195,7 +195,7 @@ export const AboutPage = () => {
 										Te respondemos al toque en horario comercial.
 									</p>
 									<a
-										href='https://wa.me/59894116299'
+										href='https://wa.me/59898732327'
 										target='_blank'
 										rel='noreferrer'
 										className='inline-flex items-center gap-2 px-4 py-2 mt-2 rounded-lg bg-white text-emerald-700 font-semibold text-sm hover:bg-emerald-50 transition-colors'
@@ -235,8 +235,8 @@ export const AboutPage = () => {
 									<span className='grid place-items-center w-9 h-9 rounded-lg bg-brand-50 text-brand-700'>
 										<FaPhoneAlt size={14} />
 									</span>
-									<a href='tel:+59894116299' className='hover:text-brand-700'>
-										+598 94 116 299
+									<a href='tel:+59898732327' className='hover:text-brand-700'>
+										+598 98 732 327
 									</a>
 								</li>
 								<li className='flex items-center gap-3'>

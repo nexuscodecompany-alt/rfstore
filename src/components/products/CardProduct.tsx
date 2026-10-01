@@ -9,7 +9,7 @@ import { useCompareAtConfig, usePaymentsEnabled, usePricingConfig } from '../../
 import toast from 'react-hot-toast';
 import { trackAddToCart } from '../../lib/pixel';
 
-const WHATSAPP_NUMBER = '59894116299';
+const WHATSAPP_NUMBER = '59898732327';
 const whatsappLinkFor = (productName: string) =>
 	`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
 		`Hola, me interesa el producto "${productName}". ¿Está disponible?`

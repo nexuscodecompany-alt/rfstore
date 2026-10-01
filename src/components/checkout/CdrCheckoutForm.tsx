@@ -679,7 +679,7 @@ export const CdrCheckoutForm = () => {
 					type='tel'
 					inputMode='tel'
 					className='border rounded p-2 w-full invalid:border-rose-400'
-					placeholder='Teléfono * (ej: 094 116 299)'
+					placeholder='Teléfono * (ej: 098 732 327)'
 					value={form.phone}
 					onChange={e => setForm({ ...form, phone: e.target.value })}
 					required

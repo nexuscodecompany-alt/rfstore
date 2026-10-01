@@ -39,8 +39,8 @@ const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY') ?? '';
 const FROM_EMAIL = Deno.env.get('FROM_EMAIL') ?? 'pedidos@rfstore.uy';
 const ADMIN_EMAIL = Deno.env.get('ADMIN_EMAIL') ?? '';
 const SALES_EMAIL = 'ventas@rfstore.uy';
-const SALES_WHATSAPP_LABEL = '094 116 299';
-const SALES_WHATSAPP_LINK = '59894116299';
+const SALES_WHATSAPP_LABEL = '098 732 327';
+const SALES_WHATSAPP_LINK = '59898732327';
 const SITE_URL = Deno.env.get('SITE_URL') ?? 'https://rfstore.uy';
 
 const corsHeaders = {

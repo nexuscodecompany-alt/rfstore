@@ -79,7 +79,7 @@ export const CellPhonePage = () => {
   // CDR o manual habilitado por el admin -> carrito + pasarela. Si no, consulta.
   const buyOnline = !!product && canBuyOnline(product, paymentsEnabled);
   const whatsappHref = product
-    ? `https://wa.me/59894116299?text=${encodeURIComponent(
+    ? `https://wa.me/59898732327?text=${encodeURIComponent(
         `Hola, me interesa el producto "${product.name}". ¿Está disponible?`
       )}`
     : '#';
