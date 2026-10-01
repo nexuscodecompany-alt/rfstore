@@ -180,11 +180,11 @@ const NetProfitCard = ({
 				<span className='text-xs text-ink-400'>{num(orders)} ventas</span>
 			</div>
 			<p className='mt-1 text-3xl font-extrabold text-emerald-600'>
-				{formatMoneyCur(net, currency)}
+				{formatMoneyCur(revenue, currency)}
 			</p>
 			<p className='text-xs text-ink-500'>
-				ganancia neta real
-				{revenue > 0 ? ` · ${netPct.toFixed(1)}% sobre venta` : ''}
+				vendido · ganancia neta {formatMoneyCur(net, currency)}
+				{revenue > 0 ? ` (${netPct.toFixed(1)}% sobre venta)` : ''}
 			</p>
 			<div className='mt-4 space-y-1 border-t border-emerald-100 pt-3 text-xs'>
 				<Line label='Vendido' value={revenue} />
@@ -227,18 +227,18 @@ const CombinedTotalCard = ({
 		<div className='rounded-2xl bg-gradient-to-br from-emerald-600 to-emerald-700 p-5 text-white shadow-card-hover'>
 			<div className='flex items-center justify-between'>
 				<span className='text-sm font-semibold'>
-					Ganancia neta TOTAL (todo convertido a pesos)
+					Total vendido (todo convertido a pesos)
 				</span>
 				<span className='text-xs text-emerald-100'>
 					{num(o.uyu_orders + o.usd_orders)} ventas
 				</span>
 			</div>
 			<p className='mt-1 text-4xl font-extrabold tracking-tight'>
-				{formatMoneyCur(totalNet, 'UYU')}
+				{formatMoneyCur(totalRev, 'UYU')}
 			</p>
 			<p className='text-xs text-emerald-100'>
-				{totalRev > 0 ? `${pct.toFixed(1)}% sobre venta · ` : ''}
-				vendido {formatMoneyCur(totalRev, 'UYU')}
+				ganancia neta {formatMoneyCur(totalNet, 'UYU')}
+				{totalRev > 0 ? ` · ${pct.toFixed(1)}% sobre venta` : ''}
 			</p>
 			{hasUsd && (
 				<p className='mt-2 border-t border-white/20 pt-2 text-xs text-emerald-50'>
@@ -577,7 +577,7 @@ export const DashboardHomePage = () => {
 					<section className='space-y-3'>
 						<div className='text-center'>
 							<h2 className='text-lg font-bold text-ink-900'>
-								Ganancia
+								Ventas y ganancia
 							</h2>
 							<p className='text-xs text-ink-500'>
 								Neta real = venta − costo − comisiones − envíos − otros.
