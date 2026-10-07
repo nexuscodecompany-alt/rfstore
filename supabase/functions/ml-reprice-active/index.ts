@@ -4,6 +4,10 @@
 // por cada una en ml_sync_queue. El cron ml-process-sync-queue las empuja a ML (20/min).
 // Disparo manual desde el panel ('Repreciar publicaciones activas').
 //
+// v6 (2026-10-07): acepta body.source. Ademas lo llama el cron ml_reprice_cost_tick con
+// los product_ids cuyo costo (price_usd) cambio: antes, si CDR subia el costo, ML quedaba
+// con el precio viejo hasta el proximo reprecio manual (venta a perdida de CAM584).
+//
 // v5 (2026-08-29): PAGINADO. La consulta de mappings no tenia .range() y PostgREST
 // corta en 1000 filas sin dar error: con 1205 publicaciones vivas (676 activas + 529
 // pausadas) el repricing dejaba ~205 con el precio viejo, y cuales quedaban afuera no
@@ -94,6 +98,11 @@ Deno.serve(async (req: Request) => {
     const productIds: string[] = Array.isArray(body?.product_ids)
       ? body.product_ids.filter((x: any) => typeof x === 'string' && x.length > 0)
       : [];
+    // body.source: quien pidio el reprecio, queda en el payload de la cola (ej. 'cost_change'
+    // cuando lo dispara el cron ml_reprice_cost_tick porque CDR cambio el costo).
+    const sourceTag = typeof body?.source === 'string' && body.source.length > 0 && body.source.length <= 40
+      ? body.source
+      : (productIds.length > 0 ? 'margin_override' : 'reprice');
 
     const { data: settingsRows } = await supabase.from('app_settings').select('key, value').in('key', ['ml_markup_percent', 'ml_usd_threshold', 'pricing_config', 'ml_pricing_config']);
     const settings = new Map((settingsRows ?? []).map((r: any) => [r.key, r.value]));
@@ -161,7 +170,7 @@ Deno.serve(async (req: Request) => {
       if (calc.currency_id === 'UYU' && Number((m as any).last_known_price_uyu) === calc.price) { skippedSamePrice++; continue; }
       if (sample.length < 10) sample.push({ variant_id: (m as any).variant_id, cost, margin, price: calc.price, currency: calc.currency_id });
       if ((m as any).status === 'paused') enqueuedPaused++;
-      const payload = { new_price: calc.price, currency_id: calc.currency_id, source: productIds.length > 0 ? 'margin_override' : 'reprice' };
+      const payload = { new_price: calc.price, currency_id: calc.currency_id, source: sourceTag };
       if (pendingId !== undefined) {
         toRepoint.push({ id: pendingId, payload });
         continue;
@@ -194,6 +203,17 @@ Deno.serve(async (req: Request) => {
         .eq('status', 'pending');
       if (updErr) throw new Error(`repoint: ${updErr.message}`);
       repointed++;
+    }
+
+    // Vino del cron por cambio de costo: recien ahora que el precio quedo encolado se
+    // borran los anotados. dispatched_at no nulo = no volvio a cambiar el costo desde que
+    // el cron los mando (el trigger lo resetea), asi no se pierde un cambio posterior.
+    if (sourceTag === 'cost_change' && productIds.length > 0) {
+      const { error: delErr } = await supabase.from('ml_reprice_pending')
+        .delete()
+        .in('product_id', productIds)
+        .not('dispatched_at', 'is', null);
+      if (delErr) throw new Error(`clear_pending: ${delErr.message}`);
     }
 
     return json({ ok: true, active: activeCount, paused: pausedCount, enqueued, repointed, enqueuedPaused, skippedSamePrice, skippedPending, skippedNoCost, note: 'La cola se procesa ~20/min y empuja los precios a ML. Mira el progreso en ml_sync_log.' });
