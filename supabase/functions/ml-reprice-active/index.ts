@@ -4,6 +4,9 @@
 // por cada una en ml_sync_queue. El cron ml-process-sync-queue las empuja a ML (20/min).
 // Disparo manual desde el panel ('Repreciar publicaciones activas').
 //
+// v7 (2026-10-07): body.only_currency + body.min_change_pct para el cron por dolar
+// (ml_reprice_fx_tick): las publicaciones en UYU se calculan con el dolar del dia.
+//
 // v6 (2026-10-07): acepta body.source. Ademas lo llama el cron ml_reprice_cost_tick con
 // los product_ids cuyo costo (price_usd) cambio: antes, si CDR subia el costo, ML quedaba
 // con el precio viejo hasta el proximo reprecio manual (venta a perdida de CAM584).
@@ -103,6 +106,12 @@ Deno.serve(async (req: Request) => {
     const sourceTag = typeof body?.source === 'string' && body.source.length > 0 && body.source.length <= 40
       ? body.source
       : (productIds.length > 0 ? 'margin_override' : 'reprice');
+    // only_currency: repreciar solo las que quedan en esa moneda. min_change_pct: no encolar
+    // si el precio nuevo difiere del ultimo empujado menos que ese %. Los usa el cron
+    // ml_reprice_fx_tick (only_currency='UYU'): esas dependen del dolar, y sin tolerancia
+    // cada movimiento de centesimos re-editaria ~140 publicaciones.
+    const onlyCurrency: string | null = body?.only_currency === 'UYU' || body?.only_currency === 'USD' ? body.only_currency : null;
+    const minChangePct = Number(body?.min_change_pct) > 0 ? Number(body.min_change_pct) : 0;
 
     const { data: settingsRows } = await supabase.from('app_settings').select('key, value').in('key', ['ml_markup_percent', 'ml_usd_threshold', 'pricing_config', 'ml_pricing_config']);
     const settings = new Map((settingsRows ?? []).map((r: any) => [r.key, r.value]));
@@ -149,7 +158,7 @@ Deno.serve(async (req: Request) => {
     // Modo puntual (product_ids): en vez de saltear el pendiente le PISAMOS el payload.
     // Si no, cambiar el margen dos veces seguidas dejaba encolado el precio viejo.
     const toRepoint: { id: number; payload: any }[] = [];
-    let skippedSamePrice = 0, skippedPending = 0, skippedNoCost = 0, enqueuedPaused = 0;
+    let skippedSamePrice = 0, skippedPending = 0, skippedNoCost = 0, skippedOtherCurrency = 0, enqueuedPaused = 0;
     const sample: any[] = [];
     for (const m of maps ?? []) {
       const prod: any = (m as any).products;
@@ -168,6 +177,11 @@ Deno.serve(async (req: Request) => {
       const calc = computePriceAndCurrency(cost, margin, iva, fx, threshold);
       // Si queda igual al ultimo precio conocido (en UYU), no encolar.
       if (calc.currency_id === 'UYU' && Number((m as any).last_known_price_uyu) === calc.price) { skippedSamePrice++; continue; }
+      if (onlyCurrency && calc.currency_id !== onlyCurrency) { skippedOtherCurrency++; continue; }
+      if (minChangePct > 0) {
+        const last = Number((m as any).last_known_price_uyu);
+        if (last > 0 && Math.abs(calc.price - last) / last * 100 < minChangePct) { skippedSamePrice++; continue; }
+      }
       if (sample.length < 10) sample.push({ variant_id: (m as any).variant_id, cost, margin, price: calc.price, currency: calc.currency_id });
       if ((m as any).status === 'paused') enqueuedPaused++;
       const payload = { new_price: calc.price, currency_id: calc.currency_id, source: sourceTag };
@@ -182,7 +196,7 @@ Deno.serve(async (req: Request) => {
     const pausedCount = (maps ?? []).length - activeCount;
 
     if (dryRun) {
-      return json({ ok: true, dry_run: true, active: activeCount, paused: pausedCount, would_enqueue: toInsert.length + toRepoint.length, repointed: toRepoint.length, enqueuedPaused, skippedSamePrice, skippedPending, skippedNoCost, sample });
+      return json({ ok: true, dry_run: true, active: activeCount, paused: pausedCount, would_enqueue: toInsert.length + toRepoint.length, repointed: toRepoint.length, enqueuedPaused, skippedSamePrice, skippedPending, skippedNoCost, skippedOtherCurrency, sample });
     }
 
     // Insert en lotes de 500.
@@ -216,7 +230,7 @@ Deno.serve(async (req: Request) => {
       if (delErr) throw new Error(`clear_pending: ${delErr.message}`);
     }
 
-    return json({ ok: true, active: activeCount, paused: pausedCount, enqueued, repointed, enqueuedPaused, skippedSamePrice, skippedPending, skippedNoCost, note: 'La cola se procesa ~20/min y empuja los precios a ML. Mira el progreso en ml_sync_log.' });
+    return json({ ok: true, active: activeCount, paused: pausedCount, enqueued, repointed, enqueuedPaused, skippedSamePrice, skippedPending, skippedNoCost, skippedOtherCurrency, note: 'La cola se procesa ~20/min y empuja los precios a ML. Mira el progreso en ml_sync_log.' });
   } catch (e: any) {
     return json({ ok: false, error: e?.message ?? 'unknown' }, 500);
   }
