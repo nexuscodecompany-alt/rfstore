@@ -1,5 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
-// Edge Function: cdr-sync-products (v35)
+// Edge Function: cdr-sync-products (v36)
+// v36 (2026-10-14): el mail "se RECUPERO" salia en cada corrida (la marca no se podia
+//  limpiar con null: app_settings.value es NOT NULL). Ahora se borra la fila.
 // v35 (2026-10-14): CDR BLOQUEO el usuario por pedir el catalogo completo (fecha 2015)
 //  cada 10 min. Causa raiz: la fecha incremental iba en UTC y CDR la lee en hora de
 //  Uruguay, asi que el incremental pedia "desde dentro de 3 h" y nunca traia nada util.
@@ -584,9 +586,12 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 		// consolidado diario a las 6 AM Montevideo (edge fn cdr-daily-digest via cron
 		// cdr_daily_digest_tick). Se pueden reactivar por corrida con cdr_digest_daily=false.
 		// v34: si se habia avisado un FALLO, un solo mail de "se recupero" y se limpia la marca.
-		const failAlert = await getSetting<{ at: string; first_error: string } | null>(`cdr_fail_alert_${mode}`, null);
+		// v36: la marca se BORRA (app_settings.value es NOT NULL: guardar null fallaba en
+		// silencio, la marca quedaba y salia un "se recupero" en CADA corrida). Solo manda el
+		// mail la corrida que efectivamente borro la fila.
+		const { data: cleared } = await supabase.from('app_settings').delete().eq('key', `cdr_fail_alert_${mode}`).select('value');
+		const failAlert = (cleared?.[0]?.value ?? null) as { at: string; first_error: string } | null;
 		if (failAlert?.at) {
-			await setSetting(`cdr_fail_alert_${mode}`, null);
 			await sendAdminAlert(`RF Store - Sync CDR (${mode}) se RECUPERO`, [`Fallaba desde: ${new Date(failAlert.at).toLocaleString('es-UY', { timeZone: 'America/Montevideo' })}`, `Primer error: ${failAlert.first_error}`, `Ahora: ${counters.fetched} productos recibidos, ${counters.updated} actualizados.`]);
 		}
 		const perRunDigests = (await getSetting<boolean>('cdr_digest_daily', true)) === false;
