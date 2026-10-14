@@ -1,5 +1,5 @@
 // deno-lint-ignore-file no-explicit-any
-// health-alerts (v9, 2026-09-25)
+// health-alerts (v11, 2026-10-14)
 // Vigilante del sistema: chequea cada hora y manda UN reporte por mail por dia con todo
 // lo que no deberia estar pasando.
 //
@@ -49,6 +49,10 @@
 //    de 2 por dia a cada hora y el umbral de "hace mucho que no corre" baja de 14 h a 3 h:
 //    con el stock colgando de una corrida horaria, avisar a las 14 h deja medio dia de
 //    catalogo desincronizado sin que nadie se entere.
+// v11 (2026-10-14): CDR BLOQUEO el usuario por pedir el catalogo completo cada 10 min. Ya no
+//  hay full feed: los chequeos de CDR miran el incremental de las ultimas 24 h (intentos de
+//  full feed rechazados, cortes recortados por el tope de antiguedad, incremental vacio = la
+//  señal del bug de zona horaria, altas trabadas). Ver docs/cdr/README.md.
 // v9 (2026-09-25): el reporte venia con 6 incidencias abiertas y 4 eran falsas alarmas. Un
 //    reporte que grita todos los dias por cosas que no son problemas entrena a no leerlo, y
 //    ahi es cuando se pierde la que si importa (ver v6). Recalibrado cada una con su prueba:
@@ -83,18 +87,7 @@ const ML_API_BASE = 'https://api.mercadolibre.com';
 const MODERATION_SUBSTATUS = ['under_review', 'banned', 'forbidden', 'freezed', 'deleted', 'suspended', 'waiting_for_patch'];
 const DIGEST_HOUR_UY = 9;
 const UY_OFFSET_MS = 3 * 3600_000; // Uruguay es UTC-3 fijo (no tiene horario de verano desde 2015)
-// Horas sin una corrida de catalogo COMPLETO antes de avisar.
-// 22/09/2026: el full feed paso de 2 por dia a CADA HORA, porque se verifico que es el UNICO
-// que actualiza el stock -- el incremental no trae cambios de stock, solo los deshabilitados
-// (33 productos tenian stock distinto al de CDR, todos con last_synced_at en el full feed
-// anterior; el incremental no los trajo en 10 h y el full los corrigio todos de una).
-// Con el stock dependiendo de una corrida horaria, esperar 14 h para avisar deja el catalogo
-// medio dia desincronizado sin que nadie se entere. 3 h = ya se saltearon tres corridas.
-const FULL_FEED_MAX_HOURS = 3;
 const NO_NEW_PRODUCTS_MAX_DAYS = 3;
-// v9: con el feed cuadrando, dias sin altas son decision de CDR, no una rotura nuestra.
-// Recien a la semana vale la pena preguntarle a CDR.
-const NO_NEW_PRODUCTS_CLEAN_FEED_DAYS = 7;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -336,98 +329,68 @@ async function checkCdrSync(): Promise<Finding[]> {
   }
   const failed = (runs as any[]).filter(r => r.ok === false && !r.report?.rate_limited);
   if (failed.length) {
-    f.push({ key: 'cdr_failed_runs', check_id: 'cdr_sync', severity: 'warn', title: `${failed.length} de las ultimas 20 corridas de CDR (tick de 5 min) fallaron`, detail: { muestra: failed.slice(0, 5).map((r: any) => ({ id: r.id, mode: r.mode, errors: r.errors })) }, fingerprint: String(failed.length) });
+    f.push({ key: 'cdr_failed_runs', check_id: 'cdr_sync', severity: 'warn', title: `${failed.length} de las ultimas 20 corridas de CDR fallaron`, detail: { muestra: failed.slice(0, 5).map((r: any) => ({ id: r.id, mode: r.mode, errors: r.errors })) }, fingerprint: String(failed.length) });
   }
 
-  // ---- Todo lo que sigue mira el FULL FEED, que es otra cosa --------------------------
-  // Con una corrida por hora, estas 8 son las ultimas 8 horas.
-  const { data: fullRuns, error: fullErr } = await supabase
+  // ---- v11 (14/10/2026): SIN full feed --------------------------------------------------
+  // CDR BLOQUEO el usuario por pedir el catalogo completo cada 10 min. Desde cdr-sync-products
+  // v35 todo sale del incremental cada 5 min (fecha en hora UY). Los chequeos del full feed se
+  // reemplazan por los de abajo, sobre las corridas de las ultimas 24 h.
+  const { data: dayRuns, error: dayErr } = await supabase
     .from('cdr_sync_run_history')
-    .select('id, fetched, ok, errors, report, created_at')
-    .filter('report->>feed_mode', 'eq', 'full')
+    .select('id, ok, fetched, report, created_at')
+    .gte('created_at', hoursAgo(24))
     .order('id', { ascending: false })
-    .limit(8);
-
-  if (fullErr) {
-    f.push({ key: 'cdr_full_feed_check_failed', check_id: 'cdr_sync', severity: 'warn', title: 'No se pudo verificar si el catalogo completo de CDR esta corriendo', detail: { error: String(fullErr.message).slice(0, 300) }, fingerprint: 'query_error' });
+    .limit(400);
+  if (dayErr) {
+    f.push({ key: 'cdr_day_check_failed', check_id: 'cdr_sync', severity: 'warn', title: 'No se pudieron leer las corridas de CDR de las ultimas 24 h', detail: { error: String(dayErr.message).slice(0, 300) }, fingerprint: 'query_error' });
     return f;
   }
+  const day = (dayRuns ?? []) as any[];
 
-  const fullFailed = (fullRuns ?? []).filter((r: any) => r.ok === false && !r.report?.rate_limited);
-  if (fullFailed.length) {
-    f.push({
-      key: 'cdr_full_feed_failed', check_id: 'cdr_sync', severity: 'crit',
-      title: `${fullFailed.length} de las ultimas ${(fullRuns ?? []).length} corridas de catalogo COMPLETO de CDR fallaron`,
-      detail: { por_que: 'El full feed es el unico que da de alta, el unico que reconcilia el stock y el unico que trae los CAMBIOS de stock. Si falla, el tick de 5 min no lo suple ni lo denuncia.', muestra: fullFailed.slice(0, 4).map((r: any) => ({ id: r.id, cuando: r.created_at, errors: r.errors })) },
-      fingerprint: String(fullFailed.length),
-    });
+  // Algo intento pedir el catalogo COMPLETO (cron viejo, boton del panel...). El sync lo
+  // rechaza, pero hay que enterarse: es exactamente lo que hace que CDR nos bloquee.
+  const denied = day.filter(r => r.report?.full_feed_denied);
+  if (denied.length) {
+    f.push({ key: 'cdr_full_feed_attempted', check_id: 'cdr_sync', severity: 'crit', title: `${denied.length} corrida(s) intentaron pedir el catalogo COMPLETO de CDR (rechazadas)`, detail: { por_que: 'CDR bloquea el usuario si se repite el catalogo completo (14/10/2026). Buscar que cron o boton manda full_feed=true.', muestra: denied.slice(0, 5).map(r => ({ id: r.id, cuando: r.created_at })) }, fingerprint: String(denied.length) });
   }
 
-  const lastFull: any = (fullRuns ?? []).find((r: any) => r.ok !== false);
-  if (!lastFull) {
-    f.push({ key: 'cdr_no_full_feed', check_id: 'cdr_sync', severity: 'crit', title: 'No hay ninguna corrida de catalogo COMPLETO de CDR - el stock no se actualiza', detail: { nota: 'El feed completo es el unico que trae los cambios de stock, el unico que apaga el de los productos que CDR deja de mandar y el unico que da de alta.', esperado: 'cada hora (cron cdr-sync-fullfeed, minuto 10)' }, fingerprint: 'never' });
-    return f;
+  // Tras una caida, la fecha se recorta al tope (cdr_max_lookback_min) para no parecer
+  // "antigua": lo que cambio en CDR durante el hueco NO entra hasta que vuelva a cambiar.
+  const capped = day.filter(r => r.ok && r.report?.lookback_capped);
+  if (capped.length) {
+    f.push({ key: 'cdr_lookback_capped', check_id: 'cdr_sync', severity: 'warn', title: `El sync de CDR retomo despues de un corte (${capped.length} vez/veces en 24 h): los cambios del hueco pueden faltar`, detail: { que_hacer: 'Si el corte fue largo, pedir a CDR permiso para una llamada de recuperacion con la fecha de antes del corte.', muestra: capped.slice(0, 5).map(r => ({ id: r.id, cuando: r.created_at, cursor_viejo: r.report.lookback_capped })) }, fingerprint: String(capped.length) });
   }
 
-  const hs = Math.round((Date.now() - new Date(lastFull.created_at).getTime()) / 3600_000);
-  if (hs >= FULL_FEED_MAX_HOURS) {
-    f.push({ key: 'cdr_full_feed_stale', check_id: 'cdr_sync', severity: 'crit', title: `Hace ${hs} h que no corre el catalogo completo de CDR - el stock queda congelado`, detail: { ultimo_full_feed: lastFull.created_at, esperado: 'cada hora (minuto 10)', por_que: 'Es la unica corrida que trae los cambios de stock de CDR: el incremental no los trae (verificado 22/09/2026).' }, fingerprint: hs >= 6 ? 'critico' : 'atrasado' });
+  // La señal del bug de zona horaria (14/10/2026): con la fecha mal, el incremental solo
+  // traia deshabilitados (que CDR manda siempre) y CERO productos habilitados durante semanas.
+  const okDay = day.filter(r => r.ok);
+  const conHabilitados = okDay.filter(r => Number(r.report?.fetched_unique ?? r.fetched ?? 0) - Number(r.report?.disabled_in_feed ?? 0) > 0);
+  if (okDay.length >= 100 && conHabilitados.length === 0) {
+    f.push({ key: 'cdr_incremental_empty', check_id: 'cdr_sync', severity: 'crit', title: `En 24 h (${okDay.length} corridas) CDR no mando NINGUN producto habilitado: el stock no se esta actualizando`, detail: { sospecha: 'La fecha incremental esta mal (zona horaria: CDR la lee en hora de Uruguay) o CDR cambio algo. Mirar report.fecha_desde contra la hora UY.' }, fingerprint: 'vacio' });
   }
 
-  // ---- ALTAS: la señal que se nos paso 18 dias ----------------------------------------
-  const ti = Number(lastFull.report?.to_insert ?? 0);
-  const ins = Number(lastFull.report?.inserted ?? 0);
-  if (ti > 0 && ins === 0) {
+  // ---- ALTAS ------------------------------------------------------------------------
+  const stalled = okDay.find(r => Number(r.report?.to_insert ?? 0) > 0 && Number(r.report?.inserted ?? 0) === 0 && Number(r.report?.insert_backlog ?? 0) === 0);
+  if (stalled) {
     f.push({
       key: 'cdr_insert_stalled', check_id: 'cdr_sync', severity: 'crit',
-      title: `CDR tiene ${ti} producto(s) nuevo(s) esperando y no se dio de alta ninguno`,
-      detail: {
-        corrida: lastFull.id, cuando: lastFull.created_at, to_insert: ti, inserted: ins,
-        que_mirar: 'cdr-sync-fullfeed tiene que llamar con mode=full. En update-prices las altas se detectan y NO se insertan.',
-        historia: 'Asi se perdieron 18 dias de altas entre el 03/09 y el 21/09/2026.',
-      },
-      fingerprint: String(ti),
+      title: `CDR mando ${stalled.report.to_insert} producto(s) nuevo(s) y no se dio de alta ninguno`,
+      detail: { corrida: stalled.id, cuando: stalled.created_at, que_mirar: 'El tick tiene que llamar con mode=full (altas + update). En update-prices las altas se detectan y NO se insertan.' },
+      fingerprint: String(stalled.report.to_insert),
     });
   }
-
-  // v9: ¿la ultima corrida completa CUADRA? Cada codigo del feed tiene que ser un producto que
-  // ya conocemos (to_update) o uno deshabilitado (disabled_in_feed), sin nada para insertar ni
-  // backlog. Si cuadra, la deteccion de altas esta sana y "no entro nada" es que CDR no publico.
-  // Si NO cuadra (o faltan los campos), no se sabe, y se avisa como antes.
-  const rep = lastFull.report ?? {};
-  const unicos = Number(rep.fetched_unique ?? rep.fetched ?? NaN);
-  const contabilizados = Number(rep.to_update ?? NaN) + Number(rep.disabled_in_feed ?? NaN);
-  const feedCuadra = Number.isFinite(unicos) && Number.isFinite(contabilizados) && unicos > 0
-    && unicos === contabilizados && ti === 0 && Number(rep.insert_backlog ?? 0) === 0;
 
   const { data: lastNew } = await supabase.from('products').select('created_at').eq('source', 'cdr').order('created_at', { ascending: false }).limit(1).maybeSingle();
   if (lastNew?.created_at) {
     const dias = Math.floor((Date.now() - new Date(lastNew.created_at).getTime()) / 86_400_000);
-    if (feedCuadra) {
-      if (dias >= NO_NEW_PRODUCTS_CLEAN_FEED_DAYS) {
-        f.push({
-          key: 'cdr_no_new_products', check_id: 'cdr_sync', severity: 'warn',
-          title: `Hace ${dias} dias que CDR no publica productos nuevos (nuestro sync esta sano)`,
-          detail: { ultima_alta: lastNew.created_at, feed: { codigos: unicos, conocidos: rep.to_update, deshabilitados: rep.disabled_in_feed, nuevos: 0 }, nota: 'El catalogo completo corre bien y cada codigo que manda CDR ya esta cargado. Si esto sorprende, confirmar con CDR que siga dando de alta.' },
-          fingerprint: 'feed_sano',
-        });
-      }
-    } else if (dias >= NO_NEW_PRODUCTS_MAX_DAYS) {
+    if (dias >= NO_NEW_PRODUCTS_MAX_DAYS) {
       f.push({
         key: 'cdr_no_new_products', check_id: 'cdr_sync', severity: dias >= 7 ? 'crit' : 'warn',
         title: `Hace ${dias} dias que no entra un producto nuevo de CDR`,
-        detail: { ultima_alta: lastNew.created_at, nota: `CDR viene dando de alta productos casi todos los dias. ${NO_NEW_PRODUCTS_MAX_DAYS}+ dias sin ninguno casi siempre significa que las altas se rompieron, no que CDR dejo de publicar.` },
+        detail: { ultima_alta: lastNew.created_at, nota: 'CDR suele dar de alta casi todos los dias. Si el incremental trae habilitados y aun asi no entra nada, confirmar con CDR.' },
         fingerprint: dias >= 7 ? 'critico' : String(dias),
       });
-    }
-  }
-
-  const counts = (fullRuns ?? []).map((r: any) => Number(r.fetched ?? 0)).filter(n => n > 0).sort((a, b) => a - b);
-  if (counts.length >= 3) {
-    const median = counts[Math.floor(counts.length / 2)];
-    const lastFetched = Number(lastFull.fetched ?? 0);
-    if (median > 0 && lastFetched > 0 && lastFetched < median * 0.75) {
-      f.push({ key: 'cdr_feed_drop', check_id: 'cdr_sync', severity: 'crit', title: `El catalogo completo de CDR cayo a ${lastFetched} productos (lo normal ronda ${median})`, detail: { ultimo: lastFetched, mediana_full_feeds: median }, fingerprint: `${Math.round((lastFetched / median) * 10)}` });
     }
   }
   return f;

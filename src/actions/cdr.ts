@@ -42,10 +42,19 @@ export interface SyncReport {
 	errors: string[];
 	since: string;
 	finished_at: string;
+	feed_mode?: 'full' | 'incremental';
+	fecha_desde?: string;
+	fetched_unique?: number;
+	disabled_in_feed?: number;
+	lookback_capped?: string;
+	full_feed_denied?: boolean;
 }
 
-export const triggerCdrSync = (full = false) =>
-	invokeFn<SyncReport>('cdr-sync-products', { full });
+// Una corrida manual igual a la del cron (altas + precio/stock, INCREMENTAL), esperando el
+// resultado. El catalogo completo ya no se pide desde el panel: CDR bloquea el usuario si se
+// repite (14/10/2026).
+export const triggerCdrSync = () =>
+	invokeFn<SyncReport>('cdr-sync-products', { mode: 'full', background: false });
 
 /** Reporte del relleno de fotos faltantes (app_settings.cdr_last_fill_report). */
 export interface FillImagesReport {

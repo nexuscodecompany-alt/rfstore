@@ -22,7 +22,8 @@ El `token` NO es la contraseña de la web: es una clave aparte del web service.
 1. **Fecha incremental obligatoria.** Guardar el momento de cada llamada y usarlo
    como parámetro `fecha` en la siguiente. Repetir el full sync (`2015-01-01`)
    **hace que CDR trance el usuario**. No es una recomendación de eficiencia: es
-   condición de uso (sección 4.2 de la doc).
+   condición de uso (sección 4.2 de la doc). **La fecha va en HORA DE URUGUAY**, no en UTC
+   (14/10/2026: por mandarla en UTC el incremental no traía nada y terminamos bloqueados).
 2. **Sincronizar mínimo 1 vez por día.** Un producto sin stock se sigue devolviendo
    sólo durante 24 h. Pasado ese plazo desaparece del feed y, como sólo actualizamos
    lo que recibimos, el stock queda **congelado para siempre sin ningún error**
@@ -30,6 +31,78 @@ El `token` NO es la contraseña de la web: es una clave aparte del web service.
 3. **El cursor de fecha se avanza SÓLO si la corrida terminó bien.** Si falla y
    avanzamos igual, esos cambios se pierden para siempre. (Regla nuestra, derivada
    de la 1: con full sync una corrida fallida se recuperaba sola; con incremental no.)
+
+## ⚠ 14/10/2026: CDR BLOQUEÓ EL USUARIO. Leer esto antes que nada
+
+**Qué pasó.** Desde el 22/09 pedíamos el catálogo completo (`fecha = 2015-01-01`) **cada 10
+minutos**. El 14/10 a las 12:33 (hora UY) el WS empezó a responder HTTP 500 y una vez 503
+*"Sincronizacion completa temporalmente suspendida."*. CDR escribió: *"el sistema de Web Service
+bloqueó tu usuario [...] estás realizando las llamadas a la API desde un tiempo excesivamente
+antiguo [...] lo ideal es que llames cada 3 o 5 minutos con la fecha del día atrasada en 3 o 5
+minutos"*. Nos dieron un token nuevo (`CDR_TOKEN`) y avisaron que **si se repite, lo vuelven a
+bloquear**.
+
+**Causa raíz: la fecha iba en UTC y CDR la lee en hora de Uruguay.** `fmtCdr` usaba
+`toISOString()` (UTC). Uruguay es UTC−3, así que cada llamada "incremental" pedía los cambios
+**desde dentro de 3 horas**: CDR no devolvía ningún producto habilitado, sólo los deshabilitados
+(que manda siempre). De ahí salieron dos conclusiones FALSAS de esta misma guía (Hallazgos 5 y 6:
+"el incremental no trae altas" / "no trae stock"), y por eso se pasó al catálogo completo cada
+10 min, que fue lo que disparó el bloqueo.
+
+**Prueba.** Con la fecha en hora UY, la primera llamada (14/10 18:25, fecha `18:20:13`) trajo 49
+productos, 11 habilitados, y actualizó 17 variantes. La de las 18:30 trajo 634 (559 habilitados).
+Antes, durante semanas, el 100% de cada incremental eran deshabilitados (`disabled_in_feed ==
+fetched_unique`).
+
+### Cómo funciona ahora (cdr-sync-products v35)
+
+| | |
+|---|---|
+| Frecuencia | cron `cdr-sync-5min` (jobid 8), **cada 5 min**, `mode: 'full'` (altas + precio/stock/contenido) |
+| Una sola llamada trae todo | `productos_con_galeria` devuelve nombre, descripción, fotos, precio, stock, marca, categoría… No hay llamadas separadas por dato |
+| Fecha | **hora de Uruguay** (`fmtCdr` resta 3 h). Cursor = momento de la llamada anterior − 1 min (`CURSOR_OVERLAP_MIN`). Con el cron cada 5 min queda ~6 min atrás, como pide CDR |
+| Tope de antigüedad | `app_settings.cdr_max_lookback_min` (default **15**). Si el cursor es más viejo (tras una caída) o "del futuro" (cursores viejos guardados en UTC), se pide desde hace 15 min. Lo del hueco se pierde **a propósito**: es preferible a otro bloqueo. Queda marcado en `report.lookback_capped` |
+| Catálogo completo | **PROHIBIDO.** Sólo si `app_settings.cdr_allow_full_feed = true` (no existe = prohibido). Si algo lo pide igual, la corrida sale incremental y marca `report.full_feed_denied` (health-alerts lo reporta como crítico) |
+| El cursor sólo avanza si la corrida salió bien | igual que antes |
+
+**Crons después del arreglo:** jobid 8 (incremental c/5 min) PRENDIDO · jobid 27
+(`cdr-sync-fullfeed`, catálogo completo) APAGADO · jobid 20 (`cdr-fill-images`, pedía el catálogo
+completo a diario) APAGADO y la función rechaza correr sin `cdr_allow_full_feed`. El interruptor
+general sigue siendo `app_settings.cdr_cron_enabled`.
+
+**Qué se pierde sin el catálogo completo:** la reconciliación por ausencia (apagar el stock de lo
+que CDR deja de mandar). Según la doc (4.3) un producto que queda sin stock se sigue devolviendo
+24 h, así que con llamadas cada 5 min el paso a 0 llega por el incremental. Las fotos faltantes
+tampoco se rebuscan (el botón del panel quedó deshabilitado).
+
+**Recuperar un hueco después de una caída:** la doc pide sincronizar como mínimo una vez por día,
+así que una fecha de unas horas atrás está dentro del uso normal. Se hizo UNA vez el 14/10 (fecha
+`12:15`, el hueco del bloqueo): trajo 645 productos y ninguno necesitaba cambios (la corrida de
+las 18:30 ya los había traído). Procedimiento: subir `cdr_max_lookback_min` (p. ej. 400), poner el
+cursor `cdr_ws_cursor_full` en la hora UY de antes del corte, `select public.cdr_sync_tick();`
+**justo después** de un tick del cron, y volver `cdr_max_lookback_min` a 15 antes del siguiente.
+Nunca más de un día atrás.
+
+**Mails:** antes salía un "Sync CDR FALLO" por corrida fallida (6 por hora durante la caída).
+Desde v34: uno al empezar la caída, un recordatorio cada 6 h y uno "se RECUPERO" al volver
+(estado en `app_settings.cdr_fail_alert_<modo>`). Un catálogo completo que vuelve vacío cuenta
+como fallo.
+
+**Panel (/dashboard, Integración CDR):** muestra el estado de la última corrida (OK o error, hora,
+"cambios desde", recibidos/actualizados/nuevos), si CDR está fallando y desde cuándo, y un único
+botón "Sincronizar ahora" (la misma corrida incremental que el cron). Se sacó "Sync completo
+(desde 2015)".
+
+**Llamadas a CDR que siguen existiendo:**
+- `cdr-sync-products`: la del cron, descrita arriba.
+- `cdr-check-stock` / `mp-create-preference`: servicio aparte `get_stock` con la lista de códigos
+  del carrito, sólo en el checkout. No usa fecha.
+- `ml-stock-audit`, `cdr-probe`, `cdr-probe-codes`, `ml-stock-monitor`: piden el catálogo
+  completo. **No están en ningún cron ni botón: NO correrlos** sin permiso de CDR.
+
+**Si vuelve a pasar:** mirar `cdr_sync_run_history` (columna `errors` y `report->>'fecha_desde'`
+comparada con la hora UY). Un 503 "suspendida" o un bloqueo es CDR reaccionando a cómo llamamos,
+no una caída casual.
 
 ## Los 24 campos
 
@@ -67,6 +140,8 @@ Consulta el stock de una lista puntual de códigos, en tiempo real. **No se habi
 por defecto** — hay que pedírselo a CDR. Lo usaría `cdr-check-stock` en el checkout.
 
 ## Arquitectura del sync: qué corre, cuándo y para qué
+
+> **OBSOLETO desde el 14/10/2026** — ver la sección del bloqueo al principio. Se conserva como historia.
 
 **Las dos mitades son distintas y ninguna reemplaza a la otra.** Precio/stock necesitan
 frecuencia; las altas necesitan el catálogo completo. Pedir el catálogo completo seguido hace
@@ -176,6 +251,8 @@ no de habilitación. Antes de pedirle nada a CDR, probar variantes del array.
 
 ### 5. El feed incremental NO trae los productos nuevos
 
+> **FALSO — refutado el 14/10/2026.** La fecha iba en UTC y CDR la lee en hora UY: pedíamos "desde dentro de 3 h". Ver la sección del bloqueo al principio.
+
 **La regla más cara de todas, y contradice la letra de la doc de CDR.** La sección 3 dice que
 `fecha` "devuelve solo los productos **creados** o modificados desde ese momento". En la
 práctica, **los productos nuevos NO aparecen en una llamada incremental**: sólo llegan cuando
@@ -199,6 +276,8 @@ Ese mismo modo, en full feed, venía insertando 16 productos por día.
 > en silencio y sin un solo error en los logs.
 
 ### 6. El feed incremental TAMPOCO trae los cambios de stock
+
+> **FALSO — refutado el 14/10/2026.** Misma causa que el 5 (fecha en UTC).
 
 **Verificado el 22/09/2026, y es la hermana del Hallazgo 5.** Hasta ahora esta misma guía
 decía que "el incremental sirve para **stock y precio**". Es falso para el stock.

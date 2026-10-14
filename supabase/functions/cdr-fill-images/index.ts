@@ -97,6 +97,13 @@ async function fillImagesForOneProduct(p: CdrProduct, productId: string, counter
 
 async function runFill(counters: any) {
 	try {
+		// v11 (2026-10-14): esta funcion pide el catalogo COMPLETO (fecha 2015) y CDR BLOQUEA
+		// el usuario si se repite. Queda apagada salvo permiso explicito de CDR
+		// (app_settings.cdr_allow_full_feed = true). Las fotos de los productos NUEVOS las
+		// baja cdr-sync-products en el alta, con el incremental.
+		if ((await getSetting<boolean>('cdr_allow_full_feed', false)) !== true) {
+			throw new Error('Bloqueado: pide el catalogo COMPLETO de CDR y no esta permitido (app_settings.cdr_allow_full_feed). CDR bloquea el usuario si se repite.');
+		}
 		const products = await fetchProductosConGaleria(CDR_EMAIL, CDR_TOKEN, '2015-01-01 00:00:00');
 		counters.fetched = products.length;
 		const byCode = new Map<string, CdrProduct>();

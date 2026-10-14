@@ -67,13 +67,14 @@ export const DashboardCdrSyncPage = () => {
 	}, [settings]);
 
 	const { mutate: doSync, isPending: syncing } = useMutation({
-		mutationFn: (full: boolean) => triggerCdrSync(full),
+		mutationFn: triggerCdrSync,
 		onSuccess: (report: SyncReport) => {
 			setLastReport(report);
 			if (report.ok) toast.success(`Sync OK: ${report.inserted} nuevos, ${report.updated} actualizados`);
 			else toast.error(`Sync con errores (${report.errors.length})`);
 			queryClient.invalidateQueries({ queryKey: ['cdr_unclassified'] });
 			queryClient.invalidateQueries({ queryKey: ['products'] });
+			queryClient.invalidateQueries({ queryKey: ['app_settings'] });
 		},
 		onError: (e: Error) => toast.error(`Falló sync: ${e.message}`),
 	});
@@ -263,22 +264,60 @@ export const DashboardCdrSyncPage = () => {
 			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-4'>
 				<h2 className='font-semibold'>Sincronización</h2>
 				<p className='text-sm text-gray-600'>
-					Última fecha de sync: {formatSyncDate(settings?.get('cdr_last_full_sync'))}
+					Se consulta a CDR cada 5 minutos pidiendo sólo lo que cambió (la fecha va
+					atrasada unos minutos, en hora de Uruguay). El catálogo completo no se pide:
+					CDR bloquea el usuario si se repite.
+				</p>
+				{(() => {
+					const rep = settings?.get('cdr_last_sync_report_full') as SyncReport | undefined;
+					const failing = settings?.get('cdr_fail_alert_full') as { at?: string; first_error?: string } | null | undefined;
+					if (!rep) return null;
+					return (
+						<div
+							className={`rounded-md p-3 text-sm space-y-1 ${
+								rep.ok ? 'bg-emerald-50 text-emerald-900' : 'bg-rose-50 text-rose-900'
+							}`}
+						>
+							<p className='font-semibold'>
+								{rep.ok ? 'Funcionando' : 'La última consulta a CDR falló'} · última corrida{' '}
+								{rep.finished_at
+									? new Date(rep.finished_at).toLocaleString('es-UY', { timeZone: 'America/Montevideo' })
+									: '—'}
+							</p>
+							{rep.ok ? (
+								<p>
+									Cambios desde {rep.fecha_desde ?? '—'}: {rep.fetched} productos recibidos,{' '}
+									{rep.updated} actualizados, {rep.inserted} nuevos.
+								</p>
+							) : (
+								<p className='font-mono text-xs break-all'>{rep.errors?.[0]}</p>
+							)}
+							{failing?.at && (
+								<p>
+									CDR falla desde{' '}
+									{new Date(failing.at).toLocaleString('es-UY', { timeZone: 'America/Montevideo' })}
+									. Llega un mail al empezar, cada 6 h y cuando se recupera.
+								</p>
+							)}
+							{rep.lookback_capped && (
+								<p>
+									Retomó después de un corte: lo que cambió en CDR durante el corte puede
+									no haber entrado.
+								</p>
+							)}
+						</div>
+					);
+				})()}
+				<p className='text-sm text-gray-600'>
+					Última sincronización OK: {formatSyncDate(settings?.get('cdr_last_full_sync'))}
 				</p>
 				<div className='flex gap-3 flex-wrap'>
 					<button
 						className='px-4 py-2 bg-stone-800 text-white rounded-md disabled:opacity-50'
 						disabled={syncing}
-						onClick={() => doSync(false)}
+						onClick={() => doSync()}
 					>
-						{syncing ? 'Sincronizando…' : 'Sync incremental'}
-					</button>
-					<button
-						className='px-4 py-2 border border-stone-800 rounded-md disabled:opacity-50'
-						disabled={syncing}
-						onClick={() => doSync(true)}
-					>
-						Sync completo (desde 2015)
+						{syncing ? 'Sincronizando…' : 'Sincronizar ahora'}
 					</button>
 				</div>
 				{lastReport && (
@@ -296,8 +335,9 @@ export const DashboardCdrSyncPage = () => {
 						<p className='text-sm text-gray-600'>
 							CDR a veces publica un producto antes de subirle las fotos. Como la
 							galería se baja una sola vez (en el alta), esos productos quedaban
-							sin fotos para siempre. Esto los busca de nuevo — corre solo todos
-							los días a las 5:20 AM.
+							sin fotos. La búsqueda pide el catálogo completo de CDR, así que está
+							desactivada: CDR bloquea el usuario si se repite. Si un producto
+							cambia en CDR, el sync normal ya trae su galería.
 						</p>
 					</div>
 					<span
@@ -315,7 +355,8 @@ export const DashboardCdrSyncPage = () => {
 
 				<button
 					className='px-4 py-2 bg-stone-800 text-white rounded-md disabled:opacity-50'
-					disabled={fillingImages || missingImages === 0}
+					disabled={fillingImages || missingImages === 0 || settings?.get('cdr_allow_full_feed') !== true}
+					title={settings?.get('cdr_allow_full_feed') !== true ? 'Desactivado: requiere el catálogo completo de CDR' : undefined}
 					onClick={() => doFillImages()}
 				>
 					{fillingImages ? 'Buscando fotos…' : 'Buscar fotos faltantes ahora'}

@@ -1,5 +1,15 @@
 // deno-lint-ignore-file no-explicit-any
-// Edge Function: cdr-sync-products (v32)
+// Edge Function: cdr-sync-products (v35)
+// v35 (2026-10-14): CDR BLOQUEO el usuario por pedir el catalogo completo (fecha 2015)
+//  cada 10 min. Causa raiz: la fecha incremental iba en UTC y CDR la lee en hora de
+//  Uruguay, asi que el incremental pedia "desde dentro de 3 h" y nunca traia nada util.
+//  Ahora: fecha en hora UY, solapamiento 1 min, tope de antiguedad (cdr_max_lookback_min,
+//  default 15) y el catalogo completo solo con app_settings.cdr_allow_full_feed = true.
+// v34 (2026-10-14): caida de CDR (HTTP 500/503 "Sincronizacion completa temporalmente
+//  suspendida") mandaba un mail de FALLO cada 10 min. Ahora 1 mail al empezar, recordatorio
+//  cada 6 h y 1 al recuperarse (estado en app_settings.cdr_fail_alert_<mode>). Ademas un
+//  full feed que vuelve VACIO cuenta como fallo (antes quedaba ok:true y falseaba
+//  cdr_last_full_feed_at).
 // Sincroniza catalogo y precios desde CDR. El update de precios/stock se hace
 // en LOTE via RPC cdr_bulk_update_stock_price (una sola operacion).
 // v32 (2026-09-03): guarda los 13 CAMPOS NUEVOS de la doc v2.0 en columnas cdr_*
@@ -110,6 +120,8 @@ const MAX_INSERTS_PER_RUN_DEFAULT = 100;
 // Ventana para considerar "transitorio" un fallo fatal: si la corrida anterior del mismo
 // modo fue OK dentro de esta ventana, no se manda mail.
 const TRANSIENT_WINDOW_MS = 2 * 60 * 60 * 1000;
+// v34: durante una caida larga, cada cuanto se repite el mail de FALLO.
+const FAIL_ALERT_REPEAT_MS = 6 * 60 * 60 * 1000;
 // Tamano de lote para el RPC de contenido (el payload trae nombre+descripcion+features,
 // mucho mas pesado que solo precio/stock -> chunk para no mandar varios MB de una).
 const CONTENT_CHUNK = 300;
@@ -122,10 +134,23 @@ const FULL_FEED_DATE = '2015-01-01 00:00:00';
 // Solapamiento del cursor: al guardar la marca de tiempo se le restan estos minutos.
 // Cubre el desfasaje de reloj entre este runtime y el de CDR. Traer unos productos
 // repetidos no cuesta nada; perder un cambio no da error y queda congelado para siempre.
-const CURSOR_OVERLAP_MIN = 15;
+// v35: 15 -> 1. CDR pide la fecha "atrasada 3 o 5 minutos" y llamando cada 5 min el
+// cursor ya queda ~6 min atras. 15 min de solapamiento la hacia ver "antigua".
+const CURSOR_OVERLAP_MIN = 1;
+// v35: tope de antiguedad de la fecha. CDR BLOQUEA el usuario si la fecha es "excesivamente
+// antigua" (mail del 14/10/2026). Tras una caida larga el cursor envejece: se pide como
+// mucho desde hace este tanto (app_settings.cdr_max_lookback_min) y se resigna lo anterior.
+const MAX_LOOKBACK_MIN_DEFAULT = 15;
+// v35: hora de Uruguay (UTC-3 fijo, sin horario de verano desde 2015).
+const UY_OFFSET_MS = 3 * 60 * 60 * 1000;
 
-// Formato que pide CDR: YYYY-MM-DD HH:MM:SS
-const fmtCdr = (d: Date) => d.toISOString().slice(0, 19).replace('T', ' ');
+// Formato que pide CDR: YYYY-MM-DD HH:MM:SS, en HORA DE URUGUAY.
+// v35: antes iba en UTC (toISOString). CDR la lee como hora local, asi que cada incremental
+// pedia "desde dentro de 3 horas" y solo volvian los deshabilitados (que CDR manda siempre).
+// Por eso parecia que el incremental "no trae stock ni altas" y se paso al catalogo completo
+// cada 10 min, que es lo que hizo que CDR bloqueara el usuario.
+const fmtCdr = (d: Date) => new Date(d.getTime() - UY_OFFSET_MS).toISOString().slice(0, 19).replace('T', ' ');
+const parseCdr = (s: string) => new Date(s.replace(' ', 'T') + 'Z').getTime() + UY_OFFSET_MS;
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false, autoRefreshToken: false } });
 
@@ -356,8 +381,20 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 	// catalogo entero en cada corrida, que es exactamente lo que hay que evitar.
 	// Full feed solo si lo piden explicito, o si todavia no hay cursor (primera
 	// corrida: hay que partir de una foto completa).
-	const isFullFeed = fullFeed === true || !cursor;
-	const fecha = isFullFeed ? FULL_FEED_DATE : cursor;
+	// v35: el catalogo COMPLETO queda PROHIBIDO salvo permiso explicito de CDR
+	// (app_settings.cdr_allow_full_feed = true). Pedirlo cada 10 min hizo que CDR bloqueara
+	// el usuario el 14/10/2026. Sin cursor ya NO se pide el completo: se arranca del tope.
+	const allowFullFeed = (await getSetting<boolean>('cdr_allow_full_feed', false)) === true;
+	if (fullFeed === true && !allowFullFeed) counters.full_feed_denied = true;
+	const isFullFeed = fullFeed === true && allowFullFeed;
+	const maxLookbackMin = Number(await getSetting<number | string>('cdr_max_lookback_min', MAX_LOOKBACK_MIN_DEFAULT)) || MAX_LOOKBACK_MIN_DEFAULT;
+	const floorMs = Date.now() - maxLookbackMin * 60_000;
+	const cursorMs = cursor ? parseCdr(cursor) : NaN;
+	// Cursor vacio, invalido, mas viejo que el tope o "en el futuro" (los guardados en UTC
+	// antes de v35 se leen 3 h adelantados) -> se pide desde el tope.
+	const cursorUsable = Number.isFinite(cursorMs) && cursorMs >= floorMs && cursorMs <= Date.now();
+	if (!isFullFeed && !cursorUsable) counters.lookback_capped = cursor || 'sin cursor';
+	const fecha = isFullFeed ? FULL_FEED_DATE : cursorUsable ? cursor : fmtCdr(new Date(floorMs));
 	// El proximo cursor se calcula ANTES de llamar: si se tomara al terminar, todo
 	// lo que CDR modifique DURANTE la corrida quedaria del lado ya consultado y se
 	// perderia. El solapamiento cubre ademas el desfasaje de reloj.
@@ -370,6 +407,10 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 	let coreOk = true;
 	try {
 		const fetchedRaw = await fetchProductosConGaleria(CDR_EMAIL, CDR_TOKEN, fecha);
+		// v34: un catalogo COMPLETO vacio es CDR roto, no "0 productos". El 14/10 vino un
+		// array vacio en medio de una caida y la corrida quedo ok:true, marcando
+		// cdr_last_full_feed_at como si hubiera reconciliado.
+		if (isFullFeed && fetchedRaw.length === 0) throw new Error('WS CDR devolvio el catalogo COMPLETO vacio (0 productos)');
 		// v26: dedupe por codigo (el WS de CDR devuelve conteos inconsistentes; ante
 		// codigos repetidos nos quedamos con la primera aparicion).
 		const seenCodes = new Set<string>();
@@ -542,6 +583,12 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 		// Digests POR CORRIDA: apagados por defecto (cdr_digest_daily=true). Ahora hay UN mail
 		// consolidado diario a las 6 AM Montevideo (edge fn cdr-daily-digest via cron
 		// cdr_daily_digest_tick). Se pueden reactivar por corrida con cdr_digest_daily=false.
+		// v34: si se habia avisado un FALLO, un solo mail de "se recupero" y se limpia la marca.
+		const failAlert = await getSetting<{ at: string; first_error: string } | null>(`cdr_fail_alert_${mode}`, null);
+		if (failAlert?.at) {
+			await setSetting(`cdr_fail_alert_${mode}`, null);
+			await sendAdminAlert(`RF Store - Sync CDR (${mode}) se RECUPERO`, [`Fallaba desde: ${new Date(failAlert.at).toLocaleString('es-UY', { timeZone: 'America/Montevideo' })}`, `Primer error: ${failAlert.first_error}`, `Ahora: ${counters.fetched} productos recibidos, ${counters.updated} actualizados.`]);
+		}
 		const perRunDigests = (await getSetting<boolean>('cdr_digest_daily', true)) === false;
 		if (perRunDigests && !force?.enabled) {
 			await sendNewProductsDigest(counters.inserted_list ?? []);
@@ -582,10 +629,23 @@ async function runSync(mode: 'new-only' | 'update-prices' | 'full', counters: an
 			const p = (prev ?? [])[0] as { ok: boolean | null; created_at: string } | undefined;
 			transient = p?.ok === true && Date.now() - new Date(p.created_at).getTime() < TRANSIENT_WINDOW_MS;
 		} catch (_) { /* si falla la consulta del historial, mandamos el mail igual */ }
-		if (rateLimited || transient) {
-			console.warn(`fallo no-critico (${mode}) - mail suprimido${rateLimited ? ' [rate limit CDR]' : ''}:`, e.message);
+		// v34: con el cron cada 10 min, una caida larga de CDR mandaba un mail POR CORRIDA.
+		// Ahora: un mail al empezar la caida, recordatorio cada FAIL_ALERT_REPEAT_MS y uno
+		// al recuperarse. El detalle de cada corrida queda en cdr_sync_run_history.
+		let alreadyAlerted = false;
+		let failAlert: { at: string; first_error: string; last_mail_at?: string } | null = null;
+		try {
+			failAlert = await getSetting<typeof failAlert>(`cdr_fail_alert_${mode}`, null);
+			const lastMail = failAlert?.last_mail_at ?? failAlert?.at;
+			alreadyAlerted = !!lastMail && Date.now() - new Date(lastMail).getTime() < FAIL_ALERT_REPEAT_MS;
+		} catch (_) { /* sin estado: se manda */ }
+		if (rateLimited || transient || alreadyAlerted) {
+			console.warn(`fallo no-critico (${mode}) - mail suprimido${rateLimited ? ' [rate limit CDR]' : alreadyAlerted ? ' [ya avisado]' : ''}:`, e.message);
 		} else {
-			await sendAdminAlert(`RF Store - Sync CDR (${mode}) FALLO`, [`Error fatal: ${e.message}`, 'Segundo fallo consecutivo (o sin corrida previa OK reciente).']);
+			const nowIso = new Date().toISOString();
+			const since = failAlert?.at ?? nowIso;
+			await setSetting(`cdr_fail_alert_${mode}`, { at: since, first_error: failAlert?.first_error ?? String(e.message).slice(0, 300), last_mail_at: nowIso });
+			await sendAdminAlert(`RF Store - Sync CDR (${mode}) FALLO`, [`Error fatal: ${e.message}`, `Fallando desde: ${new Date(since).toLocaleString('es-UY', { timeZone: 'America/Montevideo' })}`, `No se repite este aviso por ${FAIL_ALERT_REPEAT_MS / 3_600_000} h; llega otro mail cuando se recupere.`]);
 		}
 	}
 }
