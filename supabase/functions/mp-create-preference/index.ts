@@ -1,10 +1,8 @@
 // deno-lint-ignore-file no-explicit-any
-// mp-create-preference v31 (2026-10-27)
+// mp-create-preference v32 (2026-10-27)
 //  - ENVÍO POR DEPARTAMENTO: Montevideo USD 6, Canelones USD 8, interior DAC.
 //    Gratis desde USD 150 en Montevideo y Canelones. El costo lo calcula
 //    rf_shipping_quote en la base; ya no se toma el que manda el cliente.
-//    TRANSICIÓN: si llega shipping_cost_usd (checkout viejo de zonas PQuick) se
-//    mantiene la lógica anterior. Borrar esa rama al subir el frontend nuevo.
 //
 // v29 (2026-08-20)
 //  - EL STOCK YA NO SE RESERVA AL CREAR LA ORDEN. Sale del catálogo recién
@@ -82,7 +80,7 @@ interface ReqBody {
 	shipping_zone?: 'montevideo' | 'canelones' | 'metropolitana' | 'interior';
 	shipping_barrio?: string;
 	shipping_department?: string;
-	// Sólo lo manda el checkout viejo. El nuevo deja que el servidor calcule.
+	// Lo mandaba el checkout viejo. Se ignora: el envío lo calcula el servidor.
 	shipping_cost_usd?: number | null;
 	coupon_code?: string;
 	invoice?: InvoiceData | null;
@@ -92,7 +90,6 @@ interface ReqBody {
 	existing_order_id?: number;
 	amount_usd?: number;
 }
-const FREE_SHIPPING_MIN_USD = 150;
 
 Deno.serve(async req => {
 	if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
@@ -267,30 +264,19 @@ Deno.serve(async req => {
 		});
 		const subtotal = lineTotals.reduce((acc, l) => acc + l.line_total, 0);
 
-		let shippingZone = body.shipping_zone ?? null;
-		let shippingDepartment = body.shipping_department ?? null;
-		let shippingBase = 0;
-		if (body.shipping_cost_usd === undefined || body.shipping_cost_usd === null) {
-			// Esquema nuevo: el envío sale del departamento (rf_shipping_quote, la
-			// misma regla que usa place_cdr_order para transferencia/depósito).
-			const { data: quote, error: quoteErr } = await supabaseAdmin.rpc('rf_shipping_quote', {
-				p_department: body.shipping_department || body.address?.state || '',
-				p_subtotal: subtotal,
-			});
-			if (quoteErr || !quote) return new Response(JSON.stringify({ error: quoteErr?.message ?? 'Elegí el departamento de destino' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-			shippingZone = (quote as any).zone;
-			shippingDepartment = (quote as any).department;
-			shippingBase = Number((quote as any).shipping_usd) || 0;
-			if ((shippingZone === 'montevideo' || shippingZone === 'canelones') && !String(body.shipping_barrio ?? '').trim()) {
-				return new Response(JSON.stringify({ error: 'Ingresá tu barrio' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-			}
-		} else {
-			// TRANSICIÓN: checkout viejo (zonas PQuick). Borrar al subir el nuevo.
-			const requestedShipping = Number(body.shipping_cost_usd ?? 0);
-			const isMvd = body.shipping_zone === 'montevideo';
-			const chargesShipping = isMvd || body.shipping_zone === 'metropolitana';
-			const qualifiesFree = isMvd && subtotal >= FREE_SHIPPING_MIN_USD;
-			shippingBase = !chargesShipping || qualifiesFree ? 0 : Math.max(0, Number(requestedShipping.toFixed(2)));
+		// El envío sale SIEMPRE del departamento (rf_shipping_quote, la misma regla
+		// que usa place_cdr_order para transferencia/depósito). shipping_zone y
+		// shipping_cost_usd del cliente se ignoran.
+		const { data: quote, error: quoteErr } = await supabaseAdmin.rpc('rf_shipping_quote', {
+			p_department: body.shipping_department || body.address?.state || '',
+			p_subtotal: subtotal,
+		});
+		if (quoteErr || !quote) return new Response(JSON.stringify({ error: quoteErr?.message ?? 'Elegí el departamento de destino' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+		const shippingZone: string = (quote as any).zone;
+		const shippingDepartment: string = (quote as any).department;
+		const shippingBase = Number((quote as any).shipping_usd) || 0;
+		if ((shippingZone === 'montevideo' || shippingZone === 'canelones') && !String(body.shipping_barrio ?? '').trim()) {
+			return new Response(JSON.stringify({ error: 'Ingresá tu barrio' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 		}
 
 		// Cupon (server-side, anti-manipulacion). El descuento se calcula contra el subtotal REAL cobrado.
