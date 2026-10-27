@@ -3,7 +3,8 @@ import { signUp } from '../../actions';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
-export const useRegister = () => {
+// redirectTo: a dónde volver después de registrarse (ej. el checkout).
+export const useRegister = (redirectTo = '/') => {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 
@@ -11,7 +12,7 @@ export const useRegister = () => {
 		mutationFn: signUp,
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ['user'] });
-			navigate('/');
+			navigate(redirectTo);
 		},
 		onError: err => {
 			toast.error(err.message, {

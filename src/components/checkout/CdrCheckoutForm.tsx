@@ -10,23 +10,21 @@ import {
 	type CartItemForMP,
 	type InvoiceDataForOrder,
 } from '../../actions';
-import { useUser, useUsdUyuRate } from '../../hooks';
+import { useUser, useUsdUyuRate, useShippingRates } from '../../hooks';
 import { validateCoupon, type CouponValidation } from '../../actions/coupons';
 import { leerCuponRecuperado, guardarCuponRecuperado } from '../../actions/abandonedCart';
 import {
-	ShippingZoneSelector,
-	ShippingSelection,
-	emptyShippingSelection,
-} from './ShippingZoneSelector';
-import { URUGUAY_DEPARTMENTS_INTERIOR } from '../../constants/shipping';
+	URUGUAY_DEPARTMENTS,
+	DEFAULT_SHIPPING_RATES,
+	quoteShipping,
+	isLocalDelivery,
+	zoneForDepartment,
+	freeShippingAppliesTo,
+	deliveryEtaText,
+} from '../../constants/shipping';
 import toast from 'react-hot-toast';
-import {
-	formatPrice,
-	shippingSummary,
-	qualifiesForFreeShipping,
-	shippingIsChargedOnline,
-	FREE_SHIPPING_MIN_USD,
-} from '../../helpers';
+import { HiOutlineTruck, HiOutlineCheckCircle } from 'react-icons/hi2';
+import { formatPrice, shippingSummary } from '../../helpers';
 import { ItemsCheckout } from './ItemsCheckout';
 import { useNavigate } from 'react-router-dom';
 import { ImSpinner2 } from 'react-icons/im';
@@ -69,24 +67,24 @@ export const CdrCheckoutForm = () => {
 		phone: '',
 		line1: '',
 		line2: '',
+		// El departamento lo elige el cliente: de él sale el costo del envío.
+		state: '',
+		barrio: '',
 		city: '',
-		state: 'Montevideo',
 		postalCode: '',
 		country: 'Uruguay',
 	});
-	const [shipping, setShipping] = useState<ShippingSelection>(
-		emptyShippingSelection
-	);
 
-	// Regla única (helpers/shippingSummary): envío gratis SÓLO en Montevideo desde
-	// USD 150. La zona metropolitana (agencia) se cobra siempre, y el interior va
-	// por DAC: lo paga el cliente al retirar, así que nunca entra en este total.
-	const qualifiesForFree = qualifiesForFreeShipping(shipping.zone, totalAmount);
-	// El interior no se cobra online (va por DAC): su costo nunca entra al total.
-	const shippingCostUsd =
-		qualifiesForFree || !shippingIsChargedOnline(shipping.zone)
-			? 0
-			: shipping.cost_usd;
+	// Envío por departamento (constants/shipping): Montevideo y Canelones tarifa
+	// fija, gratis desde el mínimo; el interior va por DAC y lo paga el cliente al
+	// retirar, así que nunca entra en este total. Esto es sólo lo que se MUESTRA:
+	// el servidor recalcula con la misma regla (rf_shipping_quote).
+	const { data: shippingRates = DEFAULT_SHIPPING_RATES } = useShippingRates();
+	const quote = quoteShipping(form.state, totalAmount, shippingRates);
+	const shippingZone = quote.zone;
+	const localDelivery = isLocalDelivery(shippingZone);
+	const qualifiesForFree = quote.freeByThreshold;
+	const shippingCostUsd = quote.shippingUsd;
 
 	// --- Cupón ---
 	const [couponInput, setCouponInput] = useState('');
@@ -252,11 +250,12 @@ export const CdrCheckoutForm = () => {
 	// Resumen de envío: MISMO texto en el checkout, en el resumen lateral, en la
 	// página de gracias y en los mails.
 	const shippingInfo = shippingSummary({
-		zone: shipping.zone,
-		barrio: shipping.barrio,
-		department: shipping.department,
+		zone: shippingZone,
+		barrio: form.barrio.trim() || null,
+		department: form.state || null,
 		costUsd: effectiveShippingUsd,
 		freeByThreshold: qualifiesForFree,
+		freeMinUsd: shippingRates.free_min_usd,
 		freeByCoupon: couponFreeShipping === true,
 	});
 
@@ -265,33 +264,16 @@ export const CdrCheckoutForm = () => {
 		return () => resetShippingLabel();
 	}, [shippingInfo.label, setShippingLabel, resetShippingLabel]);
 
-	// Sincroniza state/city con la selección de zona:
-	// - Montevideo: city y state fijos en "Montevideo" (el barrio va en shipping_barrio).
-	// - Interior: state=departamento elegido, city queda libre para que el cliente
-	//   ingrese su ciudad/localidad.
-	useEffect(() => {
-		if (shipping.zone === 'montevideo') {
-			setForm(f => ({
-				...f,
-				state: 'Montevideo',
-				city: 'Montevideo',
-			}));
-		} else if (shipping.zone === 'metropolitana') {
-			// Zona metropolitana: departamento Canelones y ciudad = la localidad detectada.
-			setForm(f => ({
-				...f,
-				state: shipping.department ?? 'Canelones',
-				city: shipping.barrio ?? '',
-			}));
-		} else if (shipping.zone === 'interior') {
-			setForm(f => ({
-				...f,
-				state: shipping.department ?? '',
-				city: f.state === 'Montevideo' || f.state === 'Canelones' ? '' : f.city,
-			}));
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [shipping.zone, shipping.barrio, shipping.department]);
+	// En Montevideo la ciudad es Montevideo; en el resto la escribe el cliente.
+	// Al cambiar de departamento se limpian barrio y ciudad: "Las Piedras" no
+	// puede quedar como ciudad de un pedido a Rocha.
+	const setDepartment = (state: string) =>
+		setForm(f => ({
+			...f,
+			state,
+			barrio: isLocalDelivery(zoneForDepartment(state)) ? f.barrio : '',
+			city: state === 'Montevideo' ? 'Montevideo' : f.state === state ? f.city : '',
+		}));
 
 	// Registro del "llegó al checkout": guardamos contacto + foto del carrito
 	// apenas el cliente tiene datos cargados. Sirve para el panel de clientes
@@ -312,8 +294,8 @@ export const CdrCheckoutForm = () => {
 					price: i.price,
 				})),
 				total: totalAmount,
-				shippingZone: shipping.zone,
-				shippingDepartment: shipping.department,
+				shippingZone: shippingZone,
+				shippingDepartment: form.state || null,
 			});
 		}, 1500);
 		return () => clearTimeout(t);
@@ -324,8 +306,8 @@ export const CdrCheckoutForm = () => {
 		form.phone,
 		form.fullName,
 		totalAmount,
-		shipping.zone,
-		shipping.department,
+		shippingZone,
+		form.state,
 	]);
 
 	// Prefill datos del cliente desde la tabla customers (persistente entre
@@ -371,7 +353,7 @@ export const CdrCheckoutForm = () => {
 		e.preventDefault();
 		if (!session) {
 			toast.error('Tenés que iniciar sesión para comprar');
-			navigate('/login');
+			navigate('/login?next=/checkout');
 			return;
 		}
 		if (!form.fullName.trim()) {
@@ -385,6 +367,14 @@ export const CdrCheckoutForm = () => {
 		}
 		if (!form.email.trim() || !/^.+@.+\..+$/.test(form.email)) {
 			toast.error('Ingresá un email válido');
+			return;
+		}
+		if (!form.state) {
+			toast.error('Elegí el departamento de destino');
+			return;
+		}
+		if (localDelivery && !form.barrio.trim()) {
+			toast.error('Ingresá tu barrio');
 			return;
 		}
 		if (!form.line1 || !form.city) {
@@ -410,16 +400,6 @@ export const CdrCheckoutForm = () => {
 					? `Faltan ${formatPrice(faltaSplit)} para cubrir el total`
 					: `Los montos se pasan por ${formatPrice(Math.abs(faltaSplit))}`
 			);
-			return;
-		}
-
-		// Validación de envío
-		if (shipping.zone === 'montevideo' && !shipping.barrio) {
-			toast.error('Elegí tu barrio para calcular el envío');
-			return;
-		}
-		if (shipping.zone === 'interior' && !shipping.department) {
-			toast.error('Elegí el departamento de destino');
 			return;
 		}
 
@@ -513,10 +493,12 @@ export const CdrCheckoutForm = () => {
 					},
 					customer_email: form.email,
 					customer_name: form.fullName,
-					shipping_zone: shipping.zone,
-					shipping_barrio: shipping.barrio ?? undefined,
-					shipping_department: shipping.department ?? undefined,
-					shipping_cost_usd: shippingCostUsd,
+					// El costo del envío NO se manda: lo calcula el servidor a partir
+					// del departamento.
+					// quoteShipping nunca devuelve 'metropolitana' (sólo órdenes viejas).
+					shipping_zone: (shippingZone as 'montevideo' | 'canelones' | 'interior' | null) ?? undefined,
+					shipping_barrio: form.barrio.trim() || undefined,
+					shipping_department: form.state,
 					coupon_code: coupon?.valid ? coupon.code : undefined,
 					invoice: datosFactura(),
 				});
@@ -550,10 +532,11 @@ export const CdrCheckoutForm = () => {
 					country: form.country,
 				},
 				p_payment_method: method,
-				p_shipping_zone: shipping.zone,
-				p_shipping_barrio: shipping.barrio,
-				p_shipping_department: shipping.department,
-				p_shipping_cost_usd: shippingCostUsd,
+				p_shipping_zone: shippingZone,
+				p_shipping_barrio: form.barrio.trim() || null,
+				p_shipping_department: form.state,
+				// null = el servidor calcula el envío desde el departamento.
+				p_shipping_cost_usd: null,
 					p_coupon_code: coupon?.valid ? coupon.code : null,
 				p_invoice: datosFactura(),
 				// El servidor revalida que el reparto cubra el total que ÉL calcula:
@@ -688,10 +671,6 @@ export const CdrCheckoutForm = () => {
 			</section>
 
 			<section className='space-y-3'>
-				<ShippingZoneSelector value={shipping} onChange={setShipping} />
-			</section>
-
-			<section className='space-y-3'>
 				<h3 className='text-lg font-semibold'>Dirección de envío</h3>
 				<input
 					className='border rounded p-2 w-full'
@@ -706,8 +685,55 @@ export const CdrCheckoutForm = () => {
 					value={form.line2}
 					onChange={e => setForm({ ...form, line2: e.target.value })}
 				/>
+				<select
+					className='border rounded p-2 w-full bg-white'
+					value={form.state}
+					onChange={e => setDepartment(e.target.value)}
+					aria-label='Departamento'
+					required
+				>
+					<option value=''>Departamento *</option>
+					{URUGUAY_DEPARTMENTS.map(d => (
+						<option key={d} value={d}>
+							{d}
+						</option>
+					))}
+				</select>
+				{localDelivery && (
+					<input
+						className='border rounded p-2 w-full'
+						placeholder={shippingZone === 'canelones' ? 'Barrio / localidad *' : 'Barrio *'}
+						value={form.barrio}
+						onChange={e => setForm({ ...form, barrio: e.target.value })}
+						required
+					/>
+				)}
+
+				{/* Costo y plazo según el departamento elegido. */}
+				{localDelivery && (
+					<div className='flex items-start gap-2 text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md p-2'>
+						<HiOutlineCheckCircle size={16} className='mt-0.5 shrink-0' />
+						<div>
+							<p>
+								Envío a domicilio en <b>{form.state}</b>:{' '}
+								<b>{qualifiesForFree ? 'gratis' : formatPrice(quote.baseUsd)}</b>
+							</p>
+							<p>{deliveryEtaText(shippingRates.same_day_cutoff_hour)}</p>
+						</div>
+					</div>
+				)}
+				{shippingZone === 'interior' && (
+					<div className='flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2'>
+						<HiOutlineTruck size={16} className='shrink-0' />
+						<span>
+							Envío al interior por <b>DAC</b>. El costo lo abonás al retirar en la
+							agencia.
+						</span>
+					</div>
+				)}
+
 				<div className='grid grid-cols-2 gap-3'>
-					{shipping.zone === 'montevideo' ? (
+					{form.state === 'Montevideo' ? (
 						// En Montevideo la ciudad es fija (Montevideo).
 						<input
 							className='border rounded p-2 bg-ink-50'
@@ -723,30 +749,6 @@ export const CdrCheckoutForm = () => {
 							onChange={e => setForm({ ...form, city: e.target.value })}
 							required
 						/>
-					)}
-					{shipping.zone === 'montevideo' ? (
-						// El "departamento" es Montevideo y queda fijo para que matchee
-						// con la ciudad. No mostramos el select porque sería redundante.
-						<input
-							className='border rounded p-2 bg-ink-50'
-							value='Montevideo'
-							readOnly
-							aria-label='Departamento'
-						/>
-					) : (
-						<select
-							className='border rounded p-2 bg-white'
-							value={form.state}
-							onChange={e => setForm({ ...form, state: e.target.value })}
-							required
-						>
-							<option value=''>Departamento…</option>
-							{URUGUAY_DEPARTMENTS_INTERIOR.map(d => (
-								<option key={d} value={d}>
-									{d}
-								</option>
-							))}
-						</select>
 					)}
 					<input
 						className='border rounded p-2'
@@ -1124,24 +1126,19 @@ export const CdrCheckoutForm = () => {
 				</div>
 				<div className='flex items-center justify-between text-sm text-ink-600'>
 					<span>
-						Envío{' '}
-						{shipping.zone === 'interior'
-							? '(DAC)'
-							: shipping.zone === 'metropolitana'
-							? '(agencia)'
-							: ''}
+						Envío{shippingZone === 'interior' ? ' (DAC)' : ''}
 					</span>
 					<span>{shippingInfo.label}</span>
 				</div>
 				{shippingInfo.note && (
 					<p className='text-[11px] text-ink-500'>{shippingInfo.note}</p>
 				)}
-				{shipping.zone === 'montevideo' &&
+				{freeShippingAppliesTo(shippingZone, shippingRates) &&
 					!qualifiesForFree &&
-					totalAmount < FREE_SHIPPING_MIN_USD && (
+					!couponFreeShipping && (
 						<p className='text-[11px] text-amber-700'>
-							Sumá USD {(FREE_SHIPPING_MIN_USD - totalAmount).toFixed(0)} más para
-							obtener envío gratis en Montevideo.
+							Sumá USD {Math.ceil(shippingRates.free_min_usd - totalAmount)} más para
+							obtener envío gratis en {form.state}.
 						</p>
 					)}
 {discountUsd > 0 && (

@@ -57,6 +57,7 @@ function methodLabel(m: string): string {
 
 function shippingLabel(zone: string | null, barrio: string | null, dept: string | null): string {
 	if (zone === 'montevideo') return `Montevideo${barrio ? ' — ' + barrio : ''}`;
+	if (zone === 'canelones') return `Canelones${barrio ? ' — ' + barrio : ''}`;
 	if (zone === 'metropolitana') return `Zona metropolitana (agencia)${barrio ? ' — ' + barrio : ''}`;
 	if (zone === 'interior') return `Interior${dept ? ' — ' + dept : ''}`;
 	return '';

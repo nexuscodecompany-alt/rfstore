@@ -745,7 +745,7 @@ export const DashboardOrderPage = () => {
 							)}
 						</div>
 
-						{/* Modalidad de envío: agencia (cobrar) vs DAC (no cobrar) */}
+						{/* Modalidad de envío: a domicilio (cobrar) vs DAC (no cobrar) */}
 						{order.channel !== 'ml' && order.shippingZone && (
 							<div className='mt-3 border-t border-ink-100 pt-3'>
 								{order.shippingZone === 'interior' ? (
@@ -763,13 +763,15 @@ export const DashboardOrderPage = () => {
 											<b>
 												{order.shippingZone === 'metropolitana'
 													? 'Zona metropolitana · agencia'
+													: order.shippingZone === 'canelones'
+													? 'Canelones · a domicilio'
 													: 'Montevideo · a domicilio'}
 											</b>
 											{order.shippingBarrio ? ` (${order.shippingBarrio})` : ''}.{' '}
 											Envío{' '}
 											{order.shippingCostUsd > 0
 												? `cobrado: ${money(order.shippingCostUsd)}`
-												: 'gratis (compra ≥ USD 150).'}
+												: 'gratis (por monto de compra o cupón).'}
 										</span>
 									</div>
 								)}

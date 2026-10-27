@@ -1,14 +1,19 @@
 import { useState } from 'react';
 import { LuLoader2 } from 'react-icons/lu';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useLogin, useUser } from '../hooks';
 import { Loader } from '../components/shared/Loader';
+import { safeNextPath } from '../helpers';
 
 export const LoginPage = () => {
 	const [email, setEmail] = useState('');
 	const [password, setPassword] = useState('');
 
-	const { mutate, isPending } = useLogin();
+	// ?next=/checkout: el cliente venía a comprar, vuelve ahí al entrar.
+	const [params] = useSearchParams();
+	const next = safeNextPath(params.get('next'));
+
+	const { mutate, isPending } = useLogin(next);
 	const { session, isLoading } = useUser();
 
 	const onLogin = (e: React.FormEvent) => {
@@ -19,7 +24,7 @@ export const LoginPage = () => {
 
 	if (isLoading) return <Loader />;
 
-	if (session) return <Navigate to='/' />;
+	if (session) return <Navigate to={next} />;
 
 	return (
 		<div className='flex flex-col items-center h-full gap-5 mt-12'>
@@ -64,7 +69,10 @@ export const LoginPage = () => {
 
 					<p className='text-sm text-stone-800'>
 						¿No tienes una cuenta?
-						<Link to='/registro' className='ml-2 underline'>
+						<Link
+							to={next === '/' ? '/registro' : `/registro?next=${encodeURIComponent(next)}`}
+							className='ml-2 underline'
+						>
 							Regístrate
 						</Link>
 					</p>

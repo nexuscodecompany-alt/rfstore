@@ -1,3 +1,4 @@
+import type { ShippingZoneName } from '../constants/shipping';
 import { Color, OrderWithCustomer, Product, VariantProduct } from '../interfaces';
 import { supabase } from '../supabase/client';
 
@@ -161,29 +162,20 @@ export const compareAtFor = (
 // compra al interior (orden #210, Artigas) recibía un mail con un total igual
 // al subtotal, que se lee como "envío incluido". Todo pasa por acá.
 //
-// REGLA DEL NEGOCIO:
-//  - Montevideo: se cobra por zona; GRATIS a partir de USD 150.
-//  - Zona metropolitana (Canelones, llega agencia): se cobra siempre.
+// REGLA DEL NEGOCIO (desde 27/10/2026, constants/shipping.ts):
+//  - Montevideo y Canelones: tarifa fija, GRATIS a partir del mínimo (USD 150).
 //  - Interior: va por DAC y lo paga el cliente al retirar. NUNCA es gratis y
 //    NUNCA está incluido en el total.
-export const FREE_SHIPPING_MIN_USD = 150;
-
-export type ShippingZoneName = 'montevideo' | 'metropolitana' | 'interior';
-
-// Sólo Montevideo tiene envío gratis por monto.
-export const qualifiesForFreeShipping = (
-	zone: ShippingZoneName | null,
-	subtotalUsd: number,
-	minUsd: number = FREE_SHIPPING_MIN_USD
-): boolean => zone === 'montevideo' && subtotalUsd >= minUsd;
+//  - 'metropolitana' sólo aparece en órdenes viejas (zonas de PQuick).
+export type { ShippingZoneName } from '../constants/shipping';
 
 // ¿Este envío se le cobra al cliente en el checkout? El interior no: lo abona
 // en la agencia DAC al retirar.
 export const shippingIsChargedOnline = (zone: ShippingZoneName | null): boolean =>
-	zone === 'montevideo' || zone === 'metropolitana';
+	zone === 'montevideo' || zone === 'canelones' || zone === 'metropolitana';
 
 export interface ShippingSummary {
-	/** Renglón corto del resumen: "Gratis", "USD 4", "Lo abona en DAC"… */
+	/** Renglón corto del resumen: "Gratis", "USD 6", "Lo abona en DAC"… */
 	label: string;
 	/** Zona en texto, para mails y panel: "Interior — Artigas". */
 	zoneLabel: string;
@@ -198,9 +190,10 @@ export const shippingZoneLabel = (
 	barrio?: string | null,
 	department?: string | null
 ): string => {
-	if (zone === 'montevideo') return `Montevideo${barrio ? ` — ${barrio}` : ''}`;
-	if (zone === 'metropolitana')
-		return `Zona metropolitana (agencia)${barrio ? ` — ${barrio}` : ''}`;
+	const b = barrio ? ` — ${barrio}` : '';
+	if (zone === 'montevideo') return `Montevideo${b}`;
+	if (zone === 'canelones') return `Canelones${b}`;
+	if (zone === 'metropolitana') return `Zona metropolitana (agencia)${b}`;
 	if (zone === 'interior') return `Interior${department ? ` — ${department}` : ''}`;
 	return 'A coordinar';
 };
@@ -213,10 +206,12 @@ export const shippingSummary = (opts: {
 	costUsd: number;
 	/** El envío quedó en 0 por el mínimo de compra. */
 	freeByThreshold?: boolean;
+	/** Mínimo de envío gratis, para el texto. */
+	freeMinUsd?: number;
 	/** El envío quedó en 0 por un cupón. */
 	freeByCoupon?: boolean;
 }): ShippingSummary => {
-	const { zone, barrio, department, costUsd, freeByThreshold, freeByCoupon } = opts;
+	const { zone, barrio, department, costUsd, freeByThreshold, freeMinUsd, freeByCoupon } = opts;
 	const zoneLabel = shippingZoneLabel(zone ?? null, barrio, department);
 
 	if (zone === 'interior') {
@@ -232,34 +227,28 @@ export const shippingSummary = (opts: {
 		return { label: 'Gratis (cupón)', zoneLabel, note: '', includedInTotal: true };
 	}
 
-	if (zone === 'montevideo' && freeByThreshold) {
+	if (freeByThreshold && zone && zone !== 'metropolitana') {
+		const place = zone === 'canelones' ? 'Canelones' : 'Montevideo';
 		return {
 			label: 'Gratis',
 			zoneLabel,
-			note: `Envío gratis en Montevideo por superar los USD ${FREE_SHIPPING_MIN_USD}.`,
+			note: freeMinUsd
+				? `Envío gratis en ${place} por superar los USD ${freeMinUsd}.`
+				: `Envío gratis en ${place}.`,
 			includedInTotal: true,
 		};
 	}
 
-	if (zone === 'metropolitana') {
+	if (zone === 'montevideo' || zone === 'canelones' || zone === 'metropolitana') {
 		return {
-			label: costUsd > 0 ? formatPrice(costUsd) : 'A coordinar',
-			zoneLabel,
-			note: 'Llega por agencia a domicilio, misma tarifa que Montevideo.',
-			includedInTotal: costUsd > 0,
-		};
-	}
-
-	if (zone === 'montevideo') {
-		return {
-			label: costUsd > 0 ? formatPrice(costUsd) : 'Elegí tu barrio',
+			label: costUsd > 0 ? formatPrice(costUsd) : 'Gratis',
 			zoneLabel,
 			note: '',
 			includedInTotal: costUsd > 0,
 		};
 	}
 
-	return { label: 'A coordinar', zoneLabel, note: '', includedInTotal: false };
+	return { label: 'Elegí tu departamento', zoneLabel, note: '', includedInTotal: false };
 };
 
 /* ====================================================================== */
@@ -814,3 +803,13 @@ export const extractFilePath = (url: string) => {
 
 	return parts[1];
 };
+
+/* ====================================================================== */
+/*  REDIRECCIÓN DESPUÉS DEL LOGIN                                          */
+/* ====================================================================== */
+// ?next=/checkout en /login y /registro. Sólo rutas internas: "//otro.com" o
+// "https://..." mandarían al cliente fuera de la tienda (open redirect).
+export const safeNextPath = (next: string | null | undefined): string =>
+	next && next.startsWith('/') && !next.startsWith('//') && !next.startsWith('/\\')
+		? next
+		: '/';

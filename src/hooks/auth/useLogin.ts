@@ -3,7 +3,8 @@ import { signIn } from '../../actions';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
-export const useLogin = () => {
+// redirectTo: a dónde volver después de entrar (ej. el checkout).
+export const useLogin = (redirectTo = '/') => {
 	const navigate = useNavigate();
 	const queryClient = useQueryClient();
 
@@ -11,7 +12,7 @@ export const useLogin = () => {
 		mutationFn: signIn,
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ['user'] });
-			navigate('/');
+			navigate(redirectTo);
 		},
 		onError: err => {
 			toast.error(err.message, {

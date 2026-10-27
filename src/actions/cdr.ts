@@ -174,10 +174,10 @@ export type CreatePreferencePayload =
 			};
 			customer_email?: string;
 			customer_name?: string;
-			shipping_zone?: 'montevideo' | 'metropolitana' | 'interior';
+			shipping_zone?: 'montevideo' | 'canelones' | 'interior';
 			shipping_barrio?: string;
+			// De acá sale el costo del envío: lo calcula el servidor.
 			shipping_department?: string;
-			shipping_cost_usd?: number;
 			coupon_code?: string;
 			invoice?: InvoiceDataForOrder | null;
 	  }

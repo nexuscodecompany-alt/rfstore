@@ -107,7 +107,8 @@ export const ThankyouPage = () => {
 		department: data.shipping.department,
 		costUsd: data.shipping.costUsd,
 		freeByThreshold:
-			data.shipping.zone === 'montevideo' && data.shipping.costUsd === 0,
+			(data.shipping.zone === 'montevideo' || data.shipping.zone === 'canelones') &&
+			data.shipping.costUsd === 0,
 	});
 
 	return (

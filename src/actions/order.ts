@@ -337,6 +337,7 @@ export const getOrderByIdAdmin = async (id: number) => {
 		shippingZone:
 			((order as { shipping_zone?: string | null }).shipping_zone as
 				| 'montevideo'
+				| 'canelones'
 				| 'metropolitana'
 				| 'interior'
 				| null) ?? null,

@@ -2,19 +2,17 @@ import { useEffect, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { HiOutlineTruck, HiOutlineMapPin } from 'react-icons/hi2';
-import {
-	DEFAULT_SHIPPING_RATES,
-	ShippingRates,
-	MONTEVIDEO_ZONES,
-} from '../../constants/shipping';
+import { DEFAULT_SHIPPING_RATES, ShippingRates } from '../../constants/shipping';
 import { updateShippingRates } from '../../actions';
-import { useShippingRates, useUsdUyuRate } from '../../hooks';
+import { useShippingRates } from '../../hooks';
 import { Loader } from '../../components/shared/Loader';
+
+const inputCls =
+	'w-24 rounded-lg border border-ink-200 px-2 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-300';
 
 export const DashboardShippingPage = () => {
 	const queryClient = useQueryClient();
 	const { data: persisted, isLoading } = useShippingRates();
-	const { data: fx } = useUsdUyuRate();
 
 	const [rates, setRates] = useState<ShippingRates>(DEFAULT_SHIPPING_RATES);
 
@@ -33,99 +31,113 @@ export const DashboardShippingPage = () => {
 
 	if (isLoading) return <Loader />;
 
-	const toUsd = (uyu: number) =>
-		fx?.rate ? `≈ USD ${(uyu / fx.rate).toFixed(2)}` : '';
-
-	const tierLabel: Record<keyof ShippingRates['montevideo'], string> = {
-		centro: 'Centro / Costa este (Zonas 5, 6, 7)',
-		periferia: 'Periferia (Zonas 1, 2, 3, 4)',
-		costa: 'Zona metropolitana — agencia (Zonas 8-11: Las Piedras, Ciudad de la Costa, Pando, Canelones)',
-	};
-
-	const setMvd = (tier: keyof ShippingRates['montevideo'], v: string) =>
-		setRates(r => ({
-			...r,
-			montevideo: { ...r.montevideo, [tier]: Number(v) || 0 },
-		}));
-
-	const zonesByTier = (tier: keyof ShippingRates['montevideo']) =>
-		MONTEVIDEO_ZONES.filter(z => z.tier === tier);
+	const setNum = (key: keyof ShippingRates, v: string) =>
+		setRates(r => ({ ...r, [key]: Number(v) || 0 }));
 
 	return (
 		<div className='max-w-3xl space-y-6'>
 			<div>
 				<h1 className='text-2xl font-bold text-ink-900'>Envíos</h1>
 				<p className='text-sm text-ink-500'>
-					Configurá las tarifas de envío por zona (en pesos uruguayos). En el
-					checkout se convierten a USD usando la cotización del dólar BROU del día
-					y se suman al total.
+					Tarifa fija por departamento, en dólares. Se suma al total del checkout y
+					la recalcula el servidor al cobrar.
 				</p>
 			</div>
 
-			{/* MONTEVIDEO */}
+			{/* MONTEVIDEO Y CANELONES */}
 			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft space-y-4'>
 				<div className='flex items-center gap-2'>
 					<HiOutlineMapPin className='text-brand-600' size={22} />
-					<h2 className='font-bold text-ink-900'>Montevideo (por zona)</h2>
+					<h2 className='font-bold text-ink-900'>Envío a domicilio</h2>
 				</div>
 
-				{(['centro', 'periferia', 'costa'] as const).map(tier => (
+				{(
+					[
+						['montevideo_usd', 'Montevideo'],
+						['canelones_usd', 'Canelones'],
+					] as const
+				).map(([key, label]) => (
 					<div
-						key={tier}
-						className='rounded-xl border border-ink-100 bg-ink-50/40 p-4 space-y-2'
+						key={key}
+						className='flex items-center justify-between gap-3 rounded-xl border border-ink-100 bg-ink-50/40 p-4'
 					>
-						<div className='flex items-end justify-between gap-3'>
-							<div className='flex-1'>
-								<p className='font-semibold text-ink-800'>{tierLabel[tier]}</p>
-								<p className='text-[11px] text-ink-500'>
-									{zonesByTier(tier).flatMap(z => z.barrios).slice(0, 5).join(', ')}
-									{' '}…
-								</p>
-							</div>
-							<label className='flex items-center gap-2 text-xs text-ink-600'>
-								Precio
-								<input
-									type='number'
-									value={rates.montevideo[tier]}
-									onChange={e => setMvd(tier, e.target.value)}
-									className='w-24 rounded-lg border border-ink-200 px-2 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-300'
-								/>
-								UYU
-								<span className='text-ink-400 text-[11px]'>{toUsd(rates.montevideo[tier])}</span>
-							</label>
-						</div>
+						<p className='font-semibold text-ink-800'>{label}</p>
+						<label className='flex items-center gap-2 text-xs text-ink-600'>
+							Precio
+							<input
+								type='number'
+								min={0}
+								step='0.5'
+								value={rates[key]}
+								onChange={e => setNum(key, e.target.value)}
+								className={inputCls}
+							/>
+							USD
+						</label>
 					</div>
 				))}
+
+				<div className='rounded-xl border border-ink-100 bg-ink-50/40 p-4 space-y-3'>
+					<label className='flex items-center justify-between gap-3 text-sm text-ink-700'>
+						<span className='font-semibold text-ink-800'>Envío gratis a partir de</span>
+						<span className='flex items-center gap-2 text-xs text-ink-600'>
+							<input
+								type='number'
+								min={0}
+								value={rates.free_min_usd}
+								onChange={e => setNum('free_min_usd', e.target.value)}
+								className={inputCls}
+							/>
+							USD
+						</span>
+					</label>
+					<p className='text-[11px] text-ink-500'>
+						Vale en Montevideo (y en Canelones si marcás la casilla). 0 = sin envío
+						gratis.
+					</p>
+					<label className='flex items-center gap-2 text-sm text-ink-700 cursor-pointer'>
+						<input
+							type='checkbox'
+							checked={rates.free_includes_canelones}
+							onChange={e =>
+								setRates(r => ({ ...r, free_includes_canelones: e.target.checked }))
+							}
+						/>
+						También en Canelones
+					</label>
+				</div>
+
+				<label className='flex items-center justify-between gap-3 rounded-xl border border-ink-100 bg-ink-50/40 p-4 text-sm'>
+					<span>
+						<span className='block font-semibold text-ink-800'>Entrega en el día</span>
+						<span className='text-[11px] text-ink-500'>
+							Comprando antes de esta hora (lunes a viernes) llega el mismo día.
+						</span>
+					</span>
+					<span className='flex items-center gap-2 text-xs text-ink-600'>
+						<input
+							type='number'
+							min={0}
+							max={23}
+							value={rates.same_day_cutoff_hour}
+							onChange={e => setNum('same_day_cutoff_hour', e.target.value)}
+							className={inputCls}
+						/>
+						h
+					</span>
+				</label>
 			</div>
 
 			{/* INTERIOR */}
-			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft space-y-3'>
+			<div className='rounded-2xl border border-ink-200/70 bg-white p-5 shadow-soft space-y-2'>
 				<div className='flex items-center gap-2'>
 					<HiOutlineTruck className='text-brand-600' size={22} />
-					<h2 className='font-bold text-ink-900'>Interior del país (DAC)</h2>
+					<h2 className='font-bold text-ink-900'>Resto del país (DAC)</h2>
 				</div>
 				<p className='text-sm text-ink-500'>
-					Para el interior, lo habitual es que el cliente pague el envío en la
-					agencia DAC al retirar. Si querés cobrarlo al checkout, ponele un valor.
+					El resto de los departamentos va por DAC y el cliente paga el envío al
+					retirar en la agencia. No se suma al total.
 				</p>
-				<label className='flex items-center gap-2 text-xs text-ink-600'>
-					Precio
-					<input
-						type='number'
-						value={rates.interior_uyu}
-						onChange={e =>
-							setRates(r => ({ ...r, interior_uyu: Number(e.target.value) || 0 }))
-						}
-						className='w-24 rounded-lg border border-ink-200 px-2 py-1.5 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-brand-300'
-					/>
-					UYU
-					<span className='text-ink-400 text-[11px]'>{toUsd(rates.interior_uyu)}</span>
-					<span className='ml-2 text-[11px] text-ink-500'>
-						{rates.interior_uyu === 0
-							? '(0 = el cliente paga en DAC)'
-							: '(se cobra al checkout)'}
-					</span>
-				</label>
 			</div>
 
 			<button

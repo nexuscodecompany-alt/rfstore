@@ -1,7 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useForm } from 'react-hook-form';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useRegister, useUser } from '../hooks';
+import { safeNextPath } from '../helpers';
 import { LuLoader2 } from 'react-icons/lu';
 import { Loader } from '../components/shared/Loader';
 import {
@@ -25,7 +26,11 @@ export const RegisterPage = () => {
 		resolver: zodResolver(userRegisterSchema),
 	});
 
-	const { mutate, isPending } = useRegister();
+	// ?next=/checkout: el cliente venía a comprar, vuelve ahí al registrarse.
+	const [params] = useSearchParams();
+	const next = safeNextPath(params.get('next'));
+
+	const { mutate, isPending } = useRegister(next);
 	const { session, isLoading } = useUser();
 
 	const onRegister = handleSubmit(data => {
@@ -42,7 +47,7 @@ export const RegisterPage = () => {
 
 	if (isLoading) return <Loader />;
 
-	if (session) return <Navigate to='/' />;
+	if (session) return <Navigate to={next} />;
 
 	return (
 		<div className='flex flex-col items-center h-full gap-5 mt-12'>
@@ -113,7 +118,10 @@ export const RegisterPage = () => {
 
 					<p className='text-sm text-stone-800'>
 						¿Ya tienes una cuenta?
-						<Link to='/login' className='ml-2 underline'>
+						<Link
+							to={next === '/' ? '/login' : `/login?next=${encodeURIComponent(next)}`}
+							className='ml-2 underline'
+						>
 							Inicia sesión
 						</Link>
 					</p>

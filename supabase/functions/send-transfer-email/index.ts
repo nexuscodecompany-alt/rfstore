@@ -67,6 +67,7 @@ function shippingSummary(zone: string | null, barrio: string | null, dept: strin
 	const z = zone ?? null;
 	const zoneLabel =
 		z === 'montevideo' ? `Montevideo${barrio ? ` — ${barrio}` : ''}` :
+		z === 'canelones' ? `Canelones${barrio ? ` — ${barrio}` : ''}` :
 		z === 'metropolitana' ? `Zona metropolitana (agencia)${barrio ? ` — ${barrio}` : ''}` :
 		z === 'interior' ? `Interior${dept ? ` — ${dept}` : ''}` : '';
 	if (z === 'interior') {
@@ -88,7 +89,7 @@ function shippingSummary(zone: string | null, barrio: string | null, dept: strin
 	return {
 		zoneLabel,
 		amountLabel: z ? 'Gratis' : 'A coordinar',
-		note: z === 'montevideo' ? 'Envío bonificado por el monto de tu compra.' : '',
+		note: z === 'montevideo' || z === 'canelones' ? 'Envío bonificado por el monto de tu compra.' : '',
 		included: true,
 	};
 }

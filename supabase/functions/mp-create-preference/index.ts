@@ -1,5 +1,12 @@
 // deno-lint-ignore-file no-explicit-any
-// mp-create-preference v29 (2026-08-20)
+// mp-create-preference v31 (2026-10-27)
+//  - ENVÍO POR DEPARTAMENTO: Montevideo USD 6, Canelones USD 8, interior DAC.
+//    Gratis desde USD 150 en Montevideo y Canelones. El costo lo calcula
+//    rf_shipping_quote en la base; ya no se toma el que manda el cliente.
+//    TRANSICIÓN: si llega shipping_cost_usd (checkout viejo de zonas PQuick) se
+//    mantiene la lógica anterior. Borrar esa rama al subir el frontend nuevo.
+//
+// v29 (2026-08-20)
 //  - EL STOCK YA NO SE RESERVA AL CREAR LA ORDEN. Sale del catálogo recién
 //    cuando MercadoPago confirma el pago. Decisión del dueño: el 99% del
 //    catálogo es dropship de CDR, reservar de nuestro lado no reserva nada allá
@@ -72,10 +79,11 @@ interface ReqBody {
 	address: { line1: string; line2?: string; city: string; state: string; postal_code: string; country: string; };
 	customer_email?: string;
 	customer_name?: string;
-	shipping_zone?: 'montevideo' | 'metropolitana' | 'interior';
+	shipping_zone?: 'montevideo' | 'canelones' | 'metropolitana' | 'interior';
 	shipping_barrio?: string;
 	shipping_department?: string;
-	shipping_cost_usd?: number;
+	// Sólo lo manda el checkout viejo. El nuevo deja que el servidor calcule.
+	shipping_cost_usd?: number | null;
 	coupon_code?: string;
 	invoice?: InvoiceData | null;
 	// --- Modo pago combinado ---
@@ -259,16 +267,31 @@ Deno.serve(async req => {
 		});
 		const subtotal = lineTotals.reduce((acc, l) => acc + l.line_total, 0);
 
-		const requestedShipping = Number(body.shipping_cost_usd ?? 0);
-		const isMvd = body.shipping_zone === 'montevideo';
-		const isMetro = body.shipping_zone === 'metropolitana';
-		// Montevideo y zona metropolitana (agencia) cobran envío; interior = DAC (0).
-		// Envío gratis SOLO en Montevideo a partir de FREE_SHIPPING_MIN_USD.
-		// La zona metropolitana llega por agencia y se cobra siempre; el interior
-		// va por DAC y lo abona el cliente al retirar (nunca entra en el total).
-		const chargesShipping = isMvd || isMetro;
-		const qualifiesFree = isMvd && subtotal >= FREE_SHIPPING_MIN_USD;
-		const shippingBase = !chargesShipping || qualifiesFree ? 0 : Math.max(0, Number(requestedShipping.toFixed(2)));
+		let shippingZone = body.shipping_zone ?? null;
+		let shippingDepartment = body.shipping_department ?? null;
+		let shippingBase = 0;
+		if (body.shipping_cost_usd === undefined || body.shipping_cost_usd === null) {
+			// Esquema nuevo: el envío sale del departamento (rf_shipping_quote, la
+			// misma regla que usa place_cdr_order para transferencia/depósito).
+			const { data: quote, error: quoteErr } = await supabaseAdmin.rpc('rf_shipping_quote', {
+				p_department: body.shipping_department || body.address?.state || '',
+				p_subtotal: subtotal,
+			});
+			if (quoteErr || !quote) return new Response(JSON.stringify({ error: quoteErr?.message ?? 'Elegí el departamento de destino' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			shippingZone = (quote as any).zone;
+			shippingDepartment = (quote as any).department;
+			shippingBase = Number((quote as any).shipping_usd) || 0;
+			if ((shippingZone === 'montevideo' || shippingZone === 'canelones') && !String(body.shipping_barrio ?? '').trim()) {
+				return new Response(JSON.stringify({ error: 'Ingresá tu barrio' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+			}
+		} else {
+			// TRANSICIÓN: checkout viejo (zonas PQuick). Borrar al subir el nuevo.
+			const requestedShipping = Number(body.shipping_cost_usd ?? 0);
+			const isMvd = body.shipping_zone === 'montevideo';
+			const chargesShipping = isMvd || body.shipping_zone === 'metropolitana';
+			const qualifiesFree = isMvd && subtotal >= FREE_SHIPPING_MIN_USD;
+			shippingBase = !chargesShipping || qualifiesFree ? 0 : Math.max(0, Number(requestedShipping.toFixed(2)));
+		}
 
 		// Cupon (server-side, anti-manipulacion). El descuento se calcula contra el subtotal REAL cobrado.
 		let couponDiscount = 0, couponFree = false, couponId: string | null = null, couponValid = false, couponCodeNorm: string | null = null;
@@ -317,7 +340,7 @@ Deno.serve(async req => {
 			if (!String(inv?.address ?? '').trim()) return new Response(JSON.stringify({ error: 'Falta el domicilio fiscal para la factura' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 		}
 
-		const { data: orderRow, error: orderErr } = await supabaseAdmin.from('orders').insert({ customer_id: customer.id, address_id: addressRow.id, total_amount: totalAmount, status: 'pago_pendiente', payment_method: 'mercadopago', payment_status: 'pending', shipping_zone: body.shipping_zone ?? null, shipping_barrio: body.shipping_barrio ?? null, shipping_department: body.shipping_department ?? null, shipping_cost_usd: shippingCharge, coupon_id: couponId, coupon_code: couponCodeNorm, discount_usd: couponDiscount, fx_rate: useUyu ? fxRate : null, fx_source: useUyu ? fxSource : null, total_original: useUyu ? Math.round(totalAmount * fxRate) : null,
+		const { data: orderRow, error: orderErr } = await supabaseAdmin.from('orders').insert({ customer_id: customer.id, address_id: addressRow.id, total_amount: totalAmount, status: 'pago_pendiente', payment_method: 'mercadopago', payment_status: 'pending', shipping_zone: shippingZone, shipping_barrio: String(body.shipping_barrio ?? '').trim() || null, shipping_department: shippingDepartment, shipping_cost_usd: shippingCharge, coupon_id: couponId, coupon_code: couponCodeNorm, discount_usd: couponDiscount, fx_rate: useUyu ? fxRate : null, fx_source: useUyu ? fxSource : null, total_original: useUyu ? Math.round(totalAmount * fxRate) : null,
 			invoice_requested: quiereFactura,
 			invoice_rut: quiereFactura ? rutDigits : null,
 			invoice_business_name: quiereFactura ? String(inv?.business_name ?? '').trim() : null,
@@ -342,10 +365,13 @@ Deno.serve(async req => {
 
 		const mpItems: Array<{ title: string; quantity: number; currency_id: string; unit_price: number }> = lineTotals.map(l => ({ title: l.title, quantity: l.quantity, currency_id: curId, unit_price: Math.max(minUnit, toCharge(l.unit_final_usd * priceFactor)) }));
 		if (shippingCharge > 0) {
-			const zoneLabel = isMvd
-				? `Montevideo${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}`
-				: isMetro
-				? `Zona metropolitana${body.shipping_barrio ? ` — ${body.shipping_barrio}` : ''}`
+			const barrioSuffix = body.shipping_barrio ? ` — ${body.shipping_barrio}` : '';
+			const zoneLabel = shippingZone === 'montevideo'
+				? `Montevideo${barrioSuffix}`
+				: shippingZone === 'canelones'
+				? `Canelones${barrioSuffix}`
+				: shippingZone === 'metropolitana'
+				? `Zona metropolitana${barrioSuffix}`
 				: 'Envío';
 			mpItems.push({ title: `Envío (${zoneLabel})`, quantity: 1, currency_id: curId, unit_price: Math.max(minUnit, toCharge(shippingCharge)) });
 		}

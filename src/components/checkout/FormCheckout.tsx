@@ -1,38 +1,40 @@
 import { useState, useEffect, useMemo } from "react";
-import { useCreateOrder, useUser } from "../../hooks";
+import { useCreateOrder, useUser, useShippingRates } from "../../hooks";
 import { useCartStore } from "../../store/cart.store";
 import { useCheckoutShippingStore } from "../../store/checkoutShipping.store";
 import { ImSpinner2 } from "react-icons/im";
 import toast from "react-hot-toast";
 import { ItemsCheckout } from "./ItemsCheckout";
-import {
-  formatPrice,
-  shippingSummary,
-  qualifiesForFreeShipping,
-  FREE_SHIPPING_MIN_USD,
-} from "../../helpers";
+import { formatPrice, shippingSummary } from "../../helpers";
 import { supabase } from "../../supabase/client";
-import { URUGUAY_DEPARTMENTS_INTERIOR } from "../../constants/shipping";
+import {
+  URUGUAY_DEPARTMENTS,
+  DEFAULT_SHIPPING_RATES,
+  quoteShipping,
+  isLocalDelivery,
+  freeShippingAppliesTo,
+  deliveryEtaText,
+  type ShippingRates,
+} from "../../constants/shipping";
 
 const FORMSPREE_ID = "mvgqddop";
 
-// Misma regla que el checkout de pago online (helpers/shippingSummary):
-// gratis SÓLO en Montevideo desde USD 150; el interior va por DAC y lo abona
-// el cliente al retirar. Antes esto vivía duplicado acá con su propio umbral.
-const computeShipping = (department: string, total: number) => {
+// Misma regla que el checkout de pago online (constants/shipping): Montevideo y
+// Canelones tarifa fija, gratis desde el mínimo; el interior va por DAC y lo
+// abona el cliente al retirar.
+const computeShipping = (department: string, total: number, rates: ShippingRates) => {
   if (!department) {
     return shippingSummary({ zone: null, costUsd: 0 });
   }
-  const isMontevideo = department === "Montevideo";
+  const q = quoteShipping(department, total, rates);
   return shippingSummary({
-    zone: isMontevideo ? "montevideo" : "interior",
-    department: isMontevideo ? null : department,
-    costUsd: 0,
-    freeByThreshold: isMontevideo && qualifiesForFreeShipping("montevideo", total),
+    zone: q.zone,
+    department,
+    costUsd: q.shippingUsd,
+    freeByThreshold: q.freeByThreshold,
+    freeMinUsd: rates.free_min_usd,
   });
 };
-
-const ALL_DEPARTMENTS = ["Montevideo", ...URUGUAY_DEPARTMENTS_INTERIOR];
 
 export const FormCheckout = () => {
   const { mutate: createOrder, isPending } = useCreateOrder();
@@ -51,9 +53,11 @@ export const FormCheckout = () => {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const { data: rates = DEFAULT_SHIPPING_RATES } = useShippingRates();
+  const quote = quoteShipping(department, totalAmount, rates);
   const shippingInfo = useMemo(
-    () => computeShipping(department, totalAmount),
-    [department, totalAmount]
+    () => computeShipping(department, totalAmount, rates),
+    [department, totalAmount, rates]
   );
   const shippingLabel = shippingInfo.label;
 
@@ -244,25 +248,28 @@ export const FormCheckout = () => {
               required
             >
               <option value="">Seleccioná tu departamento…</option>
-              {ALL_DEPARTMENTS.map((d) => (
+              {URUGUAY_DEPARTMENTS.map((d) => (
                 <option key={d} value={d}>
                   {d}
                 </option>
               ))}
             </select>
 
-            {department === "Montevideo" && totalAmount < FREE_SHIPPING_MIN_USD && (
+            {isLocalDelivery(quote.zone) && !quote.freeByThreshold && (
               <p className="text-xs text-amber-700">
-                Envío gratis dentro de Montevideo a partir de USD {FREE_SHIPPING_MIN_USD}.
-                Coordinamos el costo por WhatsApp.
+                Envío a domicilio en {department}: {formatPrice(quote.baseUsd)}.
+                {freeShippingAppliesTo(quote.zone, rates) &&
+                  ` Gratis a partir de USD ${rates.free_min_usd}.`}{" "}
+                {deliveryEtaText(rates.same_day_cutoff_hour)}
               </p>
             )}
-            {department === "Montevideo" && totalAmount >= FREE_SHIPPING_MIN_USD && (
+            {isLocalDelivery(quote.zone) && quote.freeByThreshold && (
               <p className="text-xs text-emerald-700">
-                ¡Tu pedido tiene envío gratis dentro de Montevideo!
+                ¡Tu pedido tiene envío gratis en {department}!{" "}
+                {deliveryEtaText(rates.same_day_cutoff_hour)}
               </p>
             )}
-            {department && department !== "Montevideo" && (
+            {quote.zone === "interior" && (
               <p className="text-xs text-ink-500">
                 Envío al interior por DAC: el costo lo abonás al retirar en la
                 agencia. Lo coordinamos por WhatsApp.
