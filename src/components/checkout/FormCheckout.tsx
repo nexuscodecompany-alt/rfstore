@@ -20,7 +20,7 @@ import {
 const FORMSPREE_ID = "mvgqddop";
 
 // Misma regla que el checkout de pago online (constants/shipping): Montevideo y
-// Canelones tarifa fija, gratis desde el mínimo; el interior va por DAC y lo
+// Canelones tarifa fija, gratis desde el mínimo sólo en Montevideo; el interior va por DAC y lo
 // abona el cliente al retirar.
 const computeShipping = (department: string, total: number, rates: ShippingRates) => {
   if (!department) {

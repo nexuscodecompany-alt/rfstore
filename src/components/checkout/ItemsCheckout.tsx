@@ -1,3 +1,4 @@
+import { HiOutlineTrash } from 'react-icons/hi';
 import { formatPrice } from '../../helpers';
 import { useCartStore } from '../../store/cart.store';
 import { useCheckoutShippingStore } from '../../store/checkoutShipping.store';
@@ -6,6 +7,7 @@ import { CheckoutExtras } from './CheckoutExtras';
 export const ItemsCheckout = () => {
 	const cartItems = useCartStore(state => state.items);
 	const totalAmount = useCartStore(state => state.totalAmount);
+	const removeItem = useCartStore(state => state.removeItem);
 	const shippingLabel = useCheckoutShippingStore(s => s.shippingLabel);
 	const discountUsd = useCheckoutShippingStore(s => s.discountUsd);
 	const couponCode = useCheckoutShippingStore(s => s.couponCode);
@@ -37,9 +39,20 @@ export const ItemsCheckout = () => {
 						<div className='flex-1 space-y-3'>
 							<div className='flex justify-between'>
 								<p className='font-semibold'>{item.name}</p>
-								<p className='text-sm font-medium text-gray-600 mt-1'>
-									{formatPrice(item.price)}
-								</p>
+								<div className='flex items-start gap-2'>
+									<p className='text-sm font-medium text-gray-600 mt-1'>
+										{formatPrice(item.price)}
+									</p>
+									<button
+										type='button'
+										onClick={() => removeItem(item.variantId)}
+										className='p-1 text-gray-400 hover:text-red-600 transition-colors'
+										aria-label={`Quitar ${item.name} del carrito`}
+										title='Quitar del carrito'
+									>
+										<HiOutlineTrash size={18} />
+									</button>
+								</div>
 							</div>
 						</div>
 					</li>

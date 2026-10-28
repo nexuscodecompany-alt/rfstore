@@ -34,7 +34,7 @@ export const DEFAULT_SHIPPING_RATES: ShippingRates = {
 	montevideo_usd: 6,
 	canelones_usd: 8,
 	free_min_usd: 150,
-	free_includes_canelones: true,
+	free_includes_canelones: false,
 	same_day_cutoff_hour: 15,
 };
 

@@ -76,7 +76,7 @@ export const CdrCheckoutForm = () => {
 	});
 
 	// Envío por departamento (constants/shipping): Montevideo y Canelones tarifa
-	// fija, gratis desde el mínimo; el interior va por DAC y lo paga el cliente al
+	// fija, gratis desde el mínimo sólo en Montevideo; el interior va por DAC y lo paga el cliente al
 	// retirar, así que nunca entra en este total. Esto es sólo lo que se MUESTRA:
 	// el servidor recalcula con la misma regla (rf_shipping_quote).
 	const { data: shippingRates = DEFAULT_SHIPPING_RATES } = useShippingRates();

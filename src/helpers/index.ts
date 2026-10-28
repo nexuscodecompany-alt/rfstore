@@ -163,7 +163,8 @@ export const compareAtFor = (
 // al subtotal, que se lee como "envío incluido". Todo pasa por acá.
 //
 // REGLA DEL NEGOCIO (desde 27/10/2026, constants/shipping.ts):
-//  - Montevideo y Canelones: tarifa fija, GRATIS a partir del mínimo (USD 150).
+//  - Montevideo y Canelones: tarifa fija. GRATIS desde el mínimo (USD 150) sólo
+//    en Montevideo (Canelones sólo si el panel lo habilita).
 //  - Interior: va por DAC y lo paga el cliente al retirar. NUNCA es gratis y
 //    NUNCA está incluido en el total.
 //  - 'metropolitana' sólo aparece en órdenes viejas (zonas de PQuick).
