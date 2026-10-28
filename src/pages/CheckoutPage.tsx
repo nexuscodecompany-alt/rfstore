@@ -10,6 +10,8 @@ import { Loader } from '../components/shared/Loader';
 import { useEffect, useRef } from 'react';
 import { supabase } from '../supabase/client';
 import { trackInitiateCheckout } from '../lib/pixel';
+import { getCartPrices } from '../actions';
+import toast from 'react-hot-toast';
 
 export const CheckoutPage = () => {
 	const totalItems = useCartStore(state => state.totalItemsInCart);
@@ -47,6 +49,32 @@ export const CheckoutPage = () => {
 			totalAmount
 		);
 	}, [cartItems, totalAmount]);
+
+	// Precios al día: el carrito guarda el precio del momento en que se agregó
+	// cada producto. Al entrar se reemplaza por el que va a cobrar el servidor,
+	// así el total, el envío gratis (desde USD 150) y lo cobrado coinciden.
+	const applyServerPrices = useCartStore(state => state.applyServerPrices);
+	const pricesSynced = useRef(false);
+	useEffect(() => {
+		if (pricesSynced.current || cartItems.length === 0) return;
+		pricesSynced.current = true;
+		const before = cartItems.map(i => ({ id: i.variantId, name: i.name, price: i.price }));
+		getCartPrices(before.map(i => i.id))
+			.then(prices => {
+				const changed = before.filter(
+					i => prices[i.id] && prices[i.id].price > 0 && Math.abs(prices[i.id].price - i.price) >= 0.01
+				);
+				applyServerPrices(prices);
+				if (changed.length > 0) {
+					toast(
+						`Actualizamos el precio de ${changed.length === 1 ? changed[0].name : `${changed.length} productos`} de tu carrito.`,
+						{ icon: 'ℹ️' }
+					);
+				}
+			})
+			// Si falla, se sigue con el precio guardado: el servidor igual cobra el real.
+			.catch(e => console.warn('get_cart_prices:', e));
+	}, [cartItems, applyServerPrices]);
 
 	useEffect(() => {
 		supabase.auth.onAuthStateChange(async (event, session) => {

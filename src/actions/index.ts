@@ -17,3 +17,4 @@ export * from './customers';
 export * from './purchases';
 export * from './checkoutExtras';
 export * from './abandonedCart';
+export * from './cartPrices';

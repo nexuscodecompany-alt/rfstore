@@ -10,6 +10,8 @@ export interface CartState {
 	addItem: (item: ICartItem) => void;
 	removeItem: (variantId: string) => void;
 	updateQuantity: (variantId: string, quantity: number) => void;
+	/** Pisa precio y stock con los del servidor (get_cart_prices). */
+	applyServerPrices: (prices: Record<string, { price: number; stock: number }>) => void;
 	cleanCart: () => void;
 }
 
@@ -109,6 +111,20 @@ const storeApi: StateCreator<CartState> = set => ({
 				items: updatedItems,
 				totalAmount: newTotalAmount,
 				totalItemsInCart: newTotalItems,
+			};
+		});
+	},
+
+	applyServerPrices: prices => {
+		set(state => {
+			const updatedItems = state.items.map(i => {
+				const p = prices[i.variantId];
+				// Precio 0 = el servidor no lo pudo calcular: se deja el que había.
+				return p && p.price > 0 ? { ...i, price: p.price, stock: p.stock } : i;
+			});
+			return {
+				items: updatedItems,
+				totalAmount: updatedItems.reduce((acc, i) => acc + i.price * i.quantity, 0),
 			};
 		});
 	},
