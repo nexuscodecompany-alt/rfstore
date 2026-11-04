@@ -386,7 +386,11 @@ export async function buildDraft(supabase: SupabaseClient, orderId: number, cfg:
 
 	// --- Líneas ---
 	let lines: DraftLine[] = [];
+	let mlShipping = 0;
+	// Total a facturar: lo cobrado; en ML, lo que da la pantalla de facturación de ML.
+	let target = 0;
 	for (const ord of list) {
+		const first = lines.length;
 		for (const it of (ord.order_items ?? []) as any[]) {
 			const p = it.variants?.products ?? {};
 			const variant = [it.variants?.color_name, it.variants?.storage].filter(isRealVariant).join(' ');
@@ -395,13 +399,57 @@ export async function buildDraft(supabase: SupabaseClient, orderId: number, cfg:
 			lines.push({
 				cantidad: Number(it.quantity) || 1,
 				descripcion: cut(full, LIMITS.descripcion),
-				descripcionLarga: cut(full, LIMITS.descripcionLarga),
+				// Fixed imprime las dos: sólo va si agrega algo a la corta.
+				descripcionLarga: full.length > LIMITS.descripcion ? cut(full, LIMITS.descripcionLarga) : '',
 				rubro: cut(cfg.rubro_mode === 'category' && category ? category : cfg.default_rubro, 60) || 'Varios',
 				codigo: cut(p.external_code ?? '', 40),
 				precioUnitario: round2(Number(it.price) * rate),
 				descuentoMonto: 0,
 			});
 		}
+		// ML: precios, descuento y envío tal cual la pantalla "Datos para emitir la
+		// factura" de ML, en la moneda de la venta y sin cotización nuestra.
+		if (ord.channel === 'ml' && ord.ml_order_id && lines.length > first) {
+			const ml = await mlChargeDetail(supabase, String(ord.ml_order_id));
+			if (ml && ml.items.length > 0) {
+				mlShipping += ml.shipping;
+				target += round2(ml.items.reduce((acc, x) => acc + x.listUnit * x.qty - x.discount, 0));
+				const own = lines.splice(first);
+				const used = new Set<number>();
+				for (const x of ml.items) {
+					// Nuestra línea (nombre, rubro, código) de la misma cantidad; si no hay, el título de ML.
+					let k = own.findIndex((l, i) => !used.has(i) && l.cantidad === x.qty);
+					if (k < 0) k = own.findIndex((_, i) => !used.has(i));
+					if (k >= 0) used.add(k);
+					const ref = k >= 0 ? own[k] : null;
+					lines.push({
+						cantidad: x.qty,
+						descripcion: ref?.descripcion ?? cut(x.title, LIMITS.descripcion),
+						descripcionLarga: ref?.descripcionLarga ?? (x.title.length > LIMITS.descripcion ? cut(x.title, LIMITS.descripcionLarga) : ''),
+						rubro: ref?.rubro ?? (cfg.default_rubro || 'Varios'),
+						codigo: ref?.codigo ?? '',
+						precioUnitario: x.listUnit,
+						descuentoMonto: x.discount,
+					});
+				}
+			} else {
+				target += chargedTotal(ord, moneda);
+				warnings.push('No se pudo leer de Mercado Libre el detalle de la venta: va por el total, sin desglose.');
+			}
+		} else {
+			target += chargedTotal(ord, moneda);
+		}
+	}
+	if (mlShipping > 0) {
+		lines.push({
+			cantidad: 1,
+			descripcion: 'Envío',
+			descripcionLarga: '',
+			rubro: cfg.shipping_rubro || 'Envíos',
+			codigo: '',
+			precioUnitario: mlShipping,
+			descuentoMonto: 0,
+		});
 	}
 	const shippingUsd = list.reduce((a: number, x: any) => a + (Number(x.shipping_cost_usd) || 0), 0);
 	if (shippingUsd > 0) {
@@ -417,14 +465,14 @@ export async function buildDraft(supabase: SupabaseClient, orderId: number, cfg:
 		});
 	}
 
-	const total = round2(list.reduce((a: number, x: any) => a + chargedTotal(x, moneda), 0));
+	const total = round2(target + mlShipping);
 	if (lines.length === 0) {
 		// Venta manual sin productos cargados: una línea por el total.
 		const desc = o.manual_description || o.sale_concepts?.name || `Venta #${o.id}`;
 		lines.push({
 			cantidad: 1,
 			descripcion: cut(desc, LIMITS.descripcion),
-			descripcionLarga: cut(desc, LIMITS.descripcionLarga),
+			descripcionLarga: desc.length > LIMITS.descripcion ? cut(desc, LIMITS.descripcionLarga) : '',
 			rubro: cfg.default_rubro || 'Varios',
 			codigo: '',
 			precioUnitario: total,
@@ -726,6 +774,69 @@ async function mlPackFor(supabase: SupabaseClient, orderId: number): Promise<str
  * facturación de la app). Trae doc_type CI o RUT y, en additional_info, nombre
  * (o razón social) y domicilio. Si falla o no hay datos → null (consumidor final).
  */
+/**
+ * Lo que ML muestra en "Datos para emitir la factura", en la moneda de la venta
+ * (decisión del cliente 04/11: la factura de ML es igual a esa pantalla, sin
+ * cotización nuestra):
+ * - precio de lista: el de la publicación pasado a la moneda de la venta con
+ *   la misma conversión que usó ML (unit_price × lista / precio con promo). Si
+ *   la promoción ya no es la de la venta, unit_price + descuento (gross_price).
+ * - descuento: /orders/{id}/discounts, tal cual.
+ * - envío: el que pagó el comprador (no está en total_amount de la orden).
+ * Ojo: ML pasa el descuento a pesos con otra cotización, así que lista −
+ * descuento puede dar unos pesos más que lo cobrado (04/11: 3.867,88 vs 3.864,48).
+ * Si falla → null y se factura por el total, sin desglose.
+ */
+type MlChargeItem = { title: string; qty: number; listUnit: number; discount: number };
+async function mlChargeDetail(supabase: SupabaseClient, mlOrderId: string): Promise<{ items: MlChargeItem[]; shipping: number } | null> {
+	try {
+		const { token } = await getValidAccessToken(supabase);
+		const h = { headers: { Authorization: `Bearer ${token}` } };
+		const [rd, ro] = await Promise.all([fetch(`${ML_API}/orders/${mlOrderId}/discounts`, h), fetch(`${ML_API}/orders/${mlOrderId}`, h)]);
+		if (!ro.ok) return null;
+		const ord: any = await ro.json().catch(() => ({}));
+
+		const disc = new Map<string, { total: number; offers: Set<string> }>();
+		if (rd.ok) {
+			const d: any = await rd.json().catch(() => ({}));
+			for (const det of d?.details ?? []) {
+				for (const it of det?.items ?? []) {
+					const id = String(it?.id ?? '');
+					const cur = disc.get(id) ?? { total: 0, offers: new Set<string>() };
+					cur.total += Number(it?.amounts?.total) || 0;
+					if (det?.supplier?.offer_id) cur.offers.add(String(det.supplier.offer_id));
+					disc.set(id, cur);
+				}
+			}
+		}
+
+		const items: MlChargeItem[] = [];
+		for (const oi of ord?.order_items ?? []) {
+			const id = String(oi?.item?.id ?? '');
+			const qty = Number(oi?.quantity) || 1;
+			const unit = Number(oi?.unit_price) || 0;
+			const dsc = disc.get(id);
+			const discount = round2(dsc?.total ?? 0);
+			let listUnit = discount > 0 ? Number(oi?.gross_price) || round2(unit + discount / qty) : unit;
+			if (discount > 0 && id) {
+				const rs = await fetch(`${ML_API}/items/${id}/sale_price?context=channel_marketplace`, h);
+				const sp: any = rs.ok ? await rs.json().catch(() => ({})) : {};
+				const promo = String(sp?.metadata?.promotion_id ?? '');
+				const amount = Number(sp?.amount) || 0;
+				const regular = Number(sp?.regular_amount) || 0;
+				if (promo && dsc?.offers.has(promo) && amount > 0 && regular > amount) listUnit = round2((unit * regular) / amount);
+			}
+			items.push({ title: String(oi?.item?.title ?? 'Producto'), qty, listUnit: round2(listUnit), discount });
+		}
+
+		let shipping = 0;
+		for (const p of ord?.payments ?? []) if (p?.status === 'approved') shipping += Number(p?.shipping_cost) || 0;
+		return { items, shipping: round2(shipping) };
+	} catch {
+		return null;
+	}
+}
+
 async function mlBillingReceptor(supabase: SupabaseClient, mlOrderId: string): Promise<{ receptor: Receptor; source: string } | null> {
 	try {
 		const { token } = await getValidAccessToken(supabase);
@@ -776,9 +887,14 @@ export async function uploadInvoiceToMl(supabase: SupabaseClient, invoiceId: num
 		return { ...inv, ml_upload_error: msg };
 	};
 	try {
-		const pdf = await fetch(inv.url_a4);
-		if (!pdf.ok) return fail(`No se pudo bajar el PDF de Fixed (HTTP ${pdf.status})`);
-		const bytes = new Uint8Array(await pdf.arrayBuffer());
+		// url_a4 es una página de Fixed que muestra el PDF (HTML, ML la rechaza):
+		// el archivo en sí viene en pdfBase64 de /imprimirCFE.
+		if (!inv.id_cfe) return fail('La factura no tiene idCFE para pedirle el PDF a Fixed');
+		const res = await fixedCall('/imprimirCFE', { idCFE: inv.id_cfe });
+		const b64 = String(res.data?.pdfBase64 ?? '').replace(/^data:[^,]*,/, '').replace(/\s/g, '');
+		if (!res.ok || !b64) return fail(`Fixed no devolvió el PDF: ${explainFixed(res.code, res.description) || 'vino vacío'}`);
+		const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+		if (String.fromCharCode(...bytes.slice(0, 4)) !== '%PDF') return fail('Lo que devolvió Fixed no es un PDF');
 		if (bytes.byteLength > 1_000_000) return fail('El PDF pesa más de 1 MB (límite de Mercado Libre)');
 		const { token } = await getValidAccessToken(supabase);
 		const form = new FormData();
