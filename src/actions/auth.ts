@@ -105,6 +105,51 @@ export const signOut = async () => {
 	}
 };
 
+/**
+ * Deja al comprador con sesión y ficha de cliente antes de crear el pedido.
+ * Con cuenta, actualiza sus datos de contacto. Sin cuenta, abre una sesión de
+ * INVITADO (anónima de Supabase): así el pedido tiene dueño y todo lo que ya
+ * valida "es tu pedido" (pago, página de gracias, comprobante) sigue igual.
+ * Requiere "Allow anonymous sign-ins" prendido en Supabase → Authentication.
+ */
+export const ensureBuyerSession = async (buyer: {
+	fullName: string;
+	phone: string;
+	email: string;
+}) => {
+	let { data: { session } } = await supabase.auth.getSession();
+	if (!session) {
+		const { data, error } = await supabase.auth.signInAnonymously();
+		if (error || !data.session) {
+			console.log(error);
+			throw new Error('No pudimos iniciar la compra. Probá de nuevo en unos segundos.');
+		}
+		session = data.session;
+	}
+
+	const userId = session.user.id;
+	const datos = {
+		full_name: buyer.fullName.trim(),
+		phone: buyer.phone.trim(),
+		email: buyer.email.trim(),
+	};
+	const { data: existing } = await supabase
+		.from('customers')
+		.select('id')
+		.eq('user_id', userId)
+		.maybeSingle();
+	const { error } = existing
+		? await supabase.from('customers').update(datos).eq('id', existing.id)
+		: await supabase.from('customers').insert({ user_id: userId, ...datos });
+	// Con cuenta ya existe la ficha: un fallo acá no frena la compra. Sin ficha
+	// el pedido no tendría a quién mandarle los mails.
+	if (error && !existing) {
+		console.log(error);
+		throw new Error('No pudimos guardar tus datos. Probá de nuevo.');
+	}
+	return session;
+};
+
 export const getSession = async () => {
 	const { data, error } = await supabase.auth.getSession();
 

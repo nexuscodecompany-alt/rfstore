@@ -5,6 +5,7 @@ import {
 	createMpPreference,
 	getAppSettings,
 	checkCdrStock,
+	ensureBuyerSession,
 	sendPaymentInstructionsEmail,
 	trackCheckoutLead,
 	type CartItemForMP,
@@ -26,7 +27,7 @@ import toast from 'react-hot-toast';
 import { HiOutlineTruck, HiOutlineCheckCircle } from 'react-icons/hi2';
 import { formatPrice, shippingSummary } from '../../helpers';
 import { ItemsCheckout } from './ItemsCheckout';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ImSpinner2 } from 'react-icons/im';
 import { supabase } from '../../supabase/client';
 
@@ -51,7 +52,11 @@ interface DepositInfo {
 
 export const CdrCheckoutForm = () => {
 	const navigate = useNavigate();
-	const { session } = useUser();
+	const { session: accountSession, guestSession } = useUser();
+	// Sin cuenta se compra igual, como invitado: al confirmar se abre una sesión
+	// anónima (ver ensureBuyerSession). Si ya compró como invitado en este
+	// navegador, se reusa esa sesión y sus datos.
+	const session = accountSession ?? guestSession;
 	const cartItems = useCartStore(s => s.items);
 	const totalAmount = useCartStore(s => s.totalAmount);
 
@@ -351,11 +356,6 @@ export const CdrCheckoutForm = () => {
 
 	const onSubmit = async (e: React.FormEvent) => {
 		e.preventDefault();
-		if (!session) {
-			toast.error('Tenés que iniciar sesión para comprar');
-			navigate('/login?next=/checkout');
-			return;
-		}
 		if (!form.fullName.trim()) {
 			toast.error('Ingresá tu nombre completo');
 			return;
@@ -405,21 +405,14 @@ export const CdrCheckoutForm = () => {
 
 		setSubmitting(true);
 		try {
-			// Persistir los datos del cliente en customers para próximas compras.
-			if (session?.user?.id) {
-				try {
-					await supabase
-						.from('customers')
-						.update({
-							full_name: form.fullName,
-							phone: form.phone,
-							email: form.email,
-						})
-						.eq('user_id', session.user.id);
-				} catch (e) {
-					console.warn('persist customer:', e);
-				}
-			}
+			// El pedido necesita un dueño: con cuenta es el cliente logueado; sin
+			// cuenta se abre una sesión de invitado y su ficha de cliente con los
+			// datos del formulario (de ahí salen los mails del pedido).
+			await ensureBuyerSession({
+				fullName: form.fullName,
+				phone: form.phone,
+				email: form.email,
+			});
 			// 1. Validar stock real contra CDR (sólo para los items CDR: los
 			// productos manuales con pago online no están en el WS de CDR, su stock
 			// es el de la base y lo validan place_cdr_order / mp-create-preference).
@@ -602,6 +595,16 @@ export const CdrCheckoutForm = () => {
 		<>
 			{submitting && <CheckoutSubmittingOverlay method={method} />}
 			<form className='flex flex-col gap-6' onSubmit={onSubmit}>
+				{/* Sin cuenta se compra igual; iniciar sesión es opcional. */}
+				{!accountSession && (
+					<p className='rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-ink-700'>
+						¿Ya tenés cuenta?{' '}
+						<Link to='/login?next=/checkout' className='font-semibold text-ink-900 underline'>
+							Iniciá sesión
+						</Link>{' '}
+						para usar tus datos guardados. Si no, completá tus datos y comprá sin registrarte.
+					</p>
+				)}
 				{/* Vuelta desde el mail de recuperación: acá se revela el descuento. */}
 				{recuperado && (
 					<div

@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useCartStore } from '../store/cart.store';
 import { FormCheckout } from '../components/checkout/FormCheckout';
 import { CdrCheckoutForm } from '../components/checkout/CdrCheckoutForm';
@@ -8,7 +8,6 @@ import { useUser, usePaymentsEnabled } from '../hooks';
 import { canBuyOnline } from '../helpers';
 import { Loader } from '../components/shared/Loader';
 import { useEffect, useRef } from 'react';
-import { supabase } from '../supabase/client';
 import { trackInitiateCheckout } from '../lib/pixel';
 import { getCartPrices } from '../actions';
 import toast from 'react-hot-toast';
@@ -31,8 +30,6 @@ export const CheckoutPage = () => {
 	const mixed = anyOnline && !allOnline;
 
 	const { isLoading } = useUser();
-
-	const navigate = useNavigate();
 
 	// Meta Pixel: InitiateCheckout una sola vez al entrar con carrito cargado.
 	const checkoutTracked = useRef(false);
@@ -75,14 +72,6 @@ export const CheckoutPage = () => {
 			// Si falla, se sigue con el precio guardado: el servidor igual cobra el real.
 			.catch(e => console.warn('get_cart_prices:', e));
 	}, [cartItems, applyServerPrices]);
-
-	useEffect(() => {
-		supabase.auth.onAuthStateChange(async (event, session) => {
-			if (event === 'SIGNED_OUT' || !session) {
-				navigate('/login?next=/checkout');
-			}
-		});
-	}, [navigate]);
 
 	if (isLoading) return <Loader />;
 

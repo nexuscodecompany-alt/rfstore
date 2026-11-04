@@ -9,8 +9,16 @@ export const useUser = () => {
 		refetchOnWindowFocus: true,
 	});
 
+	// Compra como invitado: el checkout abre una sesión ANÓNIMA de Supabase
+	// (signInAnonymously) para que el pedido tenga dueño. Para el resto del sitio
+	// eso NO es estar logueado: `session` sólo trae cuentas reales y
+	// `guestSession` la del invitado.
+	const raw = data?.session ?? null;
+	const isGuest = !!raw?.user?.is_anonymous;
+
 	return {
-		session: data?.session,
+		session: isGuest ? null : raw,
+		guestSession: isGuest ? raw : null,
 		isLoading,
 	};
 };

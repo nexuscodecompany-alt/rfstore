@@ -1,10 +1,9 @@
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { useOrder, useUser, useUsdUyuRate } from '../hooks';
 import { Loader } from '../components/shared/Loader';
 import { CiCircleCheck } from 'react-icons/ci';
 import { formatPrice, shippingSummary, type ShippingZoneName } from '../helpers';
 import { useEffect, useState } from 'react';
-import { supabase } from '../supabase/client';
 import {
 	getAppSettings,
 	uploadPaymentProof,
@@ -35,22 +34,12 @@ export const ThankyouPage = () => {
 	const { data: fx } = useUsdUyuRate();
 	const cleanCart = useCartStore(s => s.cleanCart);
 
-	const navigate = useNavigate();
-
 	// Limpiamos el carrito recién cuando el cliente llega a la confirmación.
 	// Antes lo limpiábamos antes del redirect a MP, lo que causaba un flash
 	// momentáneo de "carrito vacío".
 	useEffect(() => {
 		cleanCart();
 	}, [cleanCart]);
-
-	useEffect(() => {
-		supabase.auth.onAuthStateChange(async (event, session) => {
-			if (event === 'SIGNED_OUT' || !session) {
-				navigate('/login');
-			}
-		});
-	}, [navigate]);
 
 	// Meta Pixel: Purchase cuando la orden confirmada está cargada.
 	// trackPurchase deduplica por id de orden (no cuenta de más si refrescan).
@@ -83,7 +72,26 @@ export const ThankyouPage = () => {
 		})();
 	}, [data?.paymentMethod]);
 
-	if (isError) return <div>Error al cargar la orden</div>;
+	// Sin sesión no se puede leer el pedido: pasa si se compró como invitado y el
+	// pago (MercadoPago o tarjeta) volvió en otro navegador o en otro celular. El
+	// pedido existe igual y el detalle le llega por mail.
+	if (isError)
+		return (
+			<div className='mx-auto flex max-w-md flex-col items-center gap-4 px-6 py-24 text-center'>
+				<CiCircleCheck size={64} className='text-emerald-600' />
+				<p className='text-lg font-semibold'>Recibimos tu pedido #{id}</p>
+				<p className='text-sm text-slate-600'>
+					Te mandamos el detalle y el estado del pago a tu mail. Si tenés alguna duda,
+					escribinos por WhatsApp al 098 732 327.
+				</p>
+				<Link
+					to='/'
+					className='rounded-full bg-black px-7 py-4 text-xs font-semibold uppercase tracking-widest text-white'
+				>
+					Volver a la tienda
+				</Link>
+			</div>
+		);
 
 	if (isLoading || !data || isLoadingSession) return <Loader />;
 

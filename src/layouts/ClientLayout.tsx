@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { signOut } from '../actions';
 import { useRoleUser, useUser } from '../hooks';
 import { useEffect } from 'react';
@@ -23,6 +23,9 @@ export const ClientLayout = () => {
 	}, [navigate]);
 
 	if (isLoadingSession || isLoadingRole) return <Loader />;
+
+	// Un invitado (compró sin registrarse) no tiene cuenta: va al login.
+	if (!session) return <Navigate to='/login' replace />;
 
 	const handleLogout = async () => {
 		await signOut();
