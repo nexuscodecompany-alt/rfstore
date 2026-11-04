@@ -15,6 +15,7 @@ import {
 import { FaWhatsapp } from 'react-icons/fa';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useOrderAdmin } from '../../hooks';
+import { OrderInvoicePanel } from '../../components/dashboard/orders/OrderInvoicePanel';
 import {
 	updateOrderMlCosts,
 	updatePackMlCosts,
@@ -447,6 +448,8 @@ export const DashboardOrderPage = () => {
 							</div>
 						</div>
 					</div>
+
+					<OrderInvoicePanel orderId={order.id} channel={order.channel} />
 
 					{/* Factura con RUT: los datos que hay que poner en el comprobante. */}
 					{order.invoice && (

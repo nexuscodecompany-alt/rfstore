@@ -116,6 +116,8 @@ export const ensureBuyerSession = async (buyer: {
 	fullName: string;
 	phone: string;
 	email: string;
+	/** Cédula: la pide el checkout en compras de más de 5000 UI (factura electrónica). */
+	documentCi?: string;
 }) => {
 	let { data: { session } } = await supabase.auth.getSession();
 	if (!session) {
@@ -128,19 +130,23 @@ export const ensureBuyerSession = async (buyer: {
 	}
 
 	const userId = session.user.id;
-	const datos = {
+	const datos: Record<string, string> = {
 		full_name: buyer.fullName.trim(),
 		phone: buyer.phone.trim(),
 		email: buyer.email.trim(),
 	};
+	const ci = (buyer.documentCi ?? '').replace(/\D/g, '');
+	if (ci) datos.document_ci = ci;
 	const { data: existing } = await supabase
 		.from('customers')
 		.select('id')
 		.eq('user_id', userId)
 		.maybeSingle();
+	// `as any`: src/supabase/types.ts no tiene document_ci (columna nueva).
+	const customers = (supabase as any).from('customers');
 	const { error } = existing
-		? await supabase.from('customers').update(datos).eq('id', existing.id)
-		: await supabase.from('customers').insert({ user_id: userId, ...datos });
+		? await customers.update(datos).eq('id', existing.id)
+		: await customers.insert({ user_id: userId, ...datos });
 	// Con cuenta ya existe la ficha: un fallo acá no frena la compra. Sin ficha
 	// el pedido no tendría a quién mandarle los mails.
 	if (error && !existing) {

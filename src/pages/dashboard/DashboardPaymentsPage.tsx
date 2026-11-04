@@ -2,6 +2,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { getAppSettings, updateAppSetting } from '../../actions';
 import toast from 'react-hot-toast';
 import { useEffect, useState } from 'react';
+import { InvoiceSettingsSection } from '../../components/dashboard/InvoiceSettingsSection';
 
 interface TransferInfo {
 	banco: string;
@@ -179,6 +180,7 @@ export const DashboardPaymentsPage = () => {
 				</button>
 			</section>
 
+			<InvoiceSettingsSection />
 		</div>
 	);
 };

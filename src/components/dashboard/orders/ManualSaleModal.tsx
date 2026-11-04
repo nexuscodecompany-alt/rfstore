@@ -18,6 +18,7 @@ import {
 	useUsdUyuRate,
 } from '../../../hooks';
 import { supabase } from '../../../supabase/client';
+import { OrderInvoicePanel } from './OrderInvoicePanel';
 import {
 	sendManualSaleConfirmation,
 	sendManualSalePaymentLink,
@@ -331,6 +332,7 @@ const ViewManualSale = ({
 					<span>{formatMoneyCur(sale.grossProfit, sale.currency)}</span>
 				</div>
 			</div>
+			<OrderInvoicePanel orderId={sale.id} />
 			<div className='flex flex-wrap justify-end gap-2'>
 				<button
 					onClick={onEdit}

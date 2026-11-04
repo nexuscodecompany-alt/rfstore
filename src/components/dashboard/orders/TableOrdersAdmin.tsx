@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { HiChevronRight, HiOutlineShoppingCart } from 'react-icons/hi2';
 import { confirmManualPayment } from '../../../actions';
@@ -18,6 +18,28 @@ import {
 import { OrderWithCustomer } from '../../../interfaces';
 import { useChangeStatusOrder } from '../../../hooks';
 import { Pagination } from '../../shared/Pagination';
+import { getAppSettings } from '../../../actions';
+import { getInvoiceStatusByOrder, INVOICE_STATUS_UI, type InvoiceRow } from '../../../actions/invoices';
+
+const CANCELLED = ['cancelado', 'rechazado', 'expirado', 'cancelled'];
+
+/** Estado de la factura electrónica de la fila (sólo con la facturación prendida). */
+const InvoiceBadge = ({ invoice, paid, cancelled }: { invoice?: InvoiceRow; paid: boolean; cancelled: boolean }) => {
+	if (invoice) {
+		const ui = INVOICE_STATUS_UI[invoice.status];
+		return (
+			<span className={`mt-1.5 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ring-1 ${ui.className}`}>
+				🧾 {ui.label}
+			</span>
+		);
+	}
+	if (!paid || cancelled) return null;
+	return (
+		<span className='mt-1.5 inline-flex rounded-full bg-ink-50 px-2 py-0.5 text-[10px] font-semibold text-ink-500 ring-1 ring-ink-200'>
+			🧾 Sin facturar
+		</span>
+	);
+};
 
 // Órdenes por página en el panel admin.
 const ORDERS_PER_PAGE = 20;
@@ -232,6 +254,27 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 		safePage * ORDERS_PER_PAGE
 	);
 
+	// Factura electrónica: estado de las órdenes de la página (con la facturación prendida).
+	const { data: invoicingOn = false } = useQuery({
+		queryKey: ['app_settings'],
+		queryFn: getAppSettings,
+		select: map => !!(map.get('invoice_config') as { enabled?: boolean } | undefined)?.enabled,
+	});
+	const pageIds = pagedRows.flatMap(r => r.ids);
+	const { data: invoiceByOrder } = useQuery({
+		queryKey: ['invoice-status', pageIds.join(',')],
+		queryFn: () => getInvoiceStatusByOrder(pageIds),
+		enabled: invoicingOn && pageIds.length > 0,
+	});
+	const invoiceBadge = (row: (typeof pagedRows)[number]) =>
+		invoicingOn ? (
+			<InvoiceBadge
+				invoice={row.ids.map(id => invoiceByOrder?.get(id)).find(Boolean)}
+				paid={row.rep.payment_status === 'paid'}
+				cancelled={CANCELLED.includes(String(row.rep.status ?? '').toLowerCase())}
+			/>
+		) : null;
+
 	if (!orders.length) {
 		return (
 			<div className='rounded-2xl border border-ink-200 bg-white p-12 text-center text-ink-400 shadow-soft'>
@@ -350,6 +393,7 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 													≈ {formatMoneyCur(row.altTotal, row.altCurrency)}
 												</span>
 											)}
+											{invoiceBadge(row)}
 										</td>
 										<td className='px-5 py-4 text-ink-300'>
 											<HiChevronRight size={18} />
@@ -419,6 +463,7 @@ export const TableOrdersAdmin = ({ orders, onManualClick }: Props) => {
 											⚠ Pago sin confirmar
 										</span>
 									)}
+									{invoiceBadge(row)}
 								</div>
 							</div>
 						))}

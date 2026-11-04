@@ -26,6 +26,7 @@ import {
 import toast from 'react-hot-toast';
 import { HiOutlineTruck, HiOutlineCheckCircle } from 'react-icons/hi2';
 import { formatPrice, shippingSummary } from '../../helpers';
+import { isValidCI } from '../../helpers/documents';
 import { ItemsCheckout } from './ItemsCheckout';
 import { Link, useNavigate } from 'react-router-dom';
 import { ImSpinner2 } from 'react-icons/im';
@@ -49,6 +50,8 @@ interface DepositInfo {
 	redpagos?: string;
 	instrucciones?: string;
 }
+
+const INVOICE_CFG_OFF = { enabled: false, ui_value_uyu: 6.3, id_required_above_ui: 5000 };
 
 export const CdrCheckoutForm = () => {
 	const navigate = useNavigate();
@@ -78,6 +81,8 @@ export const CdrCheckoutForm = () => {
 		city: '',
 		postalCode: '',
 		country: 'Uruguay',
+		// Cédula: sólo se pide si la compra supera 5000 UI (ver ciRequired).
+		ci: '',
 	});
 
 	// Envío por departamento (constants/shipping): Montevideo y Canelones tarifa
@@ -141,6 +146,15 @@ export const CdrCheckoutForm = () => {
 
 	/* ---------------- Factura con RUT ---------------------------------------- */
 	const [wantsInvoice, setWantsInvoice] = useState(false);
+	// Factura electrónica: en ventas de más de 5000 UI DGI exige documento y
+	// domicilio del comprador. Si pidió factura con RUT, el RUT ya lo cubre.
+	const [invoiceCfg, setInvoiceCfg] = useState(INVOICE_CFG_OFF);
+	const ciRequired =
+		invoiceCfg.enabled &&
+		!wantsInvoice &&
+		totalUyu !== null &&
+		totalUyu > invoiceCfg.id_required_above_ui * invoiceCfg.ui_value_uyu;
+
 	const [invoice, setInvoice] = useState({
 		rut: '',
 		businessName: '',
@@ -321,9 +335,10 @@ export const CdrCheckoutForm = () => {
 		if (!session?.user?.id) return;
 		(async () => {
 			try {
-				const { data } = await supabase
+				// `as any`: types.ts no tiene document_ci (columna nueva).
+				const { data } = await (supabase as any)
 					.from('customers')
-					.select('full_name, phone, email')
+					.select('full_name, phone, email, document_ci')
 					.eq('user_id', session.user.id)
 					.maybeSingle();
 				if (data) {
@@ -332,6 +347,7 @@ export const CdrCheckoutForm = () => {
 						fullName: data.full_name ?? f.fullName,
 						phone: data.phone ?? f.phone,
 						email: data.email ?? session.user.email ?? f.email,
+						ci: data.document_ci ?? f.ci,
 					}));
 				} else if (session.user.email) {
 					setForm(f => ({ ...f, email: session.user.email ?? '' }));
@@ -348,6 +364,7 @@ export const CdrCheckoutForm = () => {
 				const map = await getAppSettings();
 				setTransferInfo((map.get('payment_transfer_info') as TransferInfo) ?? {});
 				setDepositInfo((map.get('payment_deposit_info') as DepositInfo) ?? {});
+				setInvoiceCfg({ ...INVOICE_CFG_OFF, ...((map.get('invoice_config') as Partial<typeof INVOICE_CFG_OFF>) ?? {}) });
 			} catch (e) {
 				console.warn('settings load:', e);
 			}
@@ -381,6 +398,10 @@ export const CdrCheckoutForm = () => {
 			toast.error('Completá la dirección de envío');
 			return;
 		}
+		if (ciRequired && !isValidCI(form.ci)) {
+			toast.error(form.ci.trim() ? 'La cédula no es válida: revisá el número' : 'Ingresá tu cédula: DGI la exige en compras de este monto');
+			return;
+		}
 		// Factura con RUT: si la pidió, los datos fiscales tienen que estar. El
 		// servidor lo vuelve a validar; esto es para no hacerle esperar el viaje.
 		if (wantsInvoice && !invoiceOk) {
@@ -412,6 +433,7 @@ export const CdrCheckoutForm = () => {
 				fullName: form.fullName,
 				phone: form.phone,
 				email: form.email,
+				documentCi: ciRequired || form.ci.trim() ? form.ci : undefined,
 			});
 			// 1. Validar stock real contra CDR (sólo para los items CDR: los
 			// productos manuales con pago online no están en el WS de CDR, su stock
@@ -671,6 +693,21 @@ export const CdrCheckoutForm = () => {
 					required
 					minLength={8}
 				/>
+				{ciRequired && (
+					<div>
+						<input
+							inputMode='numeric'
+							className='border rounded p-2 w-full invalid:border-rose-400'
+							placeholder='Cédula de identidad * (ej: 1.234.567-2)'
+							value={form.ci}
+							onChange={e => setForm({ ...form, ci: e.target.value })}
+							required
+						/>
+						<p className='mt-1 text-xs text-ink-500'>
+							En compras de este monto DGI exige la cédula para la factura.
+						</p>
+					</div>
+				)}
 			</section>
 
 			<section className='space-y-3'>
