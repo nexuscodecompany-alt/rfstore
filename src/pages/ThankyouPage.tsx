@@ -8,6 +8,8 @@ import {
 	getAppSettings,
 	uploadPaymentProof,
 	notifyPaymentProofUploaded,
+	getPlacetopayStatus,
+	type PlacetopayStatus,
 } from '../actions';
 import { useCartStore } from '../store/cart.store';
 import toast from 'react-hot-toast';
@@ -34,17 +36,52 @@ export const ThankyouPage = () => {
 	const { data: fx } = useUsdUyuRate();
 	const cleanCart = useCartStore(s => s.cleanCart);
 
+	// Pago con tarjeta (Getnet): el resultado se consulta al servidor, que a su
+	// vez le pregunta a Placetopay si todavía no llegó el aviso.
+	const [ptp, setPtp] = useState<PlacetopayStatus | null>(null);
+	const isPtp = data?.paymentMethod === 'placetopay';
+	useEffect(() => {
+		if (!isPtp || !data) return;
+		let stop = false;
+		let tries = 0;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const tick = async () => {
+			try {
+				const r = await getPlacetopayStatus(data.id);
+				if (stop) return;
+				setPtp(r);
+				if (r.result !== 'pending') return;
+			} catch (e) {
+				console.warn('placetopay-status:', e);
+			}
+			tries++;
+			// Primero seguido (el aviso suele llegar en segundos), después más espaciado.
+			if (!stop && tries < 40) timer = setTimeout(tick, tries < 10 ? 3000 : 10000);
+		};
+		tick();
+		return () => {
+			stop = true;
+			if (timer) clearTimeout(timer);
+		};
+	}, [isPtp, data]);
+
 	// Limpiamos el carrito recién cuando el cliente llega a la confirmación.
 	// Antes lo limpiábamos antes del redirect a MP, lo que causaba un flash
-	// momentáneo de "carrito vacío".
+	// momentáneo de "carrito vacío". Con tarjeta (Getnet) sólo se limpia con el
+	// pago APROBADO: si se rechazó o sigue sin resolverse, el carrito queda para
+	// volver a intentar.
 	useEffect(() => {
+		if (!data) return; // hasta saber el medio de pago
+		if (isPtp && ptp?.result !== 'paid') return;
 		cleanCart();
-	}, [cleanCart]);
+	}, [cleanCart, data, isPtp, ptp]);
 
 	// Meta Pixel: Purchase cuando la orden confirmada está cargada.
 	// trackPurchase deduplica por id de orden (no cuenta de más si refrescan).
 	useEffect(() => {
 		if (!data) return;
+		// Con tarjeta (Getnet) sólo cuenta como compra si el pago se aprobó.
+		if (data.paymentMethod === 'placetopay' && ptp?.result !== 'paid') return;
 		trackPurchase(
 			data.id,
 			data.orderItems.map((item: any) => ({
@@ -55,7 +92,7 @@ export const ThankyouPage = () => {
 			})),
 			data.totalAmount
 		);
-	}, [data]);
+	}, [data, ptp?.result]);
 
 	useEffect(() => {
 		// El pago combinado también necesita los datos bancarios: una de sus dos
@@ -142,6 +179,8 @@ export const ThankyouPage = () => {
 						{userName ? `¡Gracias, ${userName}!` : '¡Gracias!'}
 					</p>
 				</div>
+
+				{isPtp && <PlacetopayResult status={ptp} />}
 
 				{/* Pago combinado: lo primero que tiene que entender el cliente es que
 				    su pedido no se procesa hasta que estén las DOS partes. */}
@@ -458,6 +497,51 @@ const PaymentProofBlock = ({ orderId }: { orderId: number }) => {
 			<p className='text-[11px] text-amber-800/80 text-center'>
 				Mail: <strong>{SALES_EMAIL}</strong> · WhatsApp: <strong>098 732 327</strong>
 			</p>
+		</div>
+	);
+};
+
+/* Resultado del pago con tarjeta (Getnet / Placetopay). */
+const PlacetopayResult = ({ status }: { status: PlacetopayStatus | null }) => {
+	if (!status || status.result === 'pending') {
+		return (
+			<div className='w-full space-y-2 rounded-md border-2 border-amber-200 bg-amber-50/70 p-5 md:w-[600px]'>
+				<h3 className='font-bold text-amber-900'>Estamos confirmando tu pago…</h3>
+				<p className='text-sm text-amber-800'>
+					Esto suele tardar unos segundos. No hace falta que pagues de nuevo: te
+					avisamos por mail apenas se confirme.
+				</p>
+				{status?.process_url && (
+					<a href={status.process_url} className='inline-block text-sm font-semibold text-amber-900 underline'>
+						¿No terminaste de pagar? Volver a la página de pago
+					</a>
+				)}
+			</div>
+		);
+	}
+	if (status.result === 'paid') {
+		return (
+			<div className='w-full space-y-1 rounded-md border-2 border-emerald-200 bg-emerald-50/70 p-5 md:w-[600px]'>
+				<h3 className='font-bold text-emerald-900'>¡Pago aprobado!</h3>
+				<p className='text-sm text-emerald-800'>
+					{status.card ? `Pagaste con ${status.card}. ` : ''}Te mandamos la confirmación por mail.
+				</p>
+			</div>
+		);
+	}
+	return (
+		<div className='w-full space-y-3 rounded-md border-2 border-red-200 bg-red-50/70 p-5 md:w-[600px]'>
+			<h3 className='font-bold text-red-900'>El pago no se completó</h3>
+			<p className='text-sm text-red-800'>
+				{status.message ? `${status.message}. ` : ''}No se te cobró nada. Tu carrito sigue
+				guardado: podés intentar de nuevo o elegir otro medio de pago.
+			</p>
+			<Link
+				to='/checkout'
+				className='inline-block rounded-md bg-black px-5 py-3 text-sm font-semibold text-white'
+			>
+				Volver a intentar
+			</Link>
 		</div>
 	);
 };

@@ -62,7 +62,17 @@ export const LoginPage = () => {
 							onChange={e => setPassword(e.target.value)}
 						/>
 
-						<button className='w-full py-4 mt-5 text-xs font-semibold tracking-widest text-white uppercase bg-black rounded-full'>
+						<Link
+							to={`/recuperar-contrasena?${new URLSearchParams({
+								...(email ? { email } : {}),
+								...(next !== '/' ? { next } : {}),
+							}).toString()}`}
+							className='self-end text-sm text-stone-700 underline'
+						>
+							¿Olvidaste tu contraseña?
+						</Link>
+
+						<button className='w-full py-4 mt-2 text-xs font-semibold tracking-widest text-white uppercase bg-black rounded-full'>
 							Iniciar sesión
 						</button>
 					</form>

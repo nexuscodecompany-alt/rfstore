@@ -7,6 +7,7 @@ import {
     BlogPage,
     CellPhonePage,
     LoginPage,
+    RecoverPasswordPage,
     PostDetailPage,
     DashboardBlogPage,
     RegisterPage,
@@ -88,6 +89,10 @@ export const router = createBrowserRouter([
             {
                 path: 'registro',
                 element: <RegisterPage />,
+            },
+            {
+                path: 'recuperar-contrasena',
+                element: <RecoverPasswordPage />,
             },
             {
                 path: 'account',

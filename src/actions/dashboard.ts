@@ -13,7 +13,7 @@ export interface StatusBreakdownItem {
 }
 
 export interface PaymentBreakdownItem {
-	method: 'mp' | 'transfer' | 'deposit' | 'ml' | 'manual' | 'otro';
+	method: 'mp' | 'placetopay' | 'transfer' | 'deposit' | 'ml' | 'manual' | 'otro';
 	count: number;
 	revenue_usd: number;
 }

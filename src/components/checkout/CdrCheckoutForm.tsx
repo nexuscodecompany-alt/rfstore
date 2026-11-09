@@ -3,6 +3,7 @@ import { useCartStore } from '../../store/cart.store';
 import { useCheckoutShippingStore } from '../../store/checkoutShipping.store';
 import {
 	createMpPreference,
+	createPlacetopaySession,
 	getAppSettings,
 	checkCdrStock,
 	ensureBuyerSession,
@@ -11,7 +12,7 @@ import {
 	type CartItemForMP,
 	type InvoiceDataForOrder,
 } from '../../actions';
-import { useUser, useUsdUyuRate, useShippingRates } from '../../hooks';
+import { useUser, useUsdUyuRate, useShippingRates, usePlacetopayMode, useRoleUser } from '../../hooks';
 import { validateCoupon, type CouponValidation } from '../../actions/coupons';
 import { leerCuponRecuperado, guardarCuponRecuperado } from '../../actions/abandonedCart';
 import {
@@ -34,7 +35,8 @@ import { supabase } from '../../supabase/client';
 
 // 'hybrid' = una parte por MercadoPago y otra por transferencia. El pedido no se
 // concreta hasta que entren las dos.
-type Method = 'mercadopago' | 'transfer' | 'deposit' | 'hybrid';
+// 'placetopay' = tarjeta por Getnet (Placetopay). Convive con MercadoPago.
+type Method = 'mercadopago' | 'transfer' | 'deposit' | 'hybrid' | 'placetopay';
 
 interface TransferInfo {
 	banco?: string;
@@ -60,10 +62,23 @@ export const CdrCheckoutForm = () => {
 	// anónima (ver ensureBuyerSession). Si ya compró como invitado en este
 	// navegador, se reusa esa sesión y sus datos.
 	const session = accountSession ?? guestSession;
+	// Tarjeta por Getnet: con el interruptor en 'admins' sólo la ve un administrador.
+	const { data: ptpMode = 'off' } = usePlacetopayMode();
+	const { data: role } = useRoleUser(accountSession?.user.id ?? '');
+	const showPlacetopay = ptpMode === 'all' || (ptpMode === 'admins' && role === 'admin');
 	const cartItems = useCartStore(s => s.items);
 	const totalAmount = useCartStore(s => s.totalAmount);
 
 	const [method, setMethod] = useState<Method>('mercadopago');
+	// Si la tarjeta por Getnet está disponible, arranca marcada (menos comisión).
+	// Sólo la primera vez: si el cliente ya eligió otro medio, no se lo cambia.
+	const ptpDefaulted = useRef(false);
+	useEffect(() => {
+		if (showPlacetopay && !ptpDefaulted.current) {
+			ptpDefaulted.current = true;
+			setMethod(m => (m === 'mercadopago' ? 'placetopay' : m));
+		}
+	}, [showPlacetopay]);
 	const [submitting, setSubmitting] = useState(false);
 	const [transferInfo, setTransferInfo] = useState<TransferInfo>({});
 	const [depositInfo, setDepositInfo] = useState<DepositInfo>({});
@@ -107,6 +122,7 @@ export const CdrCheckoutForm = () => {
 	const discountUsd = coupon?.valid ? Number(coupon.discount_usd ?? 0) : 0;
 	const grandTotalUsd = Math.max(0, totalAmount + effectiveShippingUsd - discountUsd);
 	const totalUyu = fx ? Math.round(grandTotalUsd * fx.rate) : null;
+
 
 	/* ---------------- Pago combinado (MercadoPago + transferencia) ------------ */
 	// Los montos se guardan como TEXTO mientras el cliente escribe: si se
@@ -561,6 +577,16 @@ export const CdrCheckoutForm = () => {
 			if (rpcErr) throw new Error(rpcErr.message);
 			const orderId = orderIdData as number;
 
+			// --- Tarjeta por Getnet: la orden ya existe; se pide la sesión de pago y
+			// se manda al cliente a pagar. Si no se pudo abrir, el servidor ya canceló
+			// la orden: el cliente sigue acá con su carrito y elige otro medio. ---
+			if (method === 'placetopay') {
+				const ses = await createPlacetopaySession(orderId);
+				guardarCuponRecuperado(null);
+				window.location.href = ses.process_url;
+				return;
+			}
+
 			// Transferencia Y depósito: le mandamos al comprador los datos para pagar
 			// (y al admin el aviso de pedido pendiente). Antes esto sólo corría para
 			// 'transfer', así que quien elegía depósito no recibía ningún mail.
@@ -925,6 +951,38 @@ export const CdrCheckoutForm = () => {
 			<section className='space-y-3'>
 				<h3 className='text-lg font-semibold'>Método de pago</h3>
 				<div className='space-y-2'>
+					{/* Tarjeta por Getnet PRIMERA y marcada por defecto: es el medio con
+					    menos comisión, así que es el que se incentiva. */}
+					{showPlacetopay && (
+						<label
+							className={`flex items-center gap-2 rounded border p-3 cursor-pointer ${
+								method === 'placetopay' ? 'border-emerald-400 bg-emerald-50/40' : ''
+							}`}
+						>
+							<input
+								type='radio'
+								name='method'
+								value='placetopay'
+								checked={method === 'placetopay'}
+								onChange={() => setMethod('placetopay')}
+							/>
+							<span className='flex flex-1 flex-wrap items-center gap-x-2 gap-y-1'>
+								<span className='font-medium'>Tarjeta de crédito o débito</span>
+								{ptpMode === 'admins' && (
+									<span className='rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-800'>
+										Sólo admins · prueba
+									</span>
+								)}
+							</span>
+							<span
+								className='inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700'
+								title='Pago procesado por Getnet en un entorno seguro'
+							>
+								<HiOutlineCheckCircle className='h-4 w-4' />
+								Pago seguro
+							</span>
+						</label>
+					)}
 					<label className='flex items-center gap-2 border rounded p-3 cursor-pointer'>
 						<input
 							type='radio'
@@ -1197,7 +1255,7 @@ export const CdrCheckoutForm = () => {
 					<p className='text-sm font-semibold text-gray-700'>Total a pagar</p>
 					<div className='text-right'>
 						<p className='font-bold text-lg'>{formatPrice(grandTotalUsd)}</p>
-						{method === 'mercadopago' && totalUyu !== null && fx && (
+						{(method === 'mercadopago' || method === 'placetopay') && totalUyu !== null && fx && (
 							<p className='text-[11px] text-gray-500'>
 								≈ UYU {totalUyu.toLocaleString('es-UY')}{' '}
 								<span title={`Cotización: ${fx.rate.toFixed(2)} (${fx.source})`}>
@@ -1218,6 +1276,8 @@ export const CdrCheckoutForm = () => {
 					? 'Procesando…'
 					: method === 'mercadopago'
 					? 'Pagar con MercadoPago'
+					: method === 'placetopay'
+					? 'Pagar con tarjeta'
 					: 'Confirmar pedido'}
 			</button>
 			</form>
@@ -1229,9 +1289,11 @@ const CheckoutSubmittingOverlay = ({ method }: { method: Method }) => {
 	const message =
 		method === 'mercadopago'
 			? 'Te estamos redirigiendo a Mercado Pago…'
+			: method === 'placetopay'
+			? 'Te estamos llevando a la página de pago…'
 			: 'Procesando tu pedido…';
 	const sub =
-		method === 'mercadopago'
+		method === 'mercadopago' || method === 'placetopay'
 			? 'No cierres ni recargues esta ventana.'
 			: 'Estamos confirmando los datos. Esto demora unos segundos.';
 	return (

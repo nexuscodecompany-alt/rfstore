@@ -311,3 +311,76 @@ export const assignCdrProductTaxonomy = async (
 	const { error } = await supabase.from('products').update(patch).eq('id', productId);
 	if (error) throw new Error(error.message);
 };
+
+/* ------------------------------------------------------------------------ */
+/*  Pago con tarjeta: Placetopay / Getnet (edge functions placetopay-*)      */
+/* ------------------------------------------------------------------------ */
+
+/** 'off' = nadie lo ve · 'admins' = sólo administradores (pruebas) · 'all' = todos. */
+export type PlacetopayMode = 'off' | 'admins' | 'all';
+
+/**
+ * Pide a Placetopay la sesión de pago de una orden YA creada con
+ * place_cdr_order (payment_method 'placetopay'). Devuelve el link a la página
+ * de pago de Getnet. return_origin = a qué sitio vuelve el cliente.
+ */
+export const createPlacetopaySession = (orderId: number) =>
+	invokeFn<{ order_id: number; process_url: string; reused?: boolean }>(
+		'placetopay-create-session',
+		{ order_id: orderId, return_origin: window.location.origin }
+	);
+
+export interface PlacetopayStatus {
+	result: 'paid' | 'rejected' | 'pending';
+	order_status: string | null;
+	session_status: string | null;
+	message: string | null;
+	card: string | null;
+	process_url: string | null;
+}
+
+/** Cómo quedó el pago con tarjeta (consulta a Placetopay si sigue pendiente). */
+export const getPlacetopayStatus = (orderId: number) =>
+	invokeFn<PlacetopayStatus>('placetopay-status', { order_id: orderId });
+
+/** Reembolso total (sólo admins). Le manda al cliente el mail de reembolso. */
+export const refundPlacetopay = (orderId: number) =>
+	invokeFn<{ ok: boolean; message?: string; mail?: { sent: boolean; to?: string; error?: string } }>(
+		'placetopay-refund',
+		{ order_id: orderId }
+	);
+
+/**
+ * Avisa al cliente por mail que su pedido se canceló (sólo admins). El servidor
+ * decide si corresponde: no avisa checkouts que nunca se pagaron, ventas de ML
+ * ni manuales, ni dos veces el mismo pedido.
+ */
+export const notifyOrderCancelled = (orderId: number) =>
+	invokeFn<{ ok: boolean; sent: boolean; to?: string; skipped?: string }>(
+		'send-order-cancelled',
+		{ order_id: orderId }
+	);
+
+/** Reenvía al cliente el mail de un reembolso ya hecho (sólo admins). */
+export const resendPlacetopayRefundNotice = (orderId: number) =>
+	invokeFn<{ ok: boolean; mail?: { sent: boolean; to?: string } }>('placetopay-refund', {
+		order_id: orderId,
+		resend_notice: true,
+	});
+
+/* ------------------------------------------------------------------------ */
+/*  Recuperar contraseña con código por mail (edge function password-reset)  */
+/* ------------------------------------------------------------------------ */
+
+/** Manda el código al mail (la respuesta es la misma exista o no la cuenta). */
+export const requestPasswordResetCode = (email: string) =>
+	invokeFn<{ ok: boolean }>('password-reset', { action: 'request', email });
+
+/** Verifica el código y cambia la contraseña. */
+export const resetPasswordWithCode = (email: string, code: string, newPassword: string) =>
+	invokeFn<{ ok: boolean }>('password-reset', {
+		action: 'reset',
+		email,
+		code,
+		new_password: newPassword,
+	});

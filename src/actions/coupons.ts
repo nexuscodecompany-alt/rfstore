@@ -52,7 +52,7 @@ export const validateCoupon = async (params: {
 	 * transferencia) y sin declararlo el servidor rechaza. Esto es una preview:
 	 * el candado real vive en place_cdr_order y en mp-create-preference.
 	 */
-	paymentMethod?: 'mercadopago' | 'transfer' | 'deposit' | 'hybrid';
+	paymentMethod?: 'mercadopago' | 'transfer' | 'deposit' | 'hybrid' | 'placetopay';
 }): Promise<CouponValidation> => {
 	const { data, error } = await (supabase.rpc as any)('apply_coupon', {
 		p_code: params.code,

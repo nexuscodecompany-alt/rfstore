@@ -77,7 +77,10 @@ export const productSchema = z.object({
 	slug: z
 		.string()
 		.min(1, 'El slug del producto es obligatorio')
-		.regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido'),
+		// Guion doble permitido: el sync de CDR corta el nombre a 60 caracteres y le pega
+		// "-codigo", y si el corte cae en un guion queda "base-de--lec72". Hay ~35 así
+		// en producción y cambiarles el slug rompería los links ya compartidos.
+		.regex(/^[a-z0-9]+(?:-+[a-z0-9]+)*$/, 'Slug inválido'),
 	brandId: z.string().min(1, 'La marca es obligatoria'),
 	categoryId: z.string().min(1, 'La categoría es obligatoria'),
 	subcategoryId: z.string().optional(),

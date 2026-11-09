@@ -52,7 +52,7 @@ function decodeJwtRole(authHeader: string): string | null {
 }
 
 function methodLabel(m: string): string {
-	return m === 'mercadopago' ? 'Mercado Pago' : m === 'transfer' ? 'Transferencia bancaria' : m === 'deposit' ? 'Depósito en redes' : m;
+	return m === 'mercadopago' ? 'Mercado Pago' : m === 'transfer' ? 'Transferencia bancaria' : m === 'deposit' ? 'Depósito en redes' : m === 'placetopay' ? 'Tarjeta de crédito o débito' : m;
 }
 
 function shippingLabel(zone: string | null, barrio: string | null, dept: string | null): string {

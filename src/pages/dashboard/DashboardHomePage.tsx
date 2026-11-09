@@ -256,6 +256,7 @@ const paymentLabels: Record<string, string> = {
 	mp: 'Mercado Pago',
 	transfer: 'Transferencia',
 	deposit: 'Depósito',
+	placetopay: 'Tarjeta (Getnet)',
 	ml: 'Mercado Libre',
 	manual: 'Manual',
 	otro: 'Otro',

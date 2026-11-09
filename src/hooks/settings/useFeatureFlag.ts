@@ -26,3 +26,25 @@ export const usePaymentsEnabled = () => {
 	const { data, isLoading } = useFeatureFlag('payments_enabled');
 	return { enabled: !!data, isLoading };
 };
+
+/**
+ * Pago con tarjeta por Getnet (Placetopay): 'off' | 'admins' | 'all'.
+ * Con 'admins' sólo lo ve un administrador (para probar en la tienda real).
+ * El servidor vuelve a chequear lo mismo: esto es sólo para mostrar la opción.
+ */
+export const usePlacetopayMode = () => {
+	return useQuery({
+		queryKey: ['feature_flag', 'placetopay_mode'],
+		queryFn: async (): Promise<'off' | 'admins' | 'all'> => {
+			const { data, error } = await supabase
+				.from('app_settings')
+				.select('value')
+				.eq('key', 'placetopay_mode')
+				.maybeSingle();
+			if (error) return 'off';
+			const v = String(data?.value ?? 'off');
+			return v === 'admins' || v === 'all' ? v : 'off';
+		},
+		staleTime: 60_000,
+	});
+};

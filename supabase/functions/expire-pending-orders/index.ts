@@ -60,11 +60,29 @@ Deno.serve(async req => {
 		const expired: number[] = [];
 		const skipped: { id: number; reason: string }[] = [];
 
+		// Tarjeta (Getnet / Placetopay): si la sesión de pago sigue abierta (por
+		// ejemplo, una transacción en revisión manual), la orden NO se vence: el
+		// resultado lo aplica placetopay-reconcile cuando Getnet lo resuelva.
+		const ptpIds = (stale ?? []).filter((o: any) => o.payment_method === 'placetopay').map((o: any) => o.id);
+		const ptpOpen = new Set<number>();
+		if (ptpIds.length > 0) {
+			const { data: open } = await supabase
+				.from('placetopay_sessions')
+				.select('order_id')
+				.in('order_id', ptpIds)
+				.eq('status', 'PENDING');
+			for (const r of open ?? []) ptpOpen.add(Number((r as any).order_id));
+		}
+
 		for (const o of stale ?? []) {
 			// No expirar si ya pagó con MP pero el webhook todavía no llegó.
 			// Mejor mantener pago_pendiente para que el webhook lo procese.
 			if (o.payment_status === 'paid' || o.payment_status === 'in_process') {
 				skipped.push({ id: o.id, reason: o.payment_status });
+				continue;
+			}
+			if (ptpOpen.has(o.id)) {
+				skipped.push({ id: o.id, reason: 'placetopay_session_open' });
 				continue;
 			}
 			try {

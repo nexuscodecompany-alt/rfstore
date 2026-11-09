@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import toast from 'react-hot-toast';
 import { IoChevronBack } from 'react-icons/io5';
 import {
@@ -22,8 +22,12 @@ import {
 	sendPaymentInstructionsEmail,
 	getPaymentProofSignedUrl,
 	confirmManualPayment,
+	refundPlacetopay,
+	resendPlacetopayRefundNotice,
+	notifyOrderCancelled,
 } from '../../actions';
 import { Loader } from '../../components/shared/Loader';
+import { supabase } from '../../supabase/client';
 import {
 	formatPriceCurrency,
 	formatMoney,
@@ -41,6 +45,7 @@ const PAYMENT_METHOD_LABEL: Record<string, string> = {
 	transfer: 'Transferencia bancaria',
 	deposit: 'Depósito en redes (Abitab / Redpagos)',
 	hybrid: 'Pago combinado (MercadoPago + transferencia)',
+	placetopay: 'Tarjeta (Getnet / Placetopay)',
 };
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
 	paid: 'Pagado',
@@ -116,6 +121,14 @@ export const DashboardOrderPage = () => {
 					? 'Pago confirmado — se le avisó al cliente'
 					: 'Pago rechazado y stock devuelto'
 			);
+			// Rechazar = el pedido queda cancelado: se le avisa al cliente.
+			if (action === 'reject') {
+				notifyOrderCancelled(Number(id))
+					.then(r => {
+						if (r.sent) toast.success(`Le avisamos al cliente (${r.to}).`);
+					})
+					.catch(e => toast.error(`No se pudo avisar al cliente: ${(e as Error).message}`));
+			}
 			queryClient.invalidateQueries({ queryKey: ['order', 'admin', Number(id)] });
 			queryClient.invalidateQueries({ queryKey: ['orders'] });
 			queryClient.invalidateQueries({ queryKey: ['pending_payments'] });
@@ -284,7 +297,8 @@ export const DashboardOrderPage = () => {
 					</div>
 				)}
 
-			{order.paymentMethod === 'mercadopago' && order.paymentStatus !== 'paid' && (
+			{(order.paymentMethod === 'mercadopago' || order.paymentMethod === 'placetopay') &&
+				order.paymentStatus !== 'paid' && order.paymentStatus !== 'refunded' && (
 				<div className='flex items-start gap-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/70 p-4'>
 					<span className='text-xl'>🛒</span>
 					<div className='text-sm'>
@@ -292,7 +306,9 @@ export const DashboardOrderPage = () => {
 							Checkout sin pagar — no es una venta
 						</p>
 						<p className='text-amber-800'>
-							Esta persona llegó al pago de Mercado Pago pero <b>no completó el pago</b>.
+							Esta persona llegó al pago de{' '}
+							{order.paymentMethod === 'placetopay' ? 'Getnet' : 'Mercado Pago'} pero{' '}
+							<b>no completó el pago</b>.
 							Queda como registro para seguimiento; no se cobró ni se debe despachar.
 						</p>
 					</div>
@@ -569,6 +585,9 @@ export const DashboardOrderPage = () => {
 											</p>
 										)}
 									</div>
+								)}
+								{order.paymentMethod === 'placetopay' && (
+									<PlacetopayPaymentInfo orderId={order.id} paymentStatus={order.paymentStatus} />
 								)}
 								<div className='flex items-center justify-between gap-3'>
 									<span className='text-ink-500'>Comprobante</span>
@@ -852,3 +871,144 @@ const CostInput = ({
 		</div>
 	</div>
 );
+
+/* ---------------------------------------------------------------------- */
+/*  Pago con tarjeta (Getnet / Placetopay): datos de la transacción y       */
+/*  reembolso total.                                                       */
+/* ---------------------------------------------------------------------- */
+interface PtpSessionRow {
+	request_id: number;
+	status: string;
+	message: string | null;
+	internal_reference: number | null;
+	authorization_code: string | null;
+	receipt: string | null;
+	payment_method_name: string | null;
+	issuer_name: string | null;
+	last_digits: string | null;
+	currency: string;
+	amount: number;
+	paid_amount: number | null;
+	amount_mismatch: boolean;
+	refunded: boolean;
+	refund_status: string | null;
+	refund_message: string | null;
+	created_at: string;
+}
+
+const PlacetopayPaymentInfo = ({
+	orderId,
+	paymentStatus,
+}: {
+	orderId: number;
+	paymentStatus: string | null;
+}) => {
+	const queryClient = useQueryClient();
+	const { data: rows = [] } = useQuery({
+		queryKey: ['placetopay_sessions', orderId],
+		queryFn: async (): Promise<PtpSessionRow[]> => {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const { data, error } = await (supabase as any)
+				.from('placetopay_sessions')
+				.select(
+					'request_id, status, message, internal_reference, authorization_code, receipt, payment_method_name, issuer_name, last_digits, currency, amount, paid_amount, amount_mismatch, refunded, refund_status, refund_message, created_at'
+				)
+				.eq('order_id', orderId)
+				.order('created_at', { ascending: false });
+			if (error) throw new Error(error.message);
+			return (data ?? []) as PtpSessionRow[];
+		},
+	});
+	const refund = useMutation({
+		mutationFn: () => refundPlacetopay(orderId),
+		onSuccess: res => {
+			toast.success(
+				res.mail?.sent
+					? `Reembolso hecho en Getnet. Le avisamos al cliente (${res.mail.to}).`
+					: 'Reembolso hecho en Getnet. OJO: el mail al cliente no salió; reenvialo desde acá.'
+			);
+			queryClient.invalidateQueries({ queryKey: ['placetopay_sessions', orderId] });
+			queryClient.invalidateQueries({ queryKey: ['order', 'admin'] });
+			queryClient.invalidateQueries({ queryKey: ['orders', 'admin'] });
+		},
+		onError: (e: Error) => toast.error(e.message),
+	});
+	const resend = useMutation({
+		mutationFn: () => resendPlacetopayRefundNotice(orderId),
+		onSuccess: res => toast.success(`Aviso de reembolso enviado a ${res.mail?.to ?? 'el cliente'}`),
+		onError: (e: Error) => toast.error(e.message),
+	});
+
+	const s = rows[0];
+	if (!s) {
+		return (
+			<p className='mt-2 text-xs text-ink-500'>Sin sesión de pago en Getnet.</p>
+		);
+	}
+	const Row = ({ label, value }: { label: string; value: string | null | undefined }) =>
+		value ? (
+			<div className='flex items-center justify-between gap-3 py-0.5'>
+				<span className='text-ink-500'>{label}</span>
+				<span className='text-right text-ink-800'>{value}</span>
+			</div>
+		) : null;
+
+	return (
+		<div className='mt-2 space-y-1 rounded-lg border border-ink-200 bg-ink-50/70 p-3 text-sm'>
+			<p className='mb-1 text-xs font-bold uppercase tracking-wide text-ink-600'>
+				Pago con tarjeta (Getnet)
+			</p>
+			<Row label='Sesión' value={`#${s.request_id} · ${s.status}`} />
+			<Row label='Tarjeta' value={s.payment_method_name ? `${s.payment_method_name}${s.last_digits ? ` ···${s.last_digits}` : ''}` : null} />
+			<Row label='Banco' value={s.issuer_name} />
+			<Row label='Autorización' value={s.authorization_code} />
+			<Row label='Recibo' value={s.receipt} />
+			<Row label='Ref. interna' value={s.internal_reference != null ? String(s.internal_reference) : null} />
+			<Row label='Monto' value={`${s.currency} ${Number(s.paid_amount ?? s.amount).toLocaleString('es-UY')}`} />
+			<Row label='Mensaje' value={s.message} />
+			{s.amount_mismatch && (
+				<p className='text-[12px] font-semibold text-red-700'>
+					⚠ Getnet cobró un monto distinto al del pedido: no se marcó pagado. Revisalo en el panel de Getnet.
+				</p>
+			)}
+			{s.refunded ? (
+				<div className='flex flex-wrap items-center justify-between gap-2'>
+					<p className='text-[12px] font-semibold text-emerald-700'>Reembolsado ✓ {s.refund_message ?? ''}</p>
+					{paymentStatus === 'refunded' && (
+						<button
+							type='button'
+							disabled={resend.isPending}
+							onClick={() => resend.mutate()}
+							className='text-[12px] font-semibold text-brand-600 hover:underline disabled:opacity-60'
+						>
+							{resend.isPending ? 'Enviando…' : 'Reenviar aviso al cliente'}
+						</button>
+					)}
+				</div>
+			) : (
+				s.refund_status && (
+					<p className='text-[12px] text-red-700'>Último intento de reembolso: {s.refund_status} {s.refund_message ?? ''}</p>
+				)
+			)}
+			{paymentStatus === 'paid' && s.status === 'APPROVED' && !s.refunded && (
+				<button
+					type='button'
+					disabled={refund.isPending}
+					onClick={() => {
+						if (
+							window.confirm(
+								`¿Reembolsar el TOTAL del pedido #${orderId} a la tarjeta del cliente?
+
+Se hace en Getnet y no se puede deshacer. El estado del pedido y el stock los seguís manejando vos (por ejemplo, pasarlo a Cancelado).`
+							)
+						)
+							refund.mutate();
+					}}
+					className='mt-2 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:opacity-60'
+				>
+					{refund.isPending ? 'Reembolsando…' : 'Reembolsar a la tarjeta'}
+				</button>
+			)}
+		</div>
+	);
+};

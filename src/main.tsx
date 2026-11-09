@@ -9,11 +9,14 @@ import {
 } from '@tanstack/react-query';
 import { Toaster } from 'react-hot-toast';
 import { initPixel, pageView } from './lib/pixel';
+import { getCookieConsent } from './lib/consent';
 
 const queryClient = new QueryClient();
 
 // Meta Pixel: init + PageView inicial, y un PageView en cada navegación del SPA.
-initPixel();
+// Sólo con las cookies aceptadas; si el visitante acepta después, lo carga el
+// aviso (CookieBanner). Sin Pixel, pageView() no hace nada.
+if (getCookieConsent() === 'accepted') initPixel();
 let lastPixelPath = window.location.pathname + window.location.search;
 router.subscribe(state => {
 	const path = state.location.pathname + state.location.search;

@@ -2,6 +2,7 @@ import { BiChevronRight } from 'react-icons/bi';
 import { Link } from 'react-router-dom';
 import { socialLinks } from '../../constants/links';
 import { useLegalPages } from '../../hooks/settings/useLegalPages';
+import { openCookieBanner } from '../../lib/consent';
 
 export const Footer = () => {
 	const { data: legalPages } = useLegalPages();
@@ -102,6 +103,12 @@ export const Footer = () => {
 							) : (
 								<span className='text-white/40'>Próximamente</span>
 							)}
+							<button
+								onClick={openCookieBanner}
+								className='text-left hover:text-white transition-colors'
+							>
+								Preferencias de cookies
+							</button>
 						</nav>
 					</div>
 				</div>

@@ -6,6 +6,8 @@ import { Sheet } from '../components/shared/Sheet';
 import { useGlobalStore } from '../store/global.store';
 import { NavbarMobile } from '../components/shared/NavbarMobile';
 import { ScrollToTop } from '../components/shared/ScrollToTop';
+import { FloatingCart } from '../components/shared/FloatingCart';
+import { CookieBanner } from '../components/shared/CookieBanner';
 
 export const RootLayout = () => {
 	const { pathname } = useLocation();
@@ -31,6 +33,9 @@ export const RootLayout = () => {
 			{activeNavMobile && <NavbarMobile />}
 
 			<Footer />
+
+			<FloatingCart />
+			<CookieBanner />
 		</div>
 	);
 };

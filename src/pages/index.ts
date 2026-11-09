@@ -41,3 +41,4 @@ export * from './dashboard/DashboardMercadoLibrePage';
 export * from './dashboard/DashboardExtrasPage';
 
 export * from './RecoverCartPage';
+export * from './RecoverPasswordPage';

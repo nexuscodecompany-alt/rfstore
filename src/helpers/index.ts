@@ -20,6 +20,9 @@ import { supabase } from '../supabase/client';
 export const isUnpaidMpCheckout = (o: OrderWithCustomer): boolean => {
 	if (o.payment_status === 'paid') return false;
 	if (o.payment_method === 'mercadopago') return true;
+	// Tarjeta (Getnet): igual que MercadoPago, salvo que esté reembolsada (eso
+	// fue una venta real que después se devolvió).
+	if (o.payment_method === 'placetopay') return o.payment_status !== 'refunded';
 	if (o.payment_method === 'hybrid') {
 		const cobrado =
 			(Number(o.paid_mp_usd) || 0) + (Number(o.paid_transfer_usd) || 0);

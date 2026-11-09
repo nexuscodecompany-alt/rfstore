@@ -261,6 +261,47 @@ export const DashboardCdrSyncPage = () => {
 				</label>
 			</section>
 
+			{/* Tarjeta por Getnet (Placetopay). Convive con MercadoPago. */}
+			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-3'>
+				<h2 className='font-semibold'>Pago con tarjeta (Getnet / Placetopay)</h2>
+				<p className='text-sm text-gray-700'>
+					Agrega la opción "Tarjeta de crédito o débito (Getnet)" en el checkout,
+					además de MercadoPago. Con <b>Sólo administradores</b> la ves únicamente
+					vos (para probar en la tienda real sin que la vea ningún cliente).
+				</p>
+				<select
+					className='rounded border p-2 text-sm'
+					value={(() => {
+						const v = String(settings?.get('placetopay_mode') ?? 'off');
+						return v === 'admins' || v === 'all' ? v : 'off';
+					})()}
+					onChange={async e => {
+						const v = e.target.value as 'off' | 'admins' | 'all';
+						if (
+							v === 'all' &&
+							!window.confirm(
+								'¿Habilitar el pago con tarjeta (Getnet) para TODOS los clientes?\n\nHacelo sólo con las credenciales de PRODUCCIÓN cargadas y una compra real de prueba aprobada.'
+							)
+						)
+							return;
+						await updateAppSetting('placetopay_mode', v);
+						toast.success(
+							v === 'all'
+								? 'Tarjeta (Getnet) habilitada para todos'
+								: v === 'admins'
+								? 'Tarjeta (Getnet) sólo para administradores'
+								: 'Tarjeta (Getnet) apagada'
+						);
+						queryClient.invalidateQueries({ queryKey: ['app_settings'] });
+						queryClient.invalidateQueries({ queryKey: ['feature_flag', 'placetopay_mode'] });
+					}}
+				>
+					<option value='off'>Apagado</option>
+					<option value='admins'>Sólo administradores (prueba)</option>
+					<option value='all'>Todos los clientes</option>
+				</select>
+			</section>
+
 			<section className='p-5 bg-white border border-gray-200 rounded-lg space-y-4'>
 				<h2 className='font-semibold'>Sincronización</h2>
 				<p className='text-sm text-gray-600'>

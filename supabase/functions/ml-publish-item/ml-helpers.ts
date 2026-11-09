@@ -95,7 +95,7 @@ export function parseCdrWarranty(raw: string | null | undefined, defaultMonths =
   // (79 productos) matchea "fabrica" y se declara como garantia de fabrica cuando en
   // realidad la da el vendedor. El comprador ve ese atributo en ML.
   const type: 'seller' | 'manufacturer' =
-    /oficial|f[aá]brica|fabricante|tercerizada/.test(lower) ? 'manufacturer' : 'seller';
+    /\boficial\b|\bf[aá]brica\b|\bfabricante\b|\btercerizada\b/.test(lower) ? 'manufacturer' : 'seller';
 
   const anios = lower.match(/(\d{1,2})\s*a[ñn]os?/);
   if (anios) return { months: parseInt(anios[1], 10) * 12, type, source: 'cdr' };

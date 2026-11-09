@@ -135,6 +135,16 @@ function extractTechAttributes(text: string): Record<string, string> {
 // Definicion de un atributo de la categoria ML (con sus valores permitidos).
 interface MlAttrDef { id: string; name: string; value_type: string; values: { id?: string; name?: string }[]; }
 
+// Medidas del paquete que ML exige al vendedor, con la columna de CDR que las trae.
+// ML las acepta sólo en cm y g.
+const SELLER_PKG = [
+  { id: 'SELLER_PACKAGE_HEIGHT', name: 'Alto del paquete (cm)', unit: 'cm', col: 'cdr_alto_cm' },
+  { id: 'SELLER_PACKAGE_WIDTH', name: 'Ancho del paquete (cm)', unit: 'cm', col: 'cdr_ancho_cm' },
+  { id: 'SELLER_PACKAGE_LENGTH', name: 'Largo del paquete (cm)', unit: 'cm', col: 'cdr_profundidad_cm' },
+  { id: 'SELLER_PACKAGE_WEIGHT', name: 'Peso del paquete (gramos)', unit: 'g', col: 'cdr_peso_gramos' },
+] as const;
+const sellerPkgForm = () => SELLER_PKG.map(s => ({ id: s.id, name: s.name, value_type: 'number_unit', values: [] }));
+
 // Atributos de la categoria de ML: ids que existen, cuales son obligatorios y la definicion
 // completa (con value_type + valores permitidos) para poder auto-completar / armar el form.
 async function getCategoryAttrs(catId: string, token: string): Promise<{ ids: Set<string>; required: { id: string; name: string }[]; defs: Map<string, MlAttrDef>; modifiable: Set<string> }> {
@@ -228,6 +238,12 @@ function missingFromMlCauses(causes: any, defs: Map<string, MlAttrDef>): { id: s
   const out = new Map<string, { id: string; name: string; value_type: string; values: { id?: string; name?: string }[] }>();
   for (const c of Array.isArray(causes) ? causes : []) {
     const code = String((c && c.code) || '');
+    // "item.attribute.missing.seller.package.dimensions": no dice "required" y los ids
+    // vienen en minuscula, asi que el parseo de abajo no lo agarra.
+    if (/seller\.package/i.test(code)) {
+      for (const f of sellerPkgForm()) out.set(f.id, f);
+      continue;
+    }
     if (!/required/i.test(code)) continue;
     const msg = String((c && c.message) || '');
     const bracket = msg.match(/\[([A-Z0-9_,\s]+)\]/);
@@ -381,6 +397,12 @@ Deno.serve(async (req: Request) => {
         const val: any = { id: ea.id };
         if (ea.value_id) val.value_id = ea.value_id;
         if (ea.value_name) val.value_name = ea.value_name;
+        // Medidas cargadas a mano: el admin escribe "12" o "12,5"; ML quiere "12.5 cm".
+        const pkgDef = SELLER_PKG.find(s => s.id === ea.id);
+        if (pkgDef && ea.value_name) {
+          const n = Number(String(ea.value_name).replace(',', '.').replace(/[^0-9.]/g, ''));
+          if (Number.isFinite(n) && n > 0) val.value_name = `${pkgDef.unit === 'g' ? Math.round(n) : Math.round(n * 10) / 10} ${pkgDef.unit}`;
+        }
         const existing = attributes.find(a => a.id === ea.id);
         if (existing) Object.assign(existing, val); else attributes.push(val);
       }
@@ -413,6 +435,15 @@ Deno.serve(async (req: Request) => {
         // modifiable, NO ids: en muchas categorias ML define estos atributos pero los
         // calcula el y los descarta si se los mandamos.
         if (value_name && catReq.modifiable.has(id) && !attributes.some(a => a.id === id)) attributes.push({ id, value_name });
+      }
+      // Desde 11/2026 ML exige las medidas DEL VENDEDOR (SELLER_PACKAGE_*, cm y g) y
+      // rechaza sin ellas: los PACKAGE_* de arriba quedaron read_only. Van las 4 o
+      // ninguna ("are all required").
+      for (const s of SELLER_PKG) {
+        const n = dim((product as any)[s.col]);
+        if (n && catReq.ids.has(s.id) && !attributes.some(a => a.id === s.id)) {
+          attributes.push({ id: s.id, value_name: `${s.unit === 'g' ? Math.round(n) : Math.round(n * 10) / 10} ${s.unit}` });
+        }
       }
       // Despues, para cada OBLIGATORIO que todavia falta, intentamos derivarlo del texto
       // usando los valores permitidos de ML (auto-fix). Registramos cada auto-completado.
@@ -450,6 +481,10 @@ Deno.serve(async (req: Request) => {
         const d = catReq.defs.get(r.id);
         return { id: r.id, name: r.name, value_type: d?.value_type ?? 'string', values: (d?.values ?? []).slice(0, 80) };
       });
+      // Sin medidas de CDR (combos, productos manuales) ML va a rechazar: las pedimos en el form.
+      if (SELLER_PKG.some(s => catReq.ids.has(s.id)) && SELLER_PKG.some(s => !have.has(s.id))) {
+        missingAttrs.push(...sellerPkgForm().filter(f => !have.has(f.id)));
+      }
       if (!dry_run && missingAttrs.length > 0) {
         await logEvent('ml_publish_forced_missing_attrs', { product_id, variant_id, category: mlCategoryId, missing: missingAttrs.map(m => ({ id: m.id, name: m.name })) });
       }
