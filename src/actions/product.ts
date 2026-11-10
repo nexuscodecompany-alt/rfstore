@@ -408,6 +408,24 @@ export const setProductSyncPaused = async (id: string, paused: boolean) => {
     if (error) throw new Error(error.message);
 };
 
+// Aviso de stock bajo en CDR: con `enabled` en true, cuando el stock de CDR baja de
+// `threshold` le llega un mail al admin (trigger variants_cdr_stock_alert + edge
+// stock-alert-notify). Avisa una vez por cruce y se rearma cuando CDR repone.
+export const setProductStockAlert = async (
+    id: string,
+    enabled: boolean,
+    threshold: number
+) => {
+    const { error } = await supabase
+        .from('products')
+        .update({
+            stock_alert_enabled: enabled,
+            stock_alert_threshold: threshold,
+        } as never)
+        .eq('id', id);
+    if (error) throw new Error(error.message);
+};
+
 // Stock manual de una variante. El trigger variants_stock_to_ml encola el cambio
 // para Mercado Libre, así que la publicación queda con la misma cantidad.
 export const setVariantStock = async (variantId: string, stock: number) => {

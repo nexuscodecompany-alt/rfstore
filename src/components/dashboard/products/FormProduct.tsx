@@ -11,6 +11,7 @@ import toast from "react-hot-toast";
 import { generateSlug, hasMarginOverride } from "../../../helpers";
 import { VariantsInput } from "./VariantsInput";
 import { CdrFieldsBox } from "./CdrFieldsBox";
+import { StockAlertBox } from "./StockAlertBox";
 import { UploaderImages } from "./UploaderImages";
 import { Editor } from "./Editor";
 import { PriceBox } from "./PriceBox";
@@ -526,6 +527,9 @@ export const FormProduct = ({ titleForm }: Props) => {
               </span>
             </label>
           </div>
+
+          {/* Aviso por mail de stock bajo en CDR (sólo productos de CDR ya creados). */}
+          {isCdrProduct && product?.id && <StockAlertBox product={product} />}
 
           {/* Todo lo que manda CDR de este producto, en sólo lectura. Se rinde solo si
               el producto no es de CDR o si todavía no pasó por una corrida del sync. */}
