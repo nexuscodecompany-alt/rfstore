@@ -48,6 +48,15 @@ export const usePublishMlItem = (opts: UsePublishMlItemOpts = {}) => {
 			}
 			// ML pide atributos obligatorios que faltan -> abrimos el form manual.
 			if (Array.isArray(data?.missing_attributes) && data.missing_attributes.length > 0) {
+				// Si el form ya estaba abierto y ML vuelve a rechazar, sin este aviso el form
+				// quedaba igual y parecía que el botón no hacía nada (caso iPad 18/11: el rechazo
+				// real era precio 0 + medidas con decimales). Siempre mostramos el motivo de ML.
+				if (data?.ml_message) {
+					toast.error(`Mercado Libre rechazó la publicación: ${data.ml_message}`, {
+						position: 'bottom-right',
+						duration: 10000,
+					});
+				}
 				opts.onNeedAttributes?.({
 					productId: vars.productId,
 					variantId: vars.variantId,

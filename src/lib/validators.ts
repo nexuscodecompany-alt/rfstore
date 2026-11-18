@@ -122,6 +122,9 @@ export const productSchema = z.object({
 		.enum(['dropship', 'propio', 'ambos'])
 		.optional()
 		.default('propio'),
+	// Stock propio (depósito) en productos "Ambos": el total lo arma el sistema
+	// como CDR + propio. Se guarda vía RPC set_owned_stock, no en variants.stock.
+	ownedStock: z.coerce.number().int().min(0, 'No puede ser negativo').optional(),
 	// Precio manual de la WEB: prendido guarda `marginPercent` en
 	// products.margin_override_percent y ese margen pisa la tabla de tramos.
 	// Apagado = margen automático (se guarda null).

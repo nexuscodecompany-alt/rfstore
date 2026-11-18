@@ -185,6 +185,24 @@ async function marcarDesincronizado(mappingId: number, motivo: string): Promise<
 
 const SYNC_OK = { stock_out_of_sync: false, out_of_sync_since: null, out_of_sync_reason: null };
 
+// v15 (2026-11-18): CUANTO MOSTRAR EN ML. Pedido del dueño: "cuando hay stock propio, de
+// cualquier manera no se pause con menos de 3". El colchon (ml_stock_threshold = 2) existe
+// porque el stock de CDR es una PROMESA de otro; lo que esta en NUESTRO deposito no necesita
+// colchon. En productos "Ambos" variants.stock = stock de CDR + owned_stock, y antes el
+// colchon se aplicaba al total: con 2 propias y CDR en 0, ML pausaba con mercaderia fisica.
+//   - stock_locked (Propio): todo lo de RF, umbral 0 (igual que v9).
+//   - hay stock propio: propio + la parte de CDR SOLO si supera el colchon. Nunca pausa.
+//   - sin stock propio (dropship puro): como siempre, 0 si esta en el colchon o por debajo.
+// MISMA formula en ml-stock-reconcile y health-alerts: si difieren, se pisan entre ellas.
+function mlTargetQty(rfStock: number, owned: number, stockLocked: boolean, thr: number): number {
+  const total = Math.max(0, Number.isFinite(rfStock) ? rfStock : 0);
+  if (stockLocked) return total;
+  const own = Math.min(Math.max(0, Number.isFinite(owned) ? owned : 0), total);
+  const cdrPart = total - own;
+  if (own > 0) return own + (cdrPart > thr ? cdrPart : 0);
+  return total > thr ? total : 0;
+}
+
 async function logSync(row: any): Promise<void> {
   try { await supabase.from('ml_sync_log').insert(row); } catch (_e) { /* log best-effort */ }
 }
@@ -214,11 +232,13 @@ async function processItem(item: any, token: string, settings: Map<string, any>)
 
   switch (item.operation) {
     case 'update_stock': {
-      const { data: v } = await supabase.from('variants').select('stock').eq('id', item.variant_id).single();
+      const { data: v } = await supabase.from('variants').select('stock, owned_stock').eq('id', item.variant_id).single();
       if (!v) return { ok: false, error: 'variant_not_found' };
-      const stock = Number(v.stock);
+      // v15 (2026-11-18): `stock` ya NO es variants.stock sino la cantidad que ML debe mostrar.
+      // El colchon cuida solo la parte de CDR; lo del deposito se publica entero (ver mlTargetQty).
+      const stock = mlTargetQty(Number(v.stock), Number((v as any).owned_stock ?? 0), stockLocked, threshold);
 
-      if (stock <= threshold) {
+      if (stock <= 0) {
         // v14: EL ESTADO LO DICTA ML, NO NUESTRO MAPPING. Antes, con el mapping en 'paused' se
         // daba por hecho que la publicacion ya estaba frenada y se devolvia ok sin mirar nada.
         // Cuando el mapping estaba desactualizado, la publicacion seguia ACTIVA en ML con la

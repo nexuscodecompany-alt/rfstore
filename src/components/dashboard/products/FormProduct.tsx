@@ -188,6 +188,7 @@ export const FormProduct = ({ titleForm }: Props) => {
 
         onlinePayment: product.online_payment === true,
         fulfillment: (product as { fulfillment?: 'dropship' | 'propio' | 'ambos' }).fulfillment ?? 'propio',
+        ownedStock: Math.max(0, Number(((product.variants ?? [])[0] as { owned_stock?: number | null } | undefined)?.owned_stock ?? 0) || 0),
         // Márgenes manuales guardados, uno por canal (null = automático).
         manualPrice: hasMarginOverride(
           (product as { margin_override_percent?: number | null }).margin_override_percent
@@ -271,6 +272,11 @@ export const FormProduct = ({ titleForm }: Props) => {
       subcategoryId: data.subcategoryId || null,
       onlinePayment: data.onlinePayment === true,
       fulfillment: data.fulfillment ?? 'propio',
+      // Sólo en "Ambos" de CDR; en el resto no se toca el stock propio.
+      ownedStock:
+        isCdrProduct && data.fulfillment === 'ambos'
+          ? Math.max(0, Number(data.ownedStock ?? 0) || 0)
+          : undefined,
       // Precio manual apagado -> null, o sea vuelve al margen por tramo.
       marginOverride: data.manualPrice ? Number(data.marginPercent ?? 0) : null,
       mlMarginOverride: data.manualPriceMl ? Number(data.marginPercentMl ?? 0) : null,
@@ -523,9 +529,43 @@ export const FormProduct = ({ titleForm }: Props) => {
               <span className="mt-1 block text-xs text-slate-500">
                 {watch("fulfillment") === "dropship"
                   ? "El sync de CDR le maneja el precio y el stock."
-                  : "Queda fuera del sync de CDR (precio y stock los manejás vos). El stock se carga con las compras."}
+                  : watch("fulfillment") === "ambos"
+                    ? "Stock total = lo de tu depósito + lo de CDR. CDR sigue actualizando el precio y su parte del stock. Se vende primero lo del depósito y, mientras haya stock propio, ML no se pausa."
+                    : "Queda fuera del sync de CDR (precio y stock los manejás vos). El stock se carga con las compras."}
               </span>
             </label>
+
+            {/* "Ambos": el admin dice cuánto tiene en el depósito; el total lo arma el
+                sistema (CDR + propio) y el sync de CDR ya no lo pisa. */}
+            {isCdrProduct && watch("fulfillment") === "ambos" && (() => {
+              const cdrStock = Math.max(0, Number((product?.variants?.[0] as { cdr_stock?: number | null } | undefined)?.cdr_stock ?? 0));
+              const owned = Math.max(0, Number(watch("ownedStock") ?? 0) || 0);
+              return (
+                <div className="mt-3 grid grid-cols-3 gap-3 rounded-lg border border-violet-200 bg-violet-50/50 p-3">
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-700">Stock propio (depósito)</span>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+                      {...register("ownedStock")}
+                    />
+                  </label>
+                  <div>
+                    <span className="text-xs font-semibold text-slate-700">Stock de CDR</span>
+                    <div className="mt-1 rounded-lg bg-white/70 px-3 py-2 text-sm text-slate-600">{cdrStock} <span className="text-xs">(automático)</span></div>
+                  </div>
+                  <div>
+                    <span className="text-xs font-semibold text-slate-700">Total a la venta</span>
+                    <div className="mt-1 rounded-lg bg-white/70 px-3 py-2 text-sm font-semibold text-violet-700">{cdrStock + owned}</div>
+                  </div>
+                  {errors.ownedStock && (
+                    <span className="col-span-3 text-xs text-red-600">{errors.ownedStock.message}</span>
+                  )}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Aviso por mail de stock bajo en CDR (sólo productos de CDR ya creados). */}

@@ -143,7 +143,10 @@ const SELLER_PKG = [
   { id: 'SELLER_PACKAGE_LENGTH', name: 'Largo del paquete (cm)', unit: 'cm', col: 'cdr_profundidad_cm' },
   { id: 'SELLER_PACKAGE_WEIGHT', name: 'Peso del paquete (gramos)', unit: 'g', col: 'cdr_peso_gramos' },
 ] as const;
-const sellerPkgForm = () => SELLER_PKG.map(s => ({ id: s.id, name: s.name, value_type: 'number_unit', values: [] }));
+// ML SOLO acepta ENTEROS ("Only integers are accepted for dimensions and weight", 18/11/2026):
+// "24.9 cm" se rechaza. Se redondea y nunca baja de 1 (un ancho de 0,7 cm es 1 cm, no 0).
+const sellerPkgValue = (n: number, unit: string) => `${Math.max(1, Math.round(n))} ${unit}`;
+const sellerPkgForm = () =>SELLER_PKG.map(s => ({ id: s.id, name: s.name, value_type: 'number_unit', values: [] }));
 
 // Atributos de la categoria de ML: ids que existen, cuales son obligatorios y la definicion
 // completa (con value_type + valores permitidos) para poder auto-completar / armar el form.
@@ -311,7 +314,11 @@ Deno.serve(async (req: Request) => {
 
     const { token } = await getValidAccessToken(supabase);
     const fxRate = await getFxRate(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const costUsd = Number(product.price_usd);
+    // Costo: en CDR vive en products.price_usd; en los productos CARGADOS A MANO (source
+    // 'local') price_usd es null y el costo esta en variants.price (igual que en la web, que
+    // calcula salePrice sobre variant.price). Antes se mandaba precio 0 y ML rechazaba con
+    // "Item without price" -> ningun producto manual se pudo publicar nunca (18/11/2026).
+    const costUsd = Number(product.price_usd) > 0 ? Number(product.price_usd) : Number(variant.price);
     // Sin filtro de precio: si no hay costo valido, igual seguimos; ML rechaza si el precio no sirve.
     if (!costUsd || costUsd <= 0) await logEvent('ml_publish_forced_no_price', { product_id, variant_id, price_usd: product.price_usd });
 
@@ -401,7 +408,7 @@ Deno.serve(async (req: Request) => {
         const pkgDef = SELLER_PKG.find(s => s.id === ea.id);
         if (pkgDef && ea.value_name) {
           const n = Number(String(ea.value_name).replace(',', '.').replace(/[^0-9.]/g, ''));
-          if (Number.isFinite(n) && n > 0) val.value_name = `${pkgDef.unit === 'g' ? Math.round(n) : Math.round(n * 10) / 10} ${pkgDef.unit}`;
+          if (Number.isFinite(n) && n > 0) val.value_name = sellerPkgValue(n, pkgDef.unit);
         }
         const existing = attributes.find(a => a.id === ea.id);
         if (existing) Object.assign(existing, val); else attributes.push(val);
@@ -442,7 +449,7 @@ Deno.serve(async (req: Request) => {
       for (const s of SELLER_PKG) {
         const n = dim((product as any)[s.col]);
         if (n && catReq.ids.has(s.id) && !attributes.some(a => a.id === s.id)) {
-          attributes.push({ id: s.id, value_name: `${s.unit === 'g' ? Math.round(n) : Math.round(n * 10) / 10} ${s.unit}` });
+          attributes.push({ id: s.id, value_name: sellerPkgValue(n, s.unit) });
         }
       }
       // Despues, para cada OBLIGATORIO que todavia falta, intentamos derivarlo del texto

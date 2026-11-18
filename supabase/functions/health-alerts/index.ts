@@ -149,6 +149,17 @@ async function mlItemStates(ids: string[], token: string): Promise<Map<string, {
   return out;
 }
 
+// Cuanto debe mostrar ML. COPIA EXACTA de ml-process-sync-queue (v15) y ml-stock-reconcile:
+// stock propio se publica entero, el colchon solo se aplica a la parte de CDR.
+function mlTargetQty(rfStock: number, owned: number, stockLocked: boolean, thr: number): number {
+  const total = Math.max(0, Number.isFinite(rfStock) ? rfStock : 0);
+  if (stockLocked) return total;
+  const own = Math.min(Math.max(0, Number.isFinite(owned) ? owned : 0), total);
+  const cdrPart = total - own;
+  if (own > 0) return own + (cdrPart > thr ? cdrPart : 0);
+  return total > thr ? total : 0;
+}
+
 const isModerated = (st: string, sub: string[]) => MODERATION_SUBSTATUS.some(f => sub.includes(f)) || st === 'under_review';
 
 async function notifyEmail(): Promise<string> {
@@ -167,12 +178,13 @@ async function checkMercadoLibre(): Promise<Finding[]> {
   const f: Finding[] = [];
   const [mappings, variants, products, settingRow] = await Promise.all([
     fetchAll('ml_item_mapping', 'id, ml_item_id, status, auto_paused_stock, product_id, variant_id', q => q.in('status', ['active', 'paused'])),
-    fetchAll('variants', 'id, stock'),
+    fetchAll('variants', 'id, stock, owned_stock'),
     fetchAll('products', 'id, name, external_code, stock_locked'),
     supabase.from('app_settings').select('value').eq('key', 'ml_stock_threshold').maybeSingle(),
   ]);
   const threshold = Number((settingRow as any)?.data?.value ?? 0) || 0;
   const stockOf = new Map(variants.map((v: any) => [v.id, Number(v.stock ?? 0)]));
+  const ownedOf = new Map(variants.map((v: any) => [v.id, Number(v.owned_stock ?? 0)]));
   const prodOf = new Map(products.map((p: any) => [p.id, p]));
 
   const token = await getMlToken();
@@ -190,6 +202,9 @@ async function checkMercadoLibre(): Promise<Finding[]> {
     const p: any = prodOf.get(m.product_id) ?? {};
     const stock = stockOf.get(m.variant_id) ?? 0;
     const thr = p.stock_locked ? 0 : threshold;
+    // v12 (2026-11-18): lo que ML DEBE mostrar, misma formula que ml-process-sync-queue v15.
+    // Con stock propio en deposito el colchon no aplica: no es "sin stock" aunque sea <= thr.
+    const objetivo = mlTargetQty(stock, ownedOf.get(m.variant_id) ?? 0, p.stock_locked === true, threshold);
     const label = `${p.external_code ?? '?'} - ${p.name ?? m.ml_item_id}`;
     const row = { ml_item_id: m.ml_item_id, producto: label, stock_rf: stock, ml_status: st.status, ml_sub_status: st.sub.join(',') };
     const moderated = isModerated(st.status, st.sub);
@@ -198,14 +213,14 @@ async function checkMercadoLibre(): Promise<Finding[]> {
     const huellaPausaPorStock = st.sub.includes('out_of_stock') || Number(st.qty ?? 0) <= thr;
 
     // 1) EL BUG DE AGOSTO: la pausamos nosotros por stock, volvio el stock y sigue pausada.
-    if (m.status === 'paused' && m.auto_paused_stock && stock > thr && st.status === 'paused' && !moderated && huellaPausaPorStock) buckets.ml_paused_with_stock.push(row);
+    if (m.status === 'paused' && m.auto_paused_stock && objetivo > 0 && st.status === 'paused' && !moderated && huellaPausaPorStock) buckets.ml_paused_with_stock.push(row);
     // 2) ML la modero (ficha incompleta, infraccion). No se toca sola: hay que arreglar la ficha.
     if (moderated) buckets.ml_moderated.push(row);
     // 3) Nosotros la creemos activa y en ML no vende sin que nadie lo haya decidido: cerrada /
     //    inactiva, o frenada por falta de stock cuando RF SI tiene. v9: una pausa MANUAL del
     //    dueño ya no cuenta -- es una decision, no una falla (y el trigger alinea el mapping).
     const caida = st.status === 'closed' || st.status === 'inactive'
-      || (st.status === 'paused' && st.sub.includes('out_of_stock') && stock > thr);
+      || (st.status === 'paused' && st.sub.includes('out_of_stock') && objetivo > 0);
     if (m.status === 'active' && !moderated && caida) buckets.ml_down_externally.push(row);
     // 4) Activa en ML ofreciendo unidades que RF no tiene -> se puede vender algo inexistente.
     //    v7: ESTE CHEQUEO EXISTIA Y NO VIO NADA. Exigia m.status === 'active', o sea que
@@ -213,12 +228,11 @@ async function checkMercadoLibre(): Promise<Finding[]> {
     //    vendiendo sin stock tenian el mapping en 'paused' y ML las tenia ACTIVAS: justamente
     //    por estar desactualizado el mapping es que nadie les bajo el stock, y por mirar ese
     //    mismo mapping es que el vigilante tampoco las vio. Ahora la condicion la pone ML.
-    if (st.status === 'active' && Number(st.qty ?? 0) > 0 && stock <= thr) buckets.ml_active_no_stock.push({ ...row, stock_en_ml: st.qty, mapping_status: m.status });
+    if (st.status === 'active' && Number(st.qty ?? 0) > 0 && objetivo <= 0) buckets.ml_active_no_stock.push({ ...row, stock_en_ml: st.qty, mapping_status: m.status });
     // 5) El numero que ve el comprador en ML es el que tenemos? Se compara contra el MISMO
     //    objetivo que usa el sincronizador (0 cuando el stock esta en el umbral o por debajo),
     //    tambien sin filtrar por m.status. En una pausada ML congela la cantidad vieja a
     //    proposito, asi que esas no cuentan: no son vendibles (lo corrige el reconciliador).
-    const objetivo = stock <= thr ? 0 : stock;
     if (st.status === 'active' && !moderated
         && st.qty !== null && Number(st.qty) !== objetivo && objetivo > 0) {
       buckets.ml_qty_mismatch.push({ ...row, stock_en_ml: st.qty, deberia_ser: objetivo });

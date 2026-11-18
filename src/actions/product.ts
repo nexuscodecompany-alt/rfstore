@@ -656,13 +656,18 @@ export const updateProduct = async (
 
     if (updateImagesError) throw new Error(updateImagesError.message);
 
+    // "Ambos" de CDR: el total (variants.stock) lo arma el sistema como CDR + propio.
+    // Escribir acá el número viejo del form lo pisaba y además mandaba un stock falso a ML.
+    const ownedMode =
+        productInput.fulfillment === 'ambos' && productInput.ownedStock !== undefined;
+
     for (const variant of productInput.variants) {
         if (variant.id) {
             const { error: updateVariantError } = await supabase
                 .from('variants')
                 .update({
                     price: variant.price,
-                    stock: variant.stock,
+                    ...(ownedMode ? {} : { stock: variant.stock }),
                     storage: variant.storage,
                     color: variant.color,
                     color_name: variant.colorName,
@@ -671,6 +676,14 @@ export const updateProduct = async (
 
             if (updateVariantError)
                 throw new Error(updateVariantError.message);
+
+            if (ownedMode) {
+                const { error: ownedError } = await (supabase as any).rpc('set_owned_stock', {
+                    p_variant_id: variant.id,
+                    p_qty: productInput.ownedStock,
+                });
+                if (ownedError) throw new Error(ownedError.message);
+            }
         } else {
             const { error: createVariantError } = await supabase
                 .from('variants')

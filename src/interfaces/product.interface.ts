@@ -134,6 +134,8 @@ export interface ProductInput {
 	/** Compra online habilitada (productos manuales). */
 	onlinePayment?: boolean;
 	fulfillment?: 'dropship' | 'propio' | 'ambos';
+	/** Stock propio (depósito) de un producto "Ambos". undefined = no tocar. */
+	ownedStock?: number;
 	/**
 	 * Margen manual (%) de la web. `null` = automático por tramo.
 	 * `undefined` = no tocar lo que ya esté guardado.

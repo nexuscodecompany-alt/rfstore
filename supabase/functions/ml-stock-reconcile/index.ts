@@ -107,6 +107,17 @@ async function fetchAll(table: string, columns: string, tweak?: (q: any) => any)
   return out;
 }
 
+// Cuanto debe mostrar ML. COPIA EXACTA de ml-process-sync-queue (v15) y health-alerts:
+// stock propio se publica entero, el colchon solo se aplica a la parte de CDR.
+function mlTargetQty(rfStock: number, owned: number, stockLocked: boolean, thr: number): number {
+  const total = Math.max(0, Number.isFinite(rfStock) ? rfStock : 0);
+  if (stockLocked) return total;
+  const own = Math.min(Math.max(0, Number.isFinite(owned) ? owned : 0), total);
+  const cdrPart = total - own;
+  if (own > 0) return own + (cdrPart > thr ? cdrPart : 0);
+  return total > thr ? total : 0;
+}
+
 const isHardBlocked = (sub: string[]) => HARD_BLOCK_SUBSTATUS.some(s => sub.includes(s));
 
 type MlItem = { id: string; status: string; sub: string[]; qty: number; upid: string | null; catalog: boolean };
@@ -196,12 +207,13 @@ async function run(dry: boolean) {
 
   const [mappings, variants, products, thrRow] = await Promise.all([
     fetchAll('ml_item_mapping', 'id, ml_item_id, product_id, variant_id, status, last_known_stock, auto_paused_stock, stock_out_of_sync, out_of_sync_since, ml_verified_qty, ml_verified_status'),
-    fetchAll('variants', 'id, stock'),
+    fetchAll('variants', 'id, stock, owned_stock'),
     fetchAll('products', 'id, name, external_code, stock_locked'),
     supabase.from('app_settings').select('value').eq('key', 'ml_stock_threshold').maybeSingle(),
   ]);
   const threshold = Number((thrRow as any)?.data?.value ?? 0) || 0;
   const stockOf = new Map(variants.map((v: any) => [v.id, Number(v.stock ?? 0)]));
+  const ownedOf = new Map(variants.map((v: any) => [v.id, Number(v.owned_stock ?? 0)]));
   const prodOf = new Map(products.map((p: any) => [p.id, p]));
   const mapByItem = new Map(mappings.map((m: any) => [m.ml_item_id, m]));
 
@@ -268,11 +280,12 @@ async function run(dry: boolean) {
     const rfStock = stockOf.get(m0.variant_id) ?? 0;
     // Mismo criterio que ml-process-sync-queue v9: el stock manual es mercaderia propia y se
     // vende hasta la ultima unidad; el dropship guarda el colchon anti-oversell.
-    const thr = prod.stock_locked ? 0 : threshold;
+    // v3 (2026-11-18): misma formula que ml-process-sync-queue v15 (mlTargetQty): el colchon
+    // cuida solo la parte de CDR; con stock propio en deposito no se pone en 0.
     // Poner 0 es mas seguro que pausar: ML pausa sola la publicacion con sub_status
     // 'out_of_stock' (que es justo lo que la reactivacion automatica sabe reconocer), es
     // idempotente, y se propaga a TODAS las publicaciones del grupo, catalogo incluido.
-    const target = rfStock <= thr ? 0 : rfStock;
+    const target = mlTargetQty(rfStock, ownedOf.get(m0.variant_id) ?? 0, prod.stock_locked === true, threshold);
 
     const mlQty = Math.max(...alive.map(g => g.qty));
     if (mlQty === target) {
