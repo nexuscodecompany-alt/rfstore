@@ -453,6 +453,7 @@ export const FormProduct = ({ titleForm }: Props) => {
             control={control}
             errors={errors}
             register={register}
+            stockManagedBySystem={isCdrProduct && watch("fulfillment") === "ambos"}
           />
 
           {/* Desglose del precio en vivo: costo -> margen -> IVA -> total, con

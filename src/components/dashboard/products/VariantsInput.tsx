@@ -11,12 +11,16 @@ interface Props {
 	control: Control<ProductFormValues>;
 	errors: FieldErrors<ProductFormValues>;
 	register: UseFormRegister<ProductFormValues>;
+	// Producto de CDR en "Ambos": el total lo arma el sistema (CDR + propio) y este
+	// campo NO se guarda. Se muestra bloqueado para que nadie cargue el stock acá
+	// (caso CON202: lo escribían acá y el sync de CDR lo pisaba).
+	stockManagedBySystem?: boolean;
 }
 
 // Pasamos a un único set de precio + stock por producto (sin variantes).
 // Internamente seguimos guardando una fila en `variants` con placeholders
 // para mantener compatibilidad con order_items / place_order / sync CDR.
-export const VariantsInput = ({ control, errors, register }: Props) => {
+export const VariantsInput = ({ control, errors, register, stockManagedBySystem = false }: Props) => {
 	const { fields, append, remove } = useFieldArray({
 		control,
 		name: 'variants',
@@ -64,13 +68,22 @@ export const VariantsInput = ({ control, errors, register }: Props) => {
 				</div>
 
 				<div className='flex flex-col gap-1'>
-					<label className='text-xs font-semibold text-slate-800'>Stock</label>
+					<label className='text-xs font-semibold text-slate-800'>
+						{stockManagedBySystem ? 'Stock total (automático)' : 'Stock'}
+					</label>
 					<input
 						type='number'
 						placeholder='0'
+						readOnly={stockManagedBySystem}
+						tabIndex={stockManagedBySystem ? -1 : undefined}
 						{...register('variants.0.stock', { valueAsNumber: true })}
-						className='border rounded-md px-3 py-2 text-sm font-semibold placeholder:font-normal focus:outline-none appearance-none'
+						className={`border rounded-md px-3 py-2 text-sm font-semibold placeholder:font-normal focus:outline-none appearance-none ${stockManagedBySystem ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : ''}`}
 					/>
+					{stockManagedBySystem && (
+						<p className='text-xs text-violet-700'>
+							Es CDR + stock propio. Cargá tu stock en “Stock propio (depósito)”, más abajo.
+						</p>
+					)}
 					{variantErrors?.stock && (
 						<p className='text-red-500 text-xs'>{variantErrors.stock.message}</p>
 					)}
