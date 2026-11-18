@@ -145,6 +145,16 @@ const SELLER_PKG = [
 ] as const;
 // ML SOLO acepta ENTEROS ("Only integers are accepted for dimensions and weight", 18/11/2026):
 // "24.9 cm" se rechaza. Se redondea y nunca baja de 1 (un ancho de 0,7 cm es 1 cm, no 0).
+// COPIA EXACTA de ml-process-sync-queue (v15), ml-stock-reconcile y health-alerts.
+function mlTargetQty(rfStock: number, owned: number, stockLocked: boolean, thr: number): number {
+  const total = Math.max(0, Number.isFinite(rfStock) ? rfStock : 0);
+  if (stockLocked) return total;
+  const own = Math.min(Math.max(0, Number.isFinite(owned) ? owned : 0), total);
+  const cdrPart = total - own;
+  if (own > 0) return own + (cdrPart > thr ? cdrPart : 0);
+  return total > thr ? total : 0;
+}
+
 const sellerPkgValue = (n: number, unit: string) => `${Math.max(1, Math.round(n))} ${unit}`;
 const sellerPkgForm = () =>SELLER_PKG.map(s => ({ id: s.id, name: s.name, value_type: 'number_unit', values: [] }));
 
@@ -281,11 +291,11 @@ Deno.serve(async (req: Request) => {
   if (!product_id || !variant_id) return json({ ok: false, error: 'missing_product_or_variant_id' }, 400);
 
   try {
-    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, ml_margin_override_percent, cdr_garantia, cdr_modelo, cdr_gtin, cdr_nro_parte, cdr_peso_gramos, cdr_ancho_cm, cdr_alto_cm, cdr_profundidad_cm').eq('id', product_id).single();
+    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, ml_margin_override_percent, cdr_garantia, cdr_modelo, cdr_gtin, cdr_nro_parte, cdr_peso_gramos, cdr_ancho_cm, cdr_alto_cm, cdr_profundidad_cm, stock_locked').eq('id', product_id).single();
     if (pErr || !product) throw new Error(`product_not_found: ${pErr?.message ?? 'null'}`);
     // Sin filtros propios (decision del admin): publicamos aunque este inactivo; ML decide.
     if (!product.active) await logEvent('ml_publish_forced_inactive', { product_id, variant_id });
-    const { data: variant, error: vErr } = await supabase.from('variants').select('id, stock, price, color_name, storage').eq('id', variant_id).single();
+    const { data: variant, error: vErr } = await supabase.from('variants').select('id, stock, owned_stock, price, color_name, storage').eq('id', variant_id).single();
     if (vErr || !variant) throw new Error(`variant_not_found: ${vErr?.message ?? 'null'}`);
     let brandName: string | null = null;
     if (product.brand_id) {
@@ -538,11 +548,17 @@ Deno.serve(async (req: Request) => {
     // OJO: title y family_name son EXCLUYENTES en el modelo nuevo de ML. Si mandamos los
     // dos responde "The fields [title] are invalid for requested call". ML arma el titulo
     // a partir de family_name + los atributos, asi que title solo queda para logs/preview.
+    const targetQty = mlTargetQty(Number(variant.stock), Number((variant as any).owned_stock ?? 0), (product as any).stock_locked === true, threshold);
+    const publishQty = targetQty > 0 ? targetQty : Number(variant.stock);
     const itemPayload = {
       family_name: familyName, category_id: mlCategoryId,
       price: priceCalc.price,
       currency_id: priceCalc.currency_id,
-      available_quantity: Number(variant.stock),
+      // 18/11/2026: misma regla que la cola (mlTargetQty): con stock propio se publica propio +
+      // la parte de CDR solo si supera el colchon. Antes salia el total crudo (caso CON202:
+      // propio 1 + CDR 1 se publico con 2). Si el objetivo es 0 se publica el stock real y la
+      // cola la pausa despues (ML no deja crear una publicacion con 0).
+      available_quantity: publishQty,
       buying_mode: 'buy_it_now', listing_type_id: listingType, condition: 'new',
       pictures,
       description: { plain_text: finalDescription },
