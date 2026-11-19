@@ -8,9 +8,11 @@ import { NavbarMobile } from '../components/shared/NavbarMobile';
 import { ScrollToTop } from '../components/shared/ScrollToTop';
 import { FloatingCart } from '../components/shared/FloatingCart';
 import { CookieBanner } from '../components/shared/CookieBanner';
+import { useCartTracking } from '../hooks/useCartTracking';
 
 export const RootLayout = () => {
 	const { pathname } = useLocation();
+	useCartTracking();
 
 	const isSheetOpen = useGlobalStore(state => state.isSheetOpen);
 	const activeNavMobile = useGlobalStore(

@@ -89,6 +89,8 @@ export interface CheckoutActivityRow {
 	order_id: number | null;
 	payment_method: string | null;
 	order_status: string | null;
+	/** 'cart' = sólo agregó al carrito · 'checkout' = llegó al checkout · 'orden' = generó pedido */
+	stage: 'cart' | 'checkout' | 'orden';
 }
 
 export const getCheckoutActivity = async (): Promise<CheckoutActivityRow[]> => {
@@ -109,13 +111,15 @@ export const trackCheckoutLead = async (input: {
 	email: string;
 	phone: string;
 	fullName: string;
-	cart: { name: string; quantity: number; price: number }[];
+	cart: { variantId: string; name: string; image?: string; quantity: number; price: number }[];
 	total: number;
 	shippingZone?: string | null;
 	shippingDepartment?: string | null;
+	anonId?: string | null;
 }): Promise<void> => {
 	try {
 		await (supabase as any).rpc('track_checkout_lead', {
+			p_anon_id: input.anonId ?? null,
 			p_email: input.email,
 			p_phone: input.phone,
 			p_full_name: input.fullName,
@@ -126,5 +130,22 @@ export const trackCheckoutLead = async (input: {
 		});
 	} catch (e) {
 		console.warn('trackCheckoutLead:', e);
+	}
+};
+
+/** Registra el carrito (con o sin sesión) para el panel de carritos abandonados. Best-effort. */
+export const trackCart = async (input: {
+	anonId: string | null;
+	cart: { variantId: string; name: string; image?: string; quantity: number; price: number }[];
+	total: number;
+}): Promise<void> => {
+	try {
+		await (supabase as any).rpc('track_cart', {
+			p_anon_id: input.anonId,
+			p_cart: input.cart,
+			p_total: input.total,
+		});
+	} catch (e) {
+		console.warn('trackCart:', e);
 	}
 };

@@ -214,7 +214,7 @@ export const DashboardCustomersPage = () => {
 					onClick={() => setTab('checkout')}
 					className={tabCls(tab === 'checkout')}
 				>
-					Llegaron al checkout ({totals.llegaronCheckout})
+					Carritos y checkout ({totals.llegaronCheckout})
 				</button>
 			</div>
 
@@ -372,9 +372,10 @@ export const DashboardCustomersPage = () => {
 				<>
 					<div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
 						<p className='max-w-2xl text-sm text-ink-500'>
-							Todo el que llegó al checkout: los que apretaron pagar (aunque no
-							hayan pagado) y los que abrieron el checkout y ni llegaron a
-							generar el pedido. Tocá una fila para ver el detalle.
+							Todo carrito armado en la web, con o sin cuenta: los que sólo
+							agregaron productos, los que abrieron el checkout y los que
+							apretaron pagar (aunque no hayan pagado). Los visitantes sin cuenta
+							no dejan contacto. Tocá una fila para ver el detalle.
 						</p>
 						<select
 							value={checkoutFilter}
@@ -417,7 +418,7 @@ export const DashboardCustomersPage = () => {
 								{checkoutPageRows.length === 0 && (
 									<tr>
 										<td colSpan={6} className='p-6 text-center text-ink-400'>
-											No hay checkouts con ese filtro.
+											No hay carritos con ese filtro.
 										</td>
 									</tr>
 								)}
@@ -565,7 +566,10 @@ const CheckoutRow = ({
 			>
 				<td className='p-3 text-ink-600'>{formatDateTime(row.happened_at)}</td>
 				<td className='p-3'>
-					<p className='font-medium text-ink-900'>{row.full_name || 'Sin nombre'}</p>
+					<p className='font-medium text-ink-900'>
+						{row.full_name ||
+							(!row.email && !row.phone ? 'Visitante sin cuenta' : 'Sin nombre')}
+					</p>
 					<p className='text-xs text-ink-400'>
 						{row.email || '—'}
 						{row.phone ? ` · ${row.phone}` : ''}
@@ -584,7 +588,11 @@ const CheckoutRow = ({
 						</span>
 					) : (
 						<span className='rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700'>
-							{row.source === 'lead' ? 'No llegó a pagar' : 'Sin concretar'}
+							{row.stage === 'cart'
+								? 'Sólo agregó al carrito'
+								: row.source === 'lead'
+								? 'No llegó a pagar'
+								: 'Sin concretar'}
 						</span>
 					)}
 				</td>

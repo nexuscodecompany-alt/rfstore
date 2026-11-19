@@ -15,6 +15,7 @@ import {
 import { useUser, useUsdUyuRate, useShippingRates, usePlacetopayMode, useRoleUser } from '../../hooks';
 import { validateCoupon, type CouponValidation } from '../../actions/coupons';
 import { leerCuponRecuperado, guardarCuponRecuperado } from '../../actions/abandonedCart';
+import { getCartAnonId } from '../../hooks/useCartTracking';
 import {
 	URUGUAY_DEPARTMENTS,
 	DEFAULT_SHIPPING_RATES,
@@ -323,12 +324,16 @@ export const CdrCheckoutForm = () => {
 				email: form.email,
 				phone: form.phone,
 				fullName: form.fullName,
+				// variantId: lo necesita el link "Retomar mi compra" del mail para rearmar el carrito.
 				cart: cartItems.map(i => ({
+					variantId: i.variantId,
 					name: i.name,
+					image: i.image,
 					quantity: i.quantity,
 					price: i.price,
 				})),
 				total: totalAmount,
+				anonId: getCartAnonId(),
 				shippingZone: shippingZone,
 				shippingDepartment: form.state || null,
 			});
