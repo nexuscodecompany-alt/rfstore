@@ -145,7 +145,7 @@ Deno.serve(async req => {
 		if (action === 'preview') {
 			const orderId = Number(body?.order_id) || 0;
 			if (!orderId) return json({ error: 'Falta la orden' }, 400);
-			const draft = await buildDraft(admin, orderId, cfg);
+			const draft = await buildDraft(admin, orderId, cfg, { moneda: body?.moneda });
 			const invoices = await invoicesFor(draft.order_ids);
 			return json({
 				ok: true,
@@ -165,7 +165,7 @@ Deno.serve(async req => {
 			const orderId = Number(body?.order_id) || 0;
 			if (!orderId) return json({ error: 'Falta la orden' }, 400);
 
-			const draft = await buildDraft(admin, orderId, cfg);
+			const draft = await buildDraft(admin, orderId, cfg, { moneda: body?.moneda });
 			draft.receptor = sanitizeReceptor(body?.receptor, draft.receptor);
 			const notOk = await invoiceableProblem(draft.order_ids);
 			if (notOk) return json({ error: notOk }, 400);

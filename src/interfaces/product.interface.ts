@@ -62,6 +62,12 @@ export interface Product {
 	 * vende más caro para cubrir la comisión. Null/undefined = regla ML automática.
 	 */
 	ml_margin_override_percent?: number | null;
+	/** Respetar el PVP mínimo de la marca (checkbox). Auto para impresoras/AMS Bambu Lab. */
+	pvp_floor?: boolean;
+	/** Piso de precio web vigente (USD con IVA, generado: pvp_floor ? cdr_pvp_usd). Null = sin piso. */
+	web_price_floor_usd?: number | null;
+	/** Piso de precio ML vigente (USD con IVA, generado). Null = sin piso. */
+	ml_price_floor_usd?: number | null;
 
 	/**
 	 * Datos crudos del WS de CDR v2.0 (ver docs/cdr/README.md). Son lo que dice el
@@ -119,6 +125,8 @@ export interface PreparedProducts {
 	online_payment?: boolean;
 	/** Margen manual del producto (ver Product.margin_override_percent). */
 	margin_override_percent?: number | null;
+	/** Piso PVP web (ver Product.web_price_floor_usd). */
+	web_price_floor_usd?: number | null;
 }
 
 export interface ProductInput {
@@ -143,6 +151,8 @@ export interface ProductInput {
 	marginOverride?: number | null;
 	/** Ídem para Mercado Libre (independiente del de la web). */
 	mlMarginOverride?: number | null;
+	/** Respetar el PVP mínimo de la marca (products.pvp_floor). undefined = no tocar. */
+	pvpFloor?: boolean;
 }
 
 export interface VariantInput {

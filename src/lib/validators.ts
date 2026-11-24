@@ -144,6 +144,9 @@ export const productSchema = z.object({
 		.max(1000, 'El margen no puede pasar de 1000%')
 		.optional()
 		.default(0),
+	// Piso PVP de la marca (products.pvp_floor): el precio nunca baja del PVP que
+	// manda CDR (pvp en la web, pvpml en ML). Auto para impresoras/AMS Bambu Lab.
+	pvpFloor: z.boolean().optional().default(false),
 });
 
 export type ProductFormValues = z.infer<typeof productSchema>;

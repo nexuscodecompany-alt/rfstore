@@ -299,17 +299,20 @@ const TIPOS: { value: ReceptorTipo; label: string }[] = [
 ];
 
 const InvoiceModal = ({ orderId, onClose, onDone }: { orderId: number; onClose: () => void; onDone: () => void }) => {
-	const { data, isLoading, error } = useQuery({
-		queryKey: ['invoice-preview', orderId],
-		queryFn: () => getInvoicePreview(orderId),
+	// Moneda elegida por el admin (undefined = la de la regla, la del cobro).
+	const [moneda, setMoneda] = useState<'UYU' | 'USD' | undefined>(undefined);
+	const { data, isLoading, isFetching, error } = useQuery({
+		queryKey: ['invoice-preview', orderId, moneda ?? 'auto'],
+		queryFn: () => getInvoicePreview(orderId, moneda),
 		staleTime: 0,
+		placeholderData: prev => prev,
 	});
 	const [edited, setEdited] = useState<Receptor | null>(null);
 	const receptor = edited ?? data?.draft.receptor ?? null;
 	const set = (k: keyof Receptor, v: string) => receptor && setEdited({ ...receptor, [k]: v });
 
 	const emit = useMutation({
-		mutationFn: () => emitInvoice(orderId, receptor!),
+		mutationFn: () => emitInvoice(orderId, receptor!, data?.draft.moneda_editable ? data.draft.moneda : undefined),
 		onSuccess: r => {
 			if (r.invoice.status === 'error') toast.error(r.invoice.last_error_desc ?? 'Fixed rechazó la factura');
 			else if (r.invoice.status === 'enviando') toast('Enviada: todavía no hay respuesta de Fixed, se reintenta sola.', { icon: '⏳' });
@@ -343,6 +346,36 @@ const InvoiceModal = ({ orderId, onClose, onDone }: { orderId: number; onClose: 
 							</p>
 						)}
 						{data.not_invoiceable && <p className='rounded-lg bg-red-50 px-3 py-2 text-red-700'>{data.not_invoiceable}</p>}
+
+						{d.moneda_editable && (
+							<div className='rounded-xl border border-ink-100 bg-ink-50/60 p-3'>
+								<div className='flex flex-wrap items-center justify-between gap-2'>
+									<p className='font-semibold text-ink-900'>Moneda de la factura</p>
+									<div className='inline-flex rounded-full border border-ink-200 bg-white p-0.5 text-xs font-semibold'>
+										{(['USD', 'UYU'] as const).map(m => (
+											<button
+												key={m}
+												type='button'
+												disabled={isFetching || emit.isPending}
+												onClick={() => setMoneda(m)}
+												className={`rounded-full px-3 py-1 transition-colors ${
+													d.moneda === m ? 'bg-ink-900 text-white' : 'text-ink-600 hover:bg-ink-50'
+												}`}
+											>
+												{m === 'USD' ? 'Dólares' : 'Pesos'}
+											</button>
+										))}
+									</div>
+								</div>
+								<p className='mt-1.5 text-xs text-ink-500'>
+									{d.moneda === d.moneda_default
+										? `Sale en ${d.moneda === 'UYU' ? 'pesos' : 'dólares'} porque se cobró así.`
+										: d.moneda === 'USD'
+											? `Se cobró en pesos: la factura va en dólares con la cotización de la orden (${d.cotizacion}).`
+											: 'Se cobró en dólares: la factura va en pesos convertida con la cotización de la orden.'}
+								</p>
+							</div>
+						)}
 
 						{/* Líneas */}
 						<div>

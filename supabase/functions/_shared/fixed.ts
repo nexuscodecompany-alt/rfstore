@@ -242,6 +242,10 @@ export interface InvoiceDraft {
 	order_ids: number[];
 	channel: string;
 	moneda: 'UYU' | 'USD';
+	/** La que sale por regla (la moneda del cobro). */
+	moneda_default: 'UYU' | 'USD';
+	/** Ventas web: el admin puede elegir pesos o dólares. ML y manuales van en la moneda de la venta. */
+	moneda_editable: boolean;
 	cotizacion: number | null;
 	total: number;
 	total_uyu: number;
@@ -337,7 +341,12 @@ const VARIANT_PLACEHOLDERS = new Set(['', '-', '—', 'unico', 'único', 'n/a', 
 const isRealVariant = (v: unknown) => !VARIANT_PLACEHOLDERS.has(String(v ?? '').trim().toLowerCase());
 
 /** Arma el borrador de factura de una orden, con todo lo que se puede deducir. */
-export async function buildDraft(supabase: SupabaseClient, orderId: number, cfg: InvoiceConfig): Promise<InvoiceDraft> {
+export async function buildDraft(
+	supabase: SupabaseClient,
+	orderId: number,
+	cfg: InvoiceConfig,
+	opts: { moneda?: unknown } = {},
+): Promise<InvoiceDraft> {
 	const { data: base, error } = await supabase
 		.from('orders')
 		.select('id, channel, ml_pack_id, ml_order_id')
@@ -371,7 +380,13 @@ export async function buildDraft(supabase: SupabaseClient, orderId: number, cfg:
 	if (!o) throw new Error('Orden no encontrada');
 
 	const warnings: string[] = [];
-	const moneda = invoiceCurrency(o);
+	// Web: el precio de la tienda es en dólares pero MP/Getnet cobran en pesos, así
+	// que el admin elige. Con dólares va la cotización congelada en la orden (la
+	// misma con la que se convirtió el cobro). ML y manuales: la moneda de la venta.
+	const monedaDefault = invoiceCurrency(o);
+	const monedaEditable = String(o.channel ?? 'web') === 'web';
+	const asked = opts.moneda === 'USD' || opts.moneda === 'UYU' ? opts.moneda : null;
+	const moneda: 'UYU' | 'USD' = monedaEditable && asked ? asked : monedaDefault;
 
 	// Cotización: la congelada en la orden (dólar BROU del momento); si no la
 	// tiene (ventas manuales guardan 1), la del día de la tienda.
@@ -537,6 +552,8 @@ export async function buildDraft(supabase: SupabaseClient, orderId: number, cfg:
 		order_ids: list.map((x: any) => Number(x.id)),
 		channel: String(o.channel ?? 'web'),
 		moneda,
+		moneda_default: monedaDefault,
+		moneda_editable: monedaEditable,
 		cotizacion: moneda === 'USD' ? fx : null,
 		total,
 		total_uyu: totalUyu,

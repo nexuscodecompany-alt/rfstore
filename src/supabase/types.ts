@@ -728,6 +728,9 @@ export type Database = {
           last_synced_at: string | null
           margin_override_percent: number | null
           ml_margin_override_percent: number | null
+          pvp_floor: boolean
+          web_price_floor_usd: number | null
+          ml_price_floor_usd: number | null
           markup_percent: number | null
           name: string
           online_payment: boolean
@@ -773,6 +776,7 @@ export type Database = {
           last_synced_at?: string | null
           margin_override_percent?: number | null
           ml_margin_override_percent?: number | null
+          pvp_floor?: boolean
           markup_percent?: number | null
           name: string
           online_payment?: boolean
@@ -818,6 +822,7 @@ export type Database = {
           last_synced_at?: string | null
           margin_override_percent?: number | null
           ml_margin_override_percent?: number | null
+          pvp_floor?: boolean
           markup_percent?: number | null
           name?: string
           online_payment?: boolean
@@ -950,6 +955,7 @@ export type Database = {
           id: string | null
           images: string[] | null
           margin_override_percent: number | null
+          web_price_floor_usd: number | null
           name: string | null
           online_payment: boolean | null
           price: number | null

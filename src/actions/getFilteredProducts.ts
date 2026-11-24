@@ -47,7 +47,7 @@ export async function getFilteredProducts({
 let baseQuery = supabase
   .from('products_with_price')
   .select(
-    'id, name, slug, images, features, description, created_at, brand_id, category_id, subcategory_id, price, source, external_code, online_payment, margin_override_percent',
+    'id, name, slug, images, features, description, created_at, brand_id, category_id, subcategory_id, price, source, external_code, online_payment, margin_override_percent, web_price_floor_usd',
     { count: 'exact' }
   )
   .range(from, to);
@@ -155,6 +155,7 @@ if (searchTerm?.trim()) {
           (r as any).margin_override_percent === undefined
             ? null
             : Number((r as any).margin_override_percent),
+        web_price_floor_usd: (r as any).web_price_floor_usd == null ? null : Number((r as any).web_price_floor_usd),
       };
     });
 

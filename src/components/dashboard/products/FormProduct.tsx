@@ -60,6 +60,7 @@ const initialState: ProductFormValues = {
   marginPercent: 0,
   manualPriceMl: false,
   marginPercentMl: 0,
+  pvpFloor: false,
 };
 
 interface ProductFormState {
@@ -205,6 +206,7 @@ export const FormProduct = ({ titleForm }: Props) => {
           (product as { ml_margin_override_percent?: number | null })
             .ml_margin_override_percent ?? 0
         ),
+        pvpFloor: (product as { pvp_floor?: boolean }).pvp_floor === true,
       };
 
       // Actualizamos el form y el store
@@ -280,6 +282,7 @@ export const FormProduct = ({ titleForm }: Props) => {
       // Precio manual apagado -> null, o sea vuelve al margen por tramo.
       marginOverride: data.manualPrice ? Number(data.marginPercent ?? 0) : null,
       mlMarginOverride: data.manualPriceMl ? Number(data.marginPercentMl ?? 0) : null,
+      pvpFloor: data.pvpFloor === true,
     };
 
     // Precio manual sobre un producto de CDR: antes de guardar le preguntamos qué
@@ -465,6 +468,8 @@ export const FormProduct = ({ titleForm }: Props) => {
             categoryId={watchCategory}
             subcategoryId={watch("subcategoryId")}
             isCdrProduct={isCdrProduct}
+            pvpWeb={Number((product as { cdr_pvp_usd?: number | null } | undefined)?.cdr_pvp_usd ?? 0) || 0}
+            pvpMl={Number((product as { cdr_pvpml_usd?: number | null } | undefined)?.cdr_pvpml_usd ?? 0) || 0}
             costLocked={(product as { price_locked?: boolean } | undefined)?.price_locked === true}
             onEditSync={
               product?.id

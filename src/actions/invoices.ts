@@ -88,6 +88,10 @@ export interface InvoiceDraft {
 	order_ids: number[];
 	channel: string;
 	moneda: 'UYU' | 'USD';
+	/** Moneda que sale por regla (la del cobro). */
+	moneda_default: 'UYU' | 'USD';
+	/** El admin puede elegir la moneda (sólo ventas web). */
+	moneda_editable: boolean;
 	cotizacion: number | null;
 	total: number;
 	total_uyu: number;
@@ -151,11 +155,12 @@ export const DEFAULT_INVOICE_CONFIG: InvoiceConfig = {
 	id_required_above_ui: 5000,
 };
 
-export const getInvoicePreview = (orderId: number) =>
-	callFixed<InvoicePreview>({ action: 'preview', order_id: orderId });
+// `moneda` = la que eligió el admin (sólo ventas web); sin ella, la de la regla.
+export const getInvoicePreview = (orderId: number, moneda?: 'UYU' | 'USD') =>
+	callFixed<InvoicePreview>({ action: 'preview', order_id: orderId, moneda });
 
-export const emitInvoice = (orderId: number, receptor: Receptor) =>
-	callFixed<{ ok: boolean; invoice: InvoiceRow }>({ action: 'emit', order_id: orderId, receptor });
+export const emitInvoice = (orderId: number, receptor: Receptor, moneda?: 'UYU' | 'USD') =>
+	callFixed<{ ok: boolean; invoice: InvoiceRow }>({ action: 'emit', order_id: orderId, receptor, moneda });
 
 export const retryInvoice = (invoiceId: number) =>
 	callFixed<{ ok: boolean; invoice: InvoiceRow }>({ action: 'retry', invoice_id: invoiceId });

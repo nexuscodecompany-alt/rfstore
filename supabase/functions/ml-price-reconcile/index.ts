@@ -50,7 +50,7 @@ function isModerated(st: string, sub: string[] | undefined): boolean {
 const MAX_FIXES_PER_DAY = 6;
 const SOURCE = 'price_reconcile';
 
-// ---------- Formula de precio: COPIA EXACTA de ml-reprice-active v20. Si se cambia alli,
+// ---------- Formula de precio: COPIA EXACTA de ml-reprice-active v8 (piso PVP, 2026-11-24). Si se cambia alli,
 // ---------- cambiarla aca (o el reconciliador va a "corregir" contra la formula vieja).
 function marginOverrideOf(prod: any): number | null {
   const raw = prod?.ml_margin_override_percent;
@@ -68,8 +68,11 @@ function resolveMlMargin(cfg: any, cost: number, categoryId: string | null, subc
   for (const t of tiers) { if (t.max == null) return Number(t.pct); if (cost <= Number(t.max)) return Number(t.pct); }
   return fallback;
 }
-function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: number, threshold: number): { price: number; currency_id: 'USD' | 'UYU' } {
-  const withIva = cost * (1 + markup / 100) * (1 + iva / 100);
+// floor: piso PVP de la marca para ML (products.ml_price_floor_usd, USD con IVA). Se aplica
+// sobre el monto en USD con IVA ANTES de decidir la moneda; null/0 = sin piso.
+function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: number, threshold: number, floor?: number | null): { price: number; currency_id: 'USD' | 'UYU' } {
+  let withIva = cost * (1 + markup / 100) * (1 + iva / 100);
+  if (Number(floor) > 0) withIva = Math.max(withIva, Number(floor));
   if (cost > threshold) return { price: Math.ceil(withIva), currency_id: 'USD' };
   return { price: Math.ceil(withIva * fx), currency_id: 'UYU' };
 }
@@ -174,7 +177,7 @@ Deno.serve(async (req: Request) => {
     // ---- 2. Mapeos vivos (con costo/categoria/override del producto)
     const allMaps = await fetchAllPages<any>((from, to) =>
       supabase.from('ml_item_mapping')
-        .select('id, ml_item_id, variant_id, product_id, status, products(external_code, price_usd, category_id, subcategory_id, ml_margin_override_percent)')
+        .select('id, ml_item_id, variant_id, product_id, status, products(external_code, price_usd, category_id, subcategory_id, ml_margin_override_percent, ml_price_floor_usd)')
         .in('status', ['active', 'paused'])
         .order('id', { ascending: true }).range(from, to)
     );
@@ -258,7 +261,7 @@ Deno.serve(async (req: Request) => {
       const ivaCost = cost * (1 + iva / 100);
       const override = marginOverrideOf(prod);
       const margin = override !== null ? override : resolveMlMargin(cfg, ivaCost, prod?.category_id ?? null, prod?.subcategory_id ?? null, fallbackMarkup);
-      const exp = computePriceAndCurrency(cost, margin, iva, fx, threshold);
+      const exp = computePriceAndCurrency(cost, margin, iva, fx, threshold, prod?.ml_price_floor_usd);
 
       const mlPrice = Number(ml.price);
       const sameCurrency = ml.currency_id === exp.currency_id;

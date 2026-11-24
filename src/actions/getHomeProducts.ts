@@ -4,7 +4,7 @@ import type { Product, VariantProduct } from '../interfaces';
 export async function getHomeProducts(limit = 8): Promise<Product[]> {
   const { data: baseRows, error: baseErr } = await supabase
     .from('products_with_price')
-    .select('id, name, slug, images, features, description, created_at, brand_id, category_id, price, margin_override_percent')
+    .select('id, name, slug, images, features, description, created_at, brand_id, category_id, price, margin_override_percent, web_price_floor_usd')
     .order('created_at', { ascending: false }) // o por price si preferís
     .limit(limit);
 
@@ -57,6 +57,7 @@ export async function getHomeProducts(limit = 8): Promise<Product[]> {
         (r as any).margin_override_percent === undefined
           ? null
           : Number((r as any).margin_override_percent),
+        web_price_floor_usd: (r as any).web_price_floor_usd == null ? null : Number((r as any).web_price_floor_usd),
     };
   });
 }

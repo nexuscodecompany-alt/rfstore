@@ -4,6 +4,9 @@
 // por cada una en ml_sync_queue. El cron ml-process-sync-queue las empuja a ML (20/min).
 // Disparo manual desde el panel ('Repreciar publicaciones activas').
 //
+// v8 (2026-11-24): piso PVP de la marca (products.ml_price_floor_usd, USD con IVA): el
+// precio nunca queda por debajo. Se aplica antes de decidir USD/UYU.
+//
 // v7 (2026-10-07): body.only_currency + body.min_change_pct para el cron por dolar
 // (ml_reprice_fx_tick): las publicaciones en UYU se calculan con el dolar del dia.
 //
@@ -61,8 +64,11 @@ function resolveMlMargin(cfg: any, cost: number, categoryId: string | null, subc
   return fallback;
 }
 
-function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: number, threshold: number): { price: number; currency_id: 'USD' | 'UYU' } {
-  const withIva = cost * (1 + markup / 100) * (1 + iva / 100);
+// floor: piso PVP de la marca para ML (products.ml_price_floor_usd, USD con IVA). Se aplica
+// sobre el monto en USD con IVA ANTES de decidir la moneda; null/0 = sin piso.
+function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: number, threshold: number, floor?: number | null): { price: number; currency_id: 'USD' | 'UYU' } {
+  let withIva = cost * (1 + markup / 100) * (1 + iva / 100);
+  if (Number(floor) > 0) withIva = Math.max(withIva, Number(floor));
   // Precio redondo: siempre entero hacia arriba, sin decimales/milesimas
   if (cost > threshold) return { price: Math.ceil(withIva), currency_id: 'USD' };
   return { price: Math.ceil(withIva * fx), currency_id: 'UYU' };
@@ -135,7 +141,7 @@ Deno.serve(async (req: Request) => {
       maps = await fetchAllPages<any>((from, to) => {
         let q = supabase
           .from('ml_item_mapping')
-          .select('id, variant_id, product_id, status, last_known_price_uyu, products(price_usd, category_id, subcategory_id, ml_margin_override_percent)')
+          .select('id, variant_id, product_id, status, last_known_price_uyu, products(price_usd, category_id, subcategory_id, ml_margin_override_percent, ml_price_floor_usd)')
           .in('status', ['active', 'paused']);
         if (productIds.length > 0) q = q.in('product_id', productIds);
         return q.order('id', { ascending: true }).range(from, to);
@@ -174,7 +180,7 @@ Deno.serve(async (req: Request) => {
       const margin = override !== null
         ? override
         : resolveMlMargin(cfg, ivaCost, prod?.category_id ?? null, prod?.subcategory_id ?? null, fallbackMarkup);
-      const calc = computePriceAndCurrency(cost, margin, iva, fx, threshold);
+      const calc = computePriceAndCurrency(cost, margin, iva, fx, threshold, prod?.ml_price_floor_usd);
       // Si queda igual al ultimo precio conocido (en UYU), no encolar.
       if (calc.currency_id === 'UYU' && Number((m as any).last_known_price_uyu) === calc.price) { skippedSamePrice++; continue; }
       if (onlyCurrency && calc.currency_id !== onlyCurrency) { skippedOtherCurrency++; continue; }

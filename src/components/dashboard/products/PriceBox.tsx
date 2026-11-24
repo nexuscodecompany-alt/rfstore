@@ -23,6 +23,9 @@ interface Props {
 	costLocked?: boolean;
 	/** Abre el modal de candados desde acá. */
 	onEditSync?: () => void;
+	/** PVP de la marca que manda CDR (USD con IVA). 0 = no hay. */
+	pvpWeb?: number;
+	pvpMl?: number;
 }
 
 const money = (n: number) =>
@@ -80,6 +83,8 @@ interface PanelProps {
 	marginField: 'marginPercent' | 'marginPercentMl';
 	register: UseFormRegister<ProductFormValues>;
 	setValue: UseFormSetValue<ProductFormValues>;
+	/** Piso PVP vigente para este canal (USD con IVA). 0 = sin piso. */
+	floor: number;
 }
 
 // Un canal: costo -> margen -> IVA -> total. Con "precio manual" prendido, el margen
@@ -95,6 +100,7 @@ const ChannelPanel = ({
 	marginField,
 	register,
 	setValue,
+	floor,
 }: PanelProps) => {
 	const theme = THEME[channel];
 	// Texto que el admin está tipeando en el total. Mientras edita mandamos SU texto:
@@ -105,7 +111,11 @@ const ChannelPanel = ({
 	const effMargin = manual ? manualMargin : autoMargin;
 	const marginAmount = cost * (effMargin / 100);
 	const ivaAmount = (cost + marginAmount) * (ivaPercent / 100);
-	const total = cost > 0 ? Math.ceil(cost * (1 + effMargin / 100) * (1 + ivaPercent / 100)) : 0;
+	const marginTotal = cost > 0 ? Math.ceil(cost * (1 + effMargin / 100) * (1 + ivaPercent / 100)) : 0;
+	// Piso PVP: el precio nunca baja del mínimo de la marca (mismo cálculo que
+	// rf_sale_price en la base y las edge functions de ML).
+	const floorApplies = cost > 0 && floor > 0 && Math.ceil(floor) > marginTotal;
+	const total = floorApplies ? Math.ceil(floor) : marginTotal;
 
 	const onTotalChange = (raw: string) => {
 		const target = Number(raw);
@@ -202,9 +212,9 @@ const ChannelPanel = ({
 									type="number"
 									step="1"
 									min="0"
-									value={editingTotal ? totalDraft : String(total)}
+									value={editingTotal ? totalDraft : String(marginTotal)}
 									onFocus={() => {
-										setTotalDraft(String(total));
+										setTotalDraft(String(marginTotal));
 										setEditingTotal(true);
 									}}
 									onChange={e => {
@@ -221,6 +231,20 @@ const ChannelPanel = ({
 							</span>
 						)}
 					</div>
+
+					{floor > 0 && (
+						<div
+							className={`mt-2 rounded-md px-2 py-1.5 text-xs ${
+								floorApplies
+									? 'bg-violet-50 font-semibold text-violet-800'
+									: 'bg-slate-50 text-slate-600'
+							}`}
+						>
+							{floorApplies
+								? `Se vende a ${moneyRound(floor)}: piso PVP de la marca (por margen daría ${moneyRound(marginTotal)}).`
+								: `Piso PVP de la marca: ${moneyRound(floor)} — ya lo supera.`}
+						</div>
+					)}
 
 					<p className="mt-2 text-xs text-slate-500">
 						{manual
@@ -245,6 +269,8 @@ export const PriceBox = ({
 	isCdrProduct = false,
 	costLocked = false,
 	onEditSync,
+	pvpWeb = 0,
+	pvpMl = 0,
 }: Props) => {
 	const pricing = usePricingConfig();
 	const { data: mlPricingCfg } = useQuery({
@@ -260,6 +286,11 @@ export const PriceBox = ({
 
 	const manualWeb = watch('manualPrice') === true;
 	const manualMl = watch('manualPriceMl') === true;
+	const pvpFloorOn = watch('pvpFloor') === true;
+	// Mismo criterio que las columnas generadas: ML sin pvpml usa el pvp web.
+	const webFloor = pvpFloorOn ? pvpWeb : 0;
+	const mlFloor = pvpFloorOn ? pvpMl || pvpWeb : 0;
+	const hasPvp = pvpWeb > 0 || pvpMl > 0;
 
 	return (
 		<div className="mt-4">
@@ -301,6 +332,24 @@ export const PriceBox = ({
 				</div>
 			)}
 
+			{hasPvp && (
+				<label
+					className={`mb-3 flex cursor-pointer items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+						pvpFloorOn ? 'border-violet-200 bg-violet-50 text-violet-900' : 'border-slate-200 bg-slate-50 text-slate-600'
+					}`}
+				>
+					<input type="checkbox" className="mt-0.5 h-4 w-4 accent-violet-600" {...register('pvpFloor')} />
+					<span>
+						<span className="font-bold">Respetar PVP mínimo de la marca</span>
+						{' — '}
+						{pvpWeb > 0 && <>web {moneyRound(pvpWeb)}</>}
+						{pvpWeb > 0 && pvpMl > 0 && ' · '}
+						{pvpMl > 0 && <>ML {moneyRound(pvpMl)}</>}
+						. El precio nunca baja de ahí (lo manda CDR y se actualiza solo).
+					</span>
+				</label>
+			)}
+
 			<div className="grid gap-3 md:grid-cols-2">
 				<ChannelPanel
 					channel="web"
@@ -313,6 +362,7 @@ export const PriceBox = ({
 					marginField="marginPercent"
 					register={register}
 					setValue={setValue}
+					floor={webFloor}
 				/>
 				<ChannelPanel
 					channel="ml"
@@ -325,6 +375,7 @@ export const PriceBox = ({
 					marginField="marginPercentMl"
 					register={register}
 					setValue={setValue}
+					floor={mlFloor}
 				/>
 			</div>
 

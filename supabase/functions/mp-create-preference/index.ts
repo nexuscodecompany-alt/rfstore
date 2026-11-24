@@ -1,5 +1,9 @@
 // deno-lint-ignore-file no-explicit-any
-// mp-create-preference v32 (2026-10-27)
+// mp-create-preference v33 (2026-11-24)
+//  - PISO PVP de la marca (products.web_price_floor_usd, USD con IVA): se le pasa a
+//    rf_sale_price como p_floor y entra en la clave del cache de precios.
+//
+// v32 (2026-10-27)
 //  - ENVÍO POR DEPARTAMENTO: Montevideo USD 6, Canelones USD 8, interior DAC.
 //    Gratis desde USD 150 en Montevideo y Canelones. El costo lo calcula
 //    rf_shipping_quote en la base; ya no se toma el que manda el cliente.
@@ -168,10 +172,10 @@ Deno.serve(async req => {
 		const variantIds = [...new Set(body.items.map(i => i.variant_id))];
 		const { data: variantRows, error: varErr } = await supabaseAdmin
 			.from('variants')
-			.select('id, price, stock, products(name, source, online_payment, external_code, price_usd, margin_override_percent)')
+			.select('id, price, stock, products(name, source, online_payment, external_code, price_usd, margin_override_percent, web_price_floor_usd)')
 			.in('id', variantIds);
 		if (varErr) throw new Error(`variants: ${varErr.message}`);
-		interface VarInfo { price: number; stock: number; source: string; onlinePayment: boolean; externalCode: string | null; costUsd: number | null; marginOverride: number | null; }
+		interface VarInfo { price: number; stock: number; source: string; onlinePayment: boolean; externalCode: string | null; costUsd: number | null; marginOverride: number | null; floorUsd: number | null; }
 		const infoByVariant = new Map<string, VarInfo>();
 		for (const row of (variantRows ?? []) as any[]) {
 			const p = Array.isArray(row.products) ? row.products[0] : row.products;
@@ -189,6 +193,8 @@ Deno.serve(async req => {
 					rawOverride === null || rawOverride === undefined || isNaN(Number(rawOverride))
 						? null
 						: Number(rawOverride),
+				// Piso PVP de la marca (web): null = sin piso.
+				floorUsd: Number(p?.web_price_floor_usd) > 0 ? Number(p.web_price_floor_usd) : null,
 			});
 		}
 		for (const it of body.items) {
@@ -240,20 +246,22 @@ Deno.serve(async req => {
 		// El COSTO sale de products.price_usd en los CDR y de variants.price en los
 		// manuales (que es donde el admin lo carga: "Precio (USD, costo sin IVA)").
 		// La clave es (costo + margen manual): dos productos con el mismo costo pueden
-		// tener precios distintos si uno tiene precio puesto a mano.
+		// tener precios distintos si uno tiene precio puesto a mano. El piso PVP tambien
+		// entra en la clave: mismo costo y margen con piso distinto da otro precio.
 		const costByVariant = new Map<string, number>();
 		const priceKeyByVariant = new Map<string, string>();
 		for (const [vid, info] of infoByVariant) {
 			const cost = Number(info.source === 'cdr' ? (info.costUsd ?? info.price) : info.price) || 0;
 			costByVariant.set(vid, cost);
-			priceKeyByVariant.set(vid, `${cost}|${info.marginOverride ?? ''}`);
+			priceKeyByVariant.set(vid, `${cost}|${info.marginOverride ?? ''}|${info.floorUsd ?? ''}`);
 		}
 		const saleByKey = new Map<string, number>();
 		for (const key of new Set(priceKeyByVariant.values())) {
-			const [costStr, overrideStr] = key.split('|');
+			const [costStr, overrideStr, floorStr] = key.split('|');
 			const { data: sp } = await supabaseAdmin.rpc('rf_sale_price', {
 				cost: Number(costStr),
 				p_override: overrideStr === '' ? null : Number(overrideStr),
+				p_floor: floorStr === '' ? null : Number(floorStr),
 			});
 			saleByKey.set(key, Number(sp) || 0);
 		}

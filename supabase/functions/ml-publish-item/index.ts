@@ -55,10 +55,14 @@ function toPureplainText(s: string): string {
 }
 
 // Decide currency y calcula price segun threshold del cliente
-function computePriceAndCurrency(input: { cost_usd: number; markup_percent: number; iva_percent: number; fx_rate: number; usd_threshold: number; }): { price: number; currency_id: 'USD' | 'UYU'; basis_usd: number } {
-  const { cost_usd, markup_percent, iva_percent, fx_rate, usd_threshold } = input;
+// floor_usd: piso PVP de la marca para ML (products.ml_price_floor_usd, USD con IVA).
+// Se aplica sobre el monto en USD con IVA ANTES de decidir la moneda.
+function computePriceAndCurrency(input: { cost_usd: number; markup_percent: number; iva_percent: number; fx_rate: number; usd_threshold: number; floor_usd?: number | null; }): { price: number; currency_id: 'USD' | 'UYU'; basis_usd: number } {
+  const { cost_usd, markup_percent, iva_percent, fx_rate, usd_threshold, floor_usd } = input;
   const withMarkup = cost_usd * (1 + markup_percent / 100);
-  const withIva = withMarkup * (1 + iva_percent / 100);
+  let withIva = withMarkup * (1 + iva_percent / 100);
+  const floor = Number(floor_usd);
+  if (floor > 0) withIva = Math.max(withIva, floor);
   if (cost_usd > usd_threshold) {
     // Precio redondo: siempre entero hacia arriba, sin decimales/milesimas
     return { price: Math.ceil(withIva), currency_id: 'USD', basis_usd: withIva };
@@ -291,7 +295,7 @@ Deno.serve(async (req: Request) => {
   if (!product_id || !variant_id) return json({ ok: false, error: 'missing_product_or_variant_id' }, 400);
 
   try {
-    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, ml_margin_override_percent, cdr_garantia, cdr_modelo, cdr_gtin, cdr_nro_parte, cdr_peso_gramos, cdr_ancho_cm, cdr_alto_cm, cdr_profundidad_cm, stock_locked').eq('id', product_id).single();
+    const { data: product, error: pErr } = await supabase.from('products').select('id, name, slug, external_code, price_usd, images, features, description, brand_id, category_id, subcategory_id, source, active, ml_margin_override_percent, ml_price_floor_usd, cdr_garantia, cdr_modelo, cdr_gtin, cdr_nro_parte, cdr_peso_gramos, cdr_ancho_cm, cdr_alto_cm, cdr_profundidad_cm, stock_locked').eq('id', product_id).single();
     if (pErr || !product) throw new Error(`product_not_found: ${pErr?.message ?? 'null'}`);
     // Sin filtros propios (decision del admin): publicamos aunque este inactivo; ML decide.
     if (!product.active) await logEvent('ml_publish_forced_inactive', { product_id, variant_id });
@@ -347,7 +351,7 @@ Deno.serve(async (req: Request) => {
     const effMargin = manualMargin !== null
       ? manualMargin
       : resolveMlMargin(mlPricingCfg, ivaCostUsd, product.category_id ?? null, product.subcategory_id ?? null, markup);
-    const priceCalc = computePriceAndCurrency({ cost_usd: costUsd, markup_percent: effMargin, iva_percent: effIva, fx_rate: fxRate, usd_threshold: effThreshold });
+    const priceCalc = computePriceAndCurrency({ cost_usd: costUsd, markup_percent: effMargin, iva_percent: effIva, fx_rate: fxRate, usd_threshold: effThreshold, floor_usd: (product as any).ml_price_floor_usd });
 
     const title = buildTitle(product.name, brandName, 60);
     const rawDescText = descriptionToText(product.description);

@@ -34,6 +34,8 @@ interface Props {
 	 * pisa el margen por tramo. Null/undefined = precio automático de siempre.
 	 */
 	marginOverride?: number | null;
+	/** Piso PVP de la marca (products.web_price_floor_usd). */
+	priceFloor?: number | null;
 }
 
 export const CardProduct = ({
@@ -49,6 +51,7 @@ export const CardProduct = ({
 	externalCode,
 	onlinePayment,
 	marginOverride,
+	priceFloor,
 }: Props) => {
 	const addItem = useCartStore(state => state.addItem);
 	const { enabled: paymentsEnabled } = usePaymentsEnabled();
@@ -58,8 +61,8 @@ export const CardProduct = ({
 	const selectedVariant = variants[0];
 
 	const displayPrice = variants.length
-		? Math.min(...variants.map(v => salePrice(v.price, pricing, marginOverride)))
-		: salePrice(price, pricing, marginOverride);
+		? Math.min(...variants.map(v => salePrice(v.price, pricing, marginOverride, priceFloor)))
+		: salePrice(price, pricing, marginOverride, priceFloor);
 
 	// Precio "antes" tachado (sólo vidriera; no cambia lo que se cobra).
 	const compareAt = compareAtFor(id, displayPrice, compareAtCfg);
@@ -83,7 +86,7 @@ export const CardProduct = ({
 				image: img,
 				color: '',
 				storage: '',
-				price: salePrice(selectedVariant.price, pricing, marginOverride),
+				price: salePrice(selectedVariant.price, pricing, marginOverride, priceFloor),
 				quantity: 1,
 				source: source ?? 'local',
 				externalCode: externalCode ?? null,
@@ -94,7 +97,7 @@ export const CardProduct = ({
 				// content_id = id del producto (igual que en el feed del catálogo).
 				id,
 				name,
-				price: salePrice(selectedVariant.price, pricing, marginOverride),
+				price: salePrice(selectedVariant.price, pricing, marginOverride, priceFloor),
 				quantity: 1,
 			});
 			toast.success('Producto añadido al carrito', {

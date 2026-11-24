@@ -1133,7 +1133,8 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
   const webOverride = product.margin_override_percent;
   const mlOverride = product.ml_margin_override_percent;
   // Mismo cálculo que la web pública: usa la config de márgenes guardada (no el default).
-  const web = salePrice(cost, pricing, webOverride);
+  // Con piso PVP de la marca (products.web_price_floor_usd) el precio nunca baja de ahí.
+  const web = salePrice(cost, pricing, webOverride, (product as { web_price_floor_usd?: number | null }).web_price_floor_usd);
   // Precio ML en USD (mismo criterio que la web), aunque el listing real pueda ir
   // en pesos al BROU: costo × (1 + margen) × (1 + IVA).
   const mlMarginPct = mlMarginFor(
@@ -1143,7 +1144,8 @@ const PriceCellsForProduct = ({ product, mlCfg }: PriceCellsProps) => {
     mlCfg,
     mlOverride
   );
-  const mlUsd = cost > 0 ? cost * (1 + mlMarginPct / 100) * (1 + mlCfg.iva_percent / 100) : 0;
+  const mlFloor = Number((product as { ml_price_floor_usd?: number | null }).ml_price_floor_usd ?? 0) || 0;
+  const mlUsd = cost > 0 ? Math.max(cost * (1 + mlMarginPct / 100) * (1 + mlCfg.iva_percent / 100), mlFloor) : 0;
   return (
     <>
       <td className='p-4 align-middle text-xs font-medium tracking-tighter'>

@@ -454,6 +454,8 @@ export const createProduct = async (productInput: ProductInput) => {
             // Márgenes manuales por canal (null = automático por tramo).
             margin_override_percent: productInput.marginOverride ?? null,
             ml_margin_override_percent: productInput.mlMarginOverride ?? null,
+            // Si no viene, el trigger lo prende solo para impresoras/AMS Bambu Lab.
+            ...(productInput.pvpFloor ? { pvp_floor: true } : {}),
         })
         .select()
         .single();
@@ -597,6 +599,7 @@ export const updateProduct = async (
             ...(productInput.mlMarginOverride === undefined
                 ? {}
                 : { ml_margin_override_percent: productInput.mlMarginOverride }),
+            ...(productInput.pvpFloor === undefined ? {} : { pvp_floor: productInput.pvpFloor }),
         })
         .eq('id', productId)
         .select()

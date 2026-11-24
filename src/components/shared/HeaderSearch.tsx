@@ -161,7 +161,8 @@ export const HeaderSearch = () => {
 								const displayPrice = salePrice(
 										minCost,
 										pricing,
-										(product as any).margin_override_percent
+										(product as any).margin_override_percent,
+										(product as any).web_price_floor_usd
 									);
 								return (
 									<li key={(product as any).id}>

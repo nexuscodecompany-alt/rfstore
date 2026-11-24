@@ -442,6 +442,7 @@ export const CellPhonesPage = () => {
 									externalCode={product.external_code}
 									onlinePayment={product.online_payment}
 									marginOverride={product.margin_override_percent}
+									priceFloor={product.web_price_floor_usd}
 								/>
 							))}
 						</div>

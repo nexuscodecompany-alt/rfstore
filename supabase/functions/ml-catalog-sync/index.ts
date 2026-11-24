@@ -72,8 +72,11 @@ function resolveMlMargin(cfg: any, cost: number, categoryId: string | null, subc
   return fallback;
 }
 
-function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: number, threshold: number): { price: number; currency_id: 'USD' | 'UYU' } {
-  const withIva = cost * (1 + markup / 100) * (1 + iva / 100);
+// floor: piso PVP de la marca para ML (products.ml_price_floor_usd, USD con IVA). Se aplica
+// sobre el monto en USD con IVA ANTES de decidir la moneda; null/0 = sin piso.
+function computePriceAndCurrency(cost: number, markup: number, iva: number, fx: number, threshold: number, floor?: number | null): { price: number; currency_id: 'USD' | 'UYU' } {
+  let withIva = cost * (1 + markup / 100) * (1 + iva / 100);
+  if (Number(floor) > 0) withIva = Math.max(withIva, Number(floor));
   if (cost > threshold) return { price: Math.ceil(withIva), currency_id: 'USD' };
   return { price: Math.ceil(withIva * fx), currency_id: 'UYU' };
 }
@@ -152,14 +155,14 @@ Deno.serve(async (req: Request) => {
       // padre; si la publicamos nosotros directo en catalogo, de su propio mapping.
       const refId: string = parentId ?? it.id;
 
-      // Si ML moderó al HIJO, el precio esta bloqueado igual que en el padre.
+      // Si ML modero al HIJO, el precio esta bloqueado igual que en el padre.
       if (MODERATION_SUBSTATUS.some(f => sub.includes(f)) || it.status === 'under_review' || it.status === 'closed') {
         skipped++; report.push({ id: it.id, title: it.title, action: 'moderada', detail: `${it.status} ${JSON.stringify(sub)}` });
         await logSync({ ...base, action: 'catalog_skipped_moderated', result: 'ok', error: `status=${it.status} sub=${JSON.stringify(sub)}` });
         continue;
       }
 
-      const { data: map } = await supabase.from('ml_item_mapping').select('product_id, variant_id, products(price_usd, category_id, subcategory_id)').eq('ml_item_id', refId).maybeSingle();
+      const { data: map } = await supabase.from('ml_item_mapping').select('product_id, variant_id, products(price_usd, category_id, subcategory_id, ml_price_floor_usd)').eq('ml_item_id', refId).maybeSingle();
       const prod: any = (map as any)?.products;
       const cost = Number(prod?.price_usd);
       if (!map || !cost || cost <= 0) {
@@ -170,7 +173,7 @@ Deno.serve(async (req: Request) => {
 
       const ivaCost = cost * (1 + iva / 100);
       const margin = resolveMlMargin(cfg, ivaCost, prod?.category_id ?? null, prod?.subcategory_id ?? null, fallbackMarkup);
-      const calc = computePriceAndCurrency(cost, margin, iva, fx, threshold);
+      const calc = computePriceAndCurrency(cost, margin, iva, fx, threshold, prod?.ml_price_floor_usd);
 
       if (Number(it.price) === calc.price && it.currency_id === calc.currency_id) {
         inSync++; report.push({ id: it.id, title: it.title, action: 'ok', price: calc.price, currency: calc.currency_id });

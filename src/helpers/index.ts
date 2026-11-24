@@ -358,17 +358,31 @@ export const webMarginFor = (
 // `override` = margen manual del producto (products.margin_override_percent):
 // si viene, se saltea la tabla de tramos. Debe coincidir con la función SQL
 // public.rf_sale_price(cost, override).
+// `floor` = piso PVP de la marca (products.web_price_floor_usd, ya con IVA): el
+// precio nunca baja de ahí. Debe coincidir con rf_sale_price(cost, override, floor).
 export const salePrice = (
 	cost: number | null | undefined,
 	cfg: PricingConfig = DEFAULT_PRICING,
-	override?: number | null
+	override?: number | null,
+	floor?: number | null
 ): number => {
 	if (cost === null || cost === undefined || isNaN(cost)) return 0;
 	// El tramo del margen se decide por el costo CON IVA (no el costo base), igual que ML.
 	// Solo elige el tramo; el precio final se calcula con el costo real.
 	const pct = webMarginFor(cost, cfg, override);
-	const final = cost * (1 + pct / 100) * (1 + cfg.iva_percent / 100);
-	return Math.ceil(final);
+	const final = Math.ceil(cost * (1 + pct / 100) * (1 + cfg.iva_percent / 100));
+	const f = Number(floor ?? 0);
+	return f > 0 ? Math.max(final, Math.ceil(f)) : final;
+};
+
+// Piso PVP (USD con IVA) de un producto, o null si no tiene.
+export const priceFloorOf = (p: { web_price_floor_usd?: number | string | null } | null | undefined): number | null => {
+	const f = Number(p?.web_price_floor_usd ?? 0);
+	return f > 0 ? f : null;
+};
+export const mlPriceFloorOf = (p: { ml_price_floor_usd?: number | string | null } | null | undefined): number | null => {
+	const f = Number(p?.ml_price_floor_usd ?? 0);
+	return f > 0 ? f : null;
 };
 
 // Inversa de salePrice: dado el precio final que quiere el admin, qué margen (%)
@@ -466,12 +480,14 @@ export const mlPriceFromConfig = (
 	categoryId: string | null | undefined,
 	subcategoryId: string | null | undefined,
 	cfg: MlPricingConfig,
-	override?: number | null
+	override?: number | null,
+	floor?: number | null
 ): MlPriceResult => {
 	const cost = Number(costUsd ?? 0);
 	if (!cost || cost <= 0 || !fxRate || fxRate <= 0) return { price: 0, currency: 'UYU' };
 	const markup = mlMarginFor(cost, categoryId, subcategoryId, cfg, override);
-	const withMarkupIva = cost * (1 + markup / 100) * (1 + cfg.iva_percent / 100);
+	// Piso PVP ML (USD con IVA): se aplica antes de decidir la moneda, igual que las edge functions.
+	const withMarkupIva = Math.max(cost * (1 + markup / 100) * (1 + cfg.iva_percent / 100), Number(floor ?? 0) || 0);
 	// Precio redondo: siempre entero hacia arriba, sin decimales/milesimas.
 	if (cost > cfg.usd_threshold) return { price: Math.ceil(withMarkupIva), currency: 'USD' };
 	return { price: Math.ceil(withMarkupIva * fxRate), currency: 'UYU' };

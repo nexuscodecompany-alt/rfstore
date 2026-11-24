@@ -55,7 +55,8 @@ export const CellPhonePage = () => {
   const currentPrice = salePrice(
     variant?.price ?? 0,
     pricing,
-    product?.margin_override_percent
+    product?.margin_override_percent,
+    product?.web_price_floor_usd
   );
   const compareAtPrice = compareAtFor(product?.id ?? "", currentPrice, compareAtCfg);
 
@@ -69,7 +70,7 @@ export const CellPhonePage = () => {
     trackViewContent({
       id: product.id,
       name: product.name,
-      price: salePrice(variant.price, pricing, product.margin_override_percent),
+      price: salePrice(variant.price, pricing, product.margin_override_percent, product.web_price_floor_usd),
       category: (product as any).category?.name ?? null,
     });
     // Solo cuando cambia el producto mostrado.
@@ -93,7 +94,7 @@ export const CellPhonePage = () => {
       image: product.images[0] || "",
       color: "",
       storage: "",
-      price: salePrice(variant.price, pricing, product.margin_override_percent),
+      price: salePrice(variant.price, pricing, product.margin_override_percent, product.web_price_floor_usd),
       quantity: count,
       source: (product.source as 'local' | 'cdr') || 'local',
       externalCode: product.external_code ?? null,
@@ -103,7 +104,7 @@ export const CellPhonePage = () => {
     trackAddToCart({
       id: product.id,
       name: product.name,
-      price: salePrice(variant.price, pricing, product.margin_override_percent),
+      price: salePrice(variant.price, pricing, product.margin_override_percent, product.web_price_floor_usd),
       quantity: count,
     });
     toast.success("Producto añadido al carrito", { position: "bottom-right" });
@@ -118,7 +119,7 @@ export const CellPhonePage = () => {
       image: product.images[0] || "",
       color: "",
       storage: "",
-      price: salePrice(variant.price, pricing, product.margin_override_percent),
+      price: salePrice(variant.price, pricing, product.margin_override_percent, product.web_price_floor_usd),
       quantity: count,
       source: (product.source as 'local' | 'cdr') || 'local',
       externalCode: product.external_code ?? null,
@@ -128,7 +129,7 @@ export const CellPhonePage = () => {
     trackAddToCart({
       id: product.id,
       name: product.name,
-      price: salePrice(variant.price, pricing, product.margin_override_percent),
+      price: salePrice(variant.price, pricing, product.margin_override_percent, product.web_price_floor_usd),
       quantity: count,
     });
     // InitiateCheckout se dispara al montar CheckoutPage (fuente única), no acá.
