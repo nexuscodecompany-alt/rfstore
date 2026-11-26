@@ -135,6 +135,7 @@ export const dashboardLinks: DashboardLink[] = [
         icon: <FaGear size={22} />,
         children: [
             { id: 161, title: 'Pagos', href: '/dashboard/pagos' },
+            { id: 166, title: 'Getnet (pruebas)', href: '/dashboard/getnet' },
             { id: 162, title: 'Envíos', href: '/dashboard/envios' },
             { id: 163, title: 'Cupones', href: '/dashboard/cupones' },
             { id: 164, title: 'Blog', href: '/dashboard/blog' },

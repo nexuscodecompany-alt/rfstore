@@ -92,16 +92,46 @@ export interface CreateSessionInput {
 	items?: Array<{ sku: string; name: string; category: 'physical'; qty: number; price: number }>;
 }
 
+/**
+ * REGLA GENERAL: todo texto libre que se le manda a Getnet pasa por acá.
+ * Placetopay rechaza la sesión entera (400 "La información del pago es
+ * incorrecta (description)") si hay comillas u otros símbolos, y los nombres
+ * de CDR los traen (ej. 'Notebook ... 16" OLED'). Se dejan letras (con tildes),
+ * números, espacios y puntuación simple; lo demás se vuelve espacio.
+ */
+export const ptpText = (v: unknown, max: number): string =>
+	String(v ?? '')
+		.normalize('NFC')
+		.replace(/[^\p{L}\p{N} .,:\-()/+]/gu, ' ')
+		.replace(/\s+/g, ' ')
+		.trim()
+		.slice(0, max)
+		.trim();
+
+const cleanBuyer = (b?: Record<string, unknown>) => {
+	if (!b) return undefined;
+	const out: Record<string, unknown> = { ...b };
+	for (const k of ['name', 'surname', 'company']) {
+		if (typeof out[k] === 'string') {
+			const t = ptpText(out[k], 60);
+			if (t) out[k] = t;
+			else delete out[k];
+		}
+	}
+	return out;
+};
+
 export async function ptpCreateSession(i: CreateSessionInput): Promise<{ requestId: number; processUrl: string }> {
+	const items = i.items?.map(it => ({ ...it, name: ptpText(it.name, 120) || 'Producto', sku: ptpText(it.sku, 30) || 'item' }));
 	const json = await ptpPost('/api/session', {
 		locale: 'es_UY',
-		buyer: i.buyer,
+		buyer: cleanBuyer(i.buyer),
 		payment: {
 			reference: i.reference,
-			description: i.description,
+			description: ptpText(i.description, 250) || `Pedido ${i.reference} - RF Store`,
 			amount: { currency: i.currency, total: i.total },
 			allowPartial: false,
-			...(i.items && i.items.length ? { items: i.items } : {}),
+			...(items && items.length ? { items } : {}),
 		},
 		expiration: i.expiration,
 		returnUrl: i.returnUrl,

@@ -12,6 +12,7 @@ import {
 	type PlacetopayStatus,
 } from '../actions';
 import { useCartStore } from '../store/cart.store';
+import { supabase } from '../supabase/client';
 import toast from 'react-hot-toast';
 import { HiOutlineCloudUpload, HiOutlineMail } from 'react-icons/hi';
 import { FaWhatsapp } from 'react-icons/fa';
@@ -180,7 +181,7 @@ export const ThankyouPage = () => {
 					</p>
 				</div>
 
-				{isPtp && <PlacetopayResult status={ptp} />}
+				{isPtp && <PlacetopayResult status={ptp} orderId={Number(id)} />}
 
 				{/* Pago combinado: lo primero que tiene que entender el cliente es que
 				    su pedido no se procesa hasta que estén las DOS partes. */}
@@ -501,8 +502,87 @@ const PaymentProofBlock = ({ orderId }: { orderId: number }) => {
 	);
 };
 
+/* Comprobante de la transacción con tarjeta: lo que pide Getnet en la página de respuesta. */
+const STATUS_LABEL: Record<string, string> = {
+	APPROVED: 'Aprobada',
+	REJECTED: 'Rechazada',
+	PENDING: 'Pendiente',
+	FAILED: 'Fallida',
+	PARTIAL_EXPIRED: 'Vencida',
+	APPROVED_PARTIAL: 'Aprobada parcial',
+};
+const PtpReceipt = ({ status, orderId }: { status: PlacetopayStatus | null; orderId: number }) => {
+	// El servidor (placetopay-status v2) manda el comprobante. Si todavía corre la
+	// versión vieja, se lee la sesión directo: sólo funciona para admins (RLS),
+	// para un cliente no devuelve nada y no se muestra.
+	const [fallback, setFallback] = useState<NonNullable<PlacetopayStatus['receipt']> | null>(null);
+	const statusKey = status?.session_status ?? status?.result ?? '';
+	useEffect(() => {
+		if (status?.receipt || !orderId) return;
+		let alive = true;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		(supabase as any)
+			.from('placetopay_sessions')
+			.select('reference, request_id, status, status_date, created_at, currency, amount, paid_amount, authorization_code, receipt, internal_reference, payment_method_name, franchise, issuer_name, last_digits')
+			.eq('order_id', orderId)
+			.order('created_at', { ascending: false })
+			.limit(1)
+			.maybeSingle()
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			.then(({ data: s }: { data: any }) => {
+				if (!alive || !s) return;
+				setFallback({
+					reference: s.reference ?? `RF-${orderId}`,
+					request_id: s.request_id ?? null,
+					date: s.status_date ?? s.created_at ?? null,
+					currency: s.currency ?? null,
+					amount: s.paid_amount ?? s.amount ?? null,
+					status: s.status ?? null,
+					authorization: s.authorization_code ?? null,
+					receipt: s.receipt ?? null,
+					internal_reference: s.internal_reference ?? null,
+					payment_method: s.payment_method_name ?? null,
+					franchise: s.franchise ?? null,
+					issuer: s.issuer_name ?? null,
+					last_digits: s.last_digits ?? null,
+				});
+			});
+		return () => {
+			alive = false;
+		};
+	}, [orderId, status?.receipt, statusKey]);
+	const r = status?.receipt ?? fallback;
+	if (!r) return null;
+	const rows: [string, string | null][] = [
+		['Referencia', r.reference],
+		['Estado', r.status ? STATUS_LABEL[r.status] ?? r.status : null],
+		['Fecha y hora', r.date ? new Date(r.date).toLocaleString('es-UY', { dateStyle: 'short', timeStyle: 'medium' }) : null],
+		['Monto', r.amount != null ? `${r.currency ?? ''} ${Number(r.amount).toLocaleString('es-UY', { minimumFractionDigits: 2 })}` : null],
+		['Medio de pago', r.payment_method ? `${r.payment_method}${r.last_digits ? ` ···${r.last_digits}` : ''}` : r.franchise],
+		['Banco emisor', r.issuer],
+		['Autorización', r.authorization],
+		['Recibo', r.receipt],
+		['Nº de transacción', r.internal_reference != null ? String(r.internal_reference) : null],
+		['Sesión', r.request_id != null ? String(r.request_id) : null],
+		['Mensaje', status?.message ?? null],
+	];
+	return (
+		<dl className='mt-3 grid grid-cols-[auto,1fr] gap-x-4 gap-y-1 rounded-md bg-white/70 p-3 text-xs'>
+			{rows
+				.filter(([, v]) => v)
+				.map(([k, v]) => (
+					<div key={k} className='contents'>
+						<dt className='text-ink-500'>{k}</dt>
+						<dd className='text-right font-semibold text-ink-900'>{v}</dd>
+					</div>
+				))}
+			<dt className='col-span-2 mt-1 text-[11px] text-ink-500'>Comercio: RF Store · Pago procesado por Getnet (Placetopay)</dt>
+		</dl>
+	);
+};
+
 /* Resultado del pago con tarjeta (Getnet / Placetopay). */
-const PlacetopayResult = ({ status }: { status: PlacetopayStatus | null }) => {
+const PlacetopayResult = ({ status, orderId }: { status: PlacetopayStatus | null; orderId: number }) => {
 	if (!status || status.result === 'pending') {
 		return (
 			<div className='w-full space-y-2 rounded-md border-2 border-amber-200 bg-amber-50/70 p-5 md:w-[600px]'>
@@ -516,6 +596,7 @@ const PlacetopayResult = ({ status }: { status: PlacetopayStatus | null }) => {
 						¿No terminaste de pagar? Volver a la página de pago
 					</a>
 				)}
+				<PtpReceipt status={status} orderId={orderId} />
 			</div>
 		);
 	}
@@ -526,6 +607,7 @@ const PlacetopayResult = ({ status }: { status: PlacetopayStatus | null }) => {
 				<p className='text-sm text-emerald-800'>
 					{status.card ? `Pagaste con ${status.card}. ` : ''}Te mandamos la confirmación por mail.
 				</p>
+				<PtpReceipt status={status} orderId={orderId} />
 			</div>
 		);
 	}
@@ -542,6 +624,7 @@ const PlacetopayResult = ({ status }: { status: PlacetopayStatus | null }) => {
 			>
 				Volver a intentar
 			</Link>
+			<PtpReceipt status={status} orderId={orderId} />
 		</div>
 	);
 };

@@ -28,6 +28,7 @@ import {
     DashboardHomePage,
     DashboardMarginsPage,
     DashboardCouponsPage,
+    DashboardGetnetPage,
     DashboardCustomersPage,
     DashboardPurchasesPage,
     DashboardHomeConfigPage,
@@ -209,6 +210,10 @@ export const router = createBrowserRouter([
             {
                 path: 'cupones',
                 element: <DashboardCouponsPage />,
+            },
+            {
+                path: 'getnet',
+                element: <DashboardGetnetPage />,
             },
             {
                 path: 'clientes',

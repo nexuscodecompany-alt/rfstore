@@ -1,4 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
+// placetopay-create-session v2 (2026-11-24): todo texto hacia Getnet pasa por
+// ptpText (_shared/placetopay.ts): las comillas en nombres de producto hacían
+// que Getnet rechazara la sesión (400 description).
 // placetopay-create-session v1 (2026-10-29)
 //
 // La orden YA existe: la creó el checkout con place_cdr_order
@@ -12,7 +15,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { corsHeaders } from '../_shared/cors.ts';
-import { ptpConfigured, ptpCreateSession, isoNoMs, PtpError, alertAdmin } from '../_shared/placetopay.ts';
+import { ptpConfigured, ptpCreateSession, isoNoMs, PtpError, alertAdmin, ptpText } from '../_shared/placetopay.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SERVICE_ROLE = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -29,7 +32,13 @@ const admin = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession:
  * Descripción del pago = los productos ("Auriculares X + Cable Y"), hasta 250
  * caracteres; si no entran todos, "y N productos más". Sin productos, el pedido.
  */
-function buildDescription(names: string[], orderId: number): string {
+// Getnet rechaza la descripción con ciertos símbolos (comillas: 'Notebook ... 16" OLED'
+// devolvía 400 "La información del pago es incorrecta (description)"). Se dejan
+// letras, números, espacios y puntuación simple.
+const cleanName = (n: string) => ptpText(n, 250) || 'Producto';
+
+function buildDescription(rawNames: string[], orderId: number): string {
+	const names = rawNames.map(cleanName);
 	if (names.length === 0) return `Pedido ${orderId} - RF Store`;
 	const MAX = 250;
 	let out = '';
@@ -154,7 +163,7 @@ Deno.serve(async req => {
 		const items = fx > 0
 			? prods.map(p => ({
 				sku: p.sku || 'item',
-				name: p.name.slice(0, 120),
+				name: cleanName(p.name).slice(0, 120),
 				category: 'physical' as const,
 				qty: p.qty,
 				price: Math.round(p.priceUsd * fx * p.qty), // costo total del artículo, en pesos

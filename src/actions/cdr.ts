@@ -337,6 +337,22 @@ export interface PlacetopayStatus {
 	message: string | null;
 	card: string | null;
 	process_url: string | null;
+	/** Comprobante de la transacción (página de respuesta). */
+	receipt?: {
+		reference: string;
+		request_id: number | string | null;
+		date: string | null;
+		currency: string | null;
+		amount: number | null;
+		status: string | null;
+		authorization: string | null;
+		receipt: string | null;
+		internal_reference: number | string | null;
+		payment_method: string | null;
+		franchise: string | null;
+		issuer: string | null;
+		last_digits: string | null;
+	} | null;
 }
 
 /** Cómo quedó el pago con tarjeta (consulta a Placetopay si sigue pendiente). */

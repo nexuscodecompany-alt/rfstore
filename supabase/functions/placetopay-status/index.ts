@@ -1,4 +1,7 @@
 // deno-lint-ignore-file no-explicit-any
+// placetopay-status v2 (2026-11-24): devuelve el comprobante de la transacción
+// (referencia, fecha, monto, autorización, recibo, franquicia, banco) para la
+// página de respuesta, como pide la homologación de Getnet.
 // placetopay-status v1 (2026-10-29)
 //
 // La página de gracias pregunta cómo quedó el pago con tarjeta. Si la sesión
@@ -69,7 +72,7 @@ Deno.serve(async req => {
 		const { data: o2 } = await admin.from('orders').select('status, payment_status').eq('id', orderId).single();
 		const { data: s2 } = await admin
 			.from('placetopay_sessions')
-			.select('status, message, payment_method_name, last_digits, process_url, expires_at')
+			.select('reference, request_id, status, message, status_date, payment_method_name, franchise, issuer_name, last_digits, authorization_code, receipt, internal_reference, currency, amount, paid_amount, process_url, expires_at, created_at')
 			.eq('order_id', orderId)
 			.order('created_at', { ascending: false })
 			.limit(1)
@@ -88,6 +91,22 @@ Deno.serve(async req => {
 			session_status: s2?.status ?? null,
 			message: s2?.message ?? null,
 			card: s2?.payment_method_name ? `${s2.payment_method_name}${s2.last_digits ? ` terminada en ${s2.last_digits}` : ''}` : null,
+			// Comprobante de la transacción para mostrarle al comprador.
+			receipt: s2 ? {
+				reference: s2.reference ?? `RF-${orderId}`,
+				request_id: s2.request_id ?? null,
+				date: s2.status_date ?? s2.created_at ?? null,
+				currency: s2.currency ?? null,
+				amount: s2.paid_amount ?? s2.amount ?? null,
+				status: s2.status ?? null,
+				authorization: s2.authorization_code ?? null,
+				receipt: s2.receipt ?? null,
+				internal_reference: s2.internal_reference ?? null,
+				payment_method: s2.payment_method_name ?? null,
+				franchise: s2.franchise ?? null,
+				issuer: s2.issuer_name ?? null,
+				last_digits: s2.last_digits ?? null,
+			} : null,
 			// Si sigue pendiente y no venció, se puede volver a la página de pago.
 			process_url: result === 'pending' && s2?.process_url && s2.expires_at && new Date(s2.expires_at).getTime() > Date.now() ? s2.process_url : null,
 		});
